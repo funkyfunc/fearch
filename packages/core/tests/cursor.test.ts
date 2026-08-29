@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+import { makeCursor, parseCursor, resolveCursor, viewId } from "../src/fetch/cursor.js";
+
+describe("cursor", () => {
+  it("round-trips and scopes offsets to a view", () => {
+    const view = viewId("focus", "Retries");
+    expect(view).toMatch(/^focus:[0-9a-f]{6}$/);
+    expect(viewId("focus", "retries ")).toBe(view); // case/space-insensitive
+    expect(viewId("read")).toBe("read");
+    const c = makeCursor(1200, view);
+    expect(parseCursor(c)).toEqual({ offset: 1200, view });
+    expect(resolveCursor(c, view)).toEqual({ offset: 1200 });
+  });
+
+  it("ignores cursors from another view with a note, accepts bare numbers, tolerates junk", () => {
+    const r = resolveCursor("1200@focus:abcdef", "read");
+    expect(r.offset).toBe(0);
+    expect(r.note).toContain("different view");
+    expect(resolveCursor("450", "read")).toEqual({ offset: 450 });
+    expect(resolveCursor(450, "read")).toEqual({ offset: 450 });
+    expect(resolveCursor("garbage", "read")).toEqual({ offset: 0 });
+    expect(resolveCursor(undefined, "read")).toEqual({ offset: 0 });
+  });
+});

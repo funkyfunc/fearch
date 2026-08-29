@@ -1,0 +1,43 @@
+{
+  "name": "fearch",
+  "version": "2.0.0",
+  "description": "Respectful, corporate-safe web search and page-reading MCP server for coding agents",
+  "license": "MIT",
+  "homepage": "https://github.com/funkyfunc/fearch#bot-info",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "fearch": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "postinstall": "playwright install chromium || echo 'fearch: Chromium download failed; the browser tier will report itself unavailable until `npx playwright install chromium` succeeds.'",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@mozilla/readability": "^0.6.0",
+    "cheerio": "^1.2.0",
+    "domhandler": "^5.0.3",
+    "linkedom": "^0.18.13",
+    "playwright": "^1.62.1",
+    "robots-parser": "^3.0.1",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "undici": "^8.10.0",
+    "unpdf": "^1.8.1",
+    "zod": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.23.12"
+  }
+}

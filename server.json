@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.funkyfunc/fearch",
+  "description": "Respectful, corporate-safe, free web search and page reading for coding agents: honest identity, robots.txt, a self-identified browser tier, refusals as structured diagnoses, keyless official search.",
+  "repository": {
+    "url": "https://github.com/funkyfunc/fearch",
+    "source": "github"
+  },
+  "version": "2.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "fearch",
+      "version": "2.0.0",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        { "type": "named", "name": "--robots", "description": "default | strict | minimal | off — robots.txt groups that apply, or not consulted at all.", "isRequired": false },
+        { "type": "named", "name": "--browser", "description": "headless | headed | off — bundled headless Chromium, your installed Chrome in a window, or no browser tier.", "isRequired": false },
+        { "type": "named", "name": "--handoff", "description": "Hand challenges to the person in the browser window (implies --browser headed).", "isRequired": false },
+        { "type": "named", "name": "--engines", "description": "Engine result pages in preference order: google,bing,duckduckgo (default duckduckgo).", "isRequired": false },
+        { "type": "named", "name": "--exa", "description": "Add Exa's keyless hosted search as the fallback (queries are logged by Exa; off by default).", "isRequired": false },
+        { "type": "named", "name": "--allow-domains", "description": "Comma-separated allow list of hosts.", "isRequired": false },
+        { "type": "named", "name": "--deny-domains", "description": "Comma-separated deny list of hosts.", "isRequired": false },
+        { "type": "named", "name": "--audit-log", "description": "stderr | off | file path.", "isRequired": false }
+      ],
+      "environmentVariables": [
+        { "name": "FEARCH_UA_INFO_URL", "description": "URL shown in the User-Agent (defaults to the project's bot-info page).", "isRequired": false },
+        { "name": "GITHUB_TOKEN", "description": "Optional: higher GitHub API limits and code search.", "isRequired": false, "isSecret": true }
+      ]
+    }
+  ]
+}

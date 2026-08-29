@@ -1,0 +1,260 @@
+{
+  "ts": "2026-08-29T02:06:46.327Z",
+  "version": "2.0.0",
+  "robotsPolicy": "default",
+  "browser": "auto",
+  "providers": "web: exa-hosted; federation: wikipedia, mdn, stackexchange, github, npm, crates",
+  "webFallbacks": 11,
+  "passed": 9,
+  "total": 22,
+  "results": [
+    {
+      "id": "py-asyncio-timeout",
+      "ok": false,
+      "searchMs": 2045,
+      "fetchMs": 506,
+      "provider": "exa-hosted",
+      "missing": [
+        "asyncio.timeout"
+      ],
+      "forbidden": [],
+      "hit": "https://docs.python.org/3/library/asyncio-task.html",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "py-asyncio-cancel",
+      "ok": true,
+      "searchMs": 1131,
+      "fetchMs": 90,
+      "provider": "exa-hosted",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://docs.python.org/3/library/asyncio-task.html",
+      "source": "cache (revalidated) ← direct (html/main)"
+    },
+    {
+      "id": "js-array-flatmap",
+      "ok": true,
+      "searchMs": 567,
+      "fetchMs": 820,
+      "provider": "mdn+wikipedia",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flatMap",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "js-fetch-abort",
+      "ok": true,
+      "searchMs": 1036,
+      "fetchMs": 1136,
+      "provider": "wikipedia+mdn",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/signal",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "rust-tokio-select",
+      "ok": true,
+      "searchMs": 1188,
+      "fetchMs": 580,
+      "provider": "exa-hosted",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://docs.rs/tokio/latest/tokio/macro.select.html",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "go-context-timeout",
+      "ok": true,
+      "searchMs": 1634,
+      "fetchMs": 7156,
+      "provider": "exa-hosted",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://pkg.go.dev/context",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "npm-undici-proxy",
+      "ok": true,
+      "searchMs": 1560,
+      "fetchMs": 536,
+      "provider": "exa-hosted",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://github.com/nodejs/undici/blob/main/docs/docs/api/ProxyAgent.md",
+      "source": "github-raw"
+    },
+    {
+      "id": "so-yield",
+      "ok": true,
+      "searchMs": 490,
+      "fetchMs": 2319,
+      "provider": "stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/28880095",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "gh-mcp-sdk",
+      "ok": false,
+      "searchMs": 2149,
+      "fetchMs": 2412,
+      "provider": "github",
+      "missing": [
+        "typescript-sdk"
+      ],
+      "forbidden": [],
+      "hit": "https://github.com/zuplo/mcp",
+      "source": "github-readme"
+    },
+    {
+      "id": "pkg-turndown",
+      "ok": true,
+      "searchMs": 610,
+      "fetchMs": 1106,
+      "provider": "npm",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://www.npmjs.com/package/turndown-plugin-gfm",
+      "source": "npm"
+    },
+    {
+      "id": "k8s-overview",
+      "ok": false,
+      "searchMs": 742,
+      "fetchMs": 2429,
+      "provider": "github+mdn+stackexchange",
+      "missing": [
+        "containerized"
+      ],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/40534837",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "react-useeffect-cleanup",
+      "ok": false,
+      "searchMs": 1219,
+      "fetchMs": 2351,
+      "provider": "mdn+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/79950026",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "next-app-router-install",
+      "ok": false,
+      "searchMs": 1287,
+      "fetchMs": 2555,
+      "provider": "mdn+github+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/72149240",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "cf-workers-what",
+      "ok": false,
+      "searchMs": 1153,
+      "fetchMs": 373,
+      "provider": "mdn",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Language_overview",
+      "source": "direct (html/main)"
+    },
+    {
+      "id": "sqlite-node",
+      "ok": false,
+      "searchMs": 1065,
+      "fetchMs": 2263,
+      "provider": "stackexchange+mdn",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/79441096",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "wiki-mcp",
+      "ok": true,
+      "searchMs": 931,
+      "fetchMs": 1432,
+      "provider": "mdn+wikipedia",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://en.wikipedia.org/wiki/Model_Context_Protocol",
+      "source": "direct (html/body)"
+    },
+    {
+      "id": "swift-array",
+      "ok": false,
+      "searchMs": 462,
+      "fetchMs": 2118,
+      "provider": "mdn+stackexchange+github",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/46534269",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "postgres-jsonb",
+      "ok": false,
+      "searchMs": 1185,
+      "fetchMs": 2616,
+      "provider": "mdn+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/63492685",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "docker-compose-depends",
+      "ok": false,
+      "searchMs": 1180,
+      "fetchMs": 2291,
+      "provider": "mdn+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/44725482",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "gh-actions-quickstart",
+      "ok": false,
+      "searchMs": 1177,
+      "fetchMs": 2291,
+      "provider": "mdn+github+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/75812749",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "adversarial-vue-not-react",
+      "ok": false,
+      "searchMs": 1174,
+      "fetchMs": 4889,
+      "provider": "mdn+github+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/59958983",
+      "source": "stackoverflow"
+    },
+    {
+      "id": "adversarial-py2-not-py3",
+      "ok": false,
+      "searchMs": 1167,
+      "fetchMs": 2350,
+      "provider": "mdn+github+stackexchange",
+      "missing": [],
+      "forbidden": [],
+      "hit": "https://stackoverflow.com/questions/28609534",
+      "source": "stackoverflow"
+    }
+  ]
+}

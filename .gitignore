@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vitest/
+coverage/
+.DS_Store
+
+# legacy python
+legacy-python/.venv/
+legacy-python/**/__pycache__/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# reference repos downloaded for research (large)
+docs/references/repos/

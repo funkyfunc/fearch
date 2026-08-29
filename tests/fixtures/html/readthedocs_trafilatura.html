@@ -1,0 +1,1202 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="This tutorial focuses on text extraction from web pages with Python code snippets. Data mining with this library encompasses HTML parsing and language identification." lang="en" name="description" xml:lang="en" />
+<meta property="og:title" content="Python usage" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://trafilatura.readthedocs.io/usage-python.html" />
+<meta property="og:site_name" content="Trafilatura" />
+<meta property="og:description" content="The Python programming language: Python can be easy to pick up whether you’re a first time programmer or you’re experienced with other languages: Official Python Tutorial, The Hitchhiker’s Guide to..." />
+<meta property="og:image" content="https://raw.githubusercontent.com/adbar/trafilatura/master/docs/trafilatura-logo.png" />
+<meta property="og:image:alt" content="Trafilatura" />
+
+    <title>Python usage &#8212; Trafilatura 2.2.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="_static/documentation_options.js?v=b21de401"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){ dataLayer.push(arguments); }
+                gtag('consent', 'default', {
+                    'ad_storage': 'denied',
+                    'ad_user_data': 'denied',
+                    'ad_personalization': 'denied',
+                    'analytics_storage': 'denied'
+                });
+            </script>
+    <script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-K3R5QCVDF1"></script>
+    <script>
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', 'G-K3R5QCVDF1');
+            </script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'usage-python';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://trafilatura.readthedocs.io/usage-python.html" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Command-line usage" href="usage-cli.html" />
+    <link rel="prev" title="Usage" href="usage.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="2.2.0" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+  <script async type="text/javascript" src="/_/static/javascript/readthedocs-addons.js"></script><meta name="readthedocs-project-slug" content="trafilatura" /><meta name="readthedocs-version-slug" content="latest" /><meta name="readthedocs-resolver-filename" content="/usage-python.html" /><meta name="readthedocs-http-status" content="200" /></head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/trafilatura-logo.png" class="logo__image only-light" alt="Trafilatura 2.2.0 documentation - Home"/>
+    <img src="_static/trafilatura-logo.png" class="logo__image only-dark pst-js-only" alt="Trafilatura 2.2.0 documentation - Home"/>
+  
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="usage.html">
+    Usage
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tutorials.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="faq.html">
+    FAQ
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="troubleshooting.html">
+    Troubleshooting
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="extraction-overview.html">
+    How extraction works
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="evaluation.html">
+    Benchmarks and evaluation
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="corefunctions.html">
+    Core functions
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="settings.html">
+    Settings and customization
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="deprecations.html">
+    Deprecations and migration
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="used-by.html">
+    Uses & citations
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="tests.html">
+    Running the tests
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="background.html">
+    Background
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-external" href="https://adrien.barbaresi.eu/blog/tag/trafilatura.html">
+    Blog
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/adbar/trafilatura" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="usage.html">
+    Usage
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tutorials.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="faq.html">
+    FAQ
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="troubleshooting.html">
+    Troubleshooting
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="extraction-overview.html">
+    How extraction works
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="evaluation.html">
+    Benchmarks and evaluation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="corefunctions.html">
+    Core functions
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="settings.html">
+    Settings and customization
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="deprecations.html">
+    Deprecations and migration
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="used-by.html">
+    Uses & citations
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tests.html">
+    Running the tests
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="background.html">
+    Background
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-external" href="https://adrien.barbaresi.eu/blog/tag/trafilatura.html">
+    Blog
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/adbar/trafilatura" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item pst-sidebar-collapse"><button id="pst-collapse-sidebar-button" aria-expanded="true" aria-controls="pst-primary-sidebar">
+  <svg class="pst-icon" role="img" aria-hidden="true" focusable="false" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+    <path fill="currentColor" d="M3 15.5C2.36232 15.5 1.74874 15.2564 1.28478 14.8189C0.820828 14.3815 0.541576 13.7832 0.504167 13.1467L0.5 13L0.5 3C0.499965 2.36232 0.743605 1.74874 1.18107 1.28478C1.61854 0.820828 2.21676 0.541576 2.85333 0.504167L3 0.5L13 0.5C13.6377 0.499965 14.2513 0.743605 14.7152 1.18107C15.1792 1.61854 15.4584 2.21676 15.4958 2.85333L15.5 3L15.5 13C15.5 13.6377 15.2564 14.2513 14.8189 14.7152C14.3815 15.1792 13.7832 15.4584 13.1467 15.4958L13 15.5L3 15.5ZM3 13.8333L10.5 13.8333L10.5 2.16667L3 2.16667C2.79589 2.16669 2.59889 2.24163 2.44636 2.37726C2.29383 2.5129 2.19638 2.69979 2.1725 2.9025L2.16667 3L2.16667 13C2.16669 13.2041 2.24163 13.4011 2.37726 13.5536C2.5129 13.7062 2.69979 13.8036 2.9025 13.8275L3 13.8333ZM6.65583 10.325L6.5775 10.2558L4.91083 8.58917C4.76735 8.44567 4.68116 8.25476 4.66843 8.05223C4.65569 7.84971 4.71729 7.6495 4.84167 7.48917L4.91083 7.41083L6.5775 5.74417C6.72747 5.59471 6.9287 5.50794 7.14032 5.50148C7.35194 5.49502 7.55809 5.56935 7.7169 5.70937C7.8757 5.8494 7.97525 6.04463 7.99533 6.25539C8.01541 6.46616 7.95451 6.67667 7.825 6.84417L7.75583 6.9225L6.67917 8L7.75583 9.0775C7.89931 9.22099 7.98551 9.41191 7.99824 9.61443C8.01097 9.81695 7.94938 10.0172 7.825 10.1775L7.75583 10.2558C7.61234 10.3993 7.42142 10.4855 7.2189 10.4982C7.01638 10.511 6.81617 10.4494 6.65583 10.325Z"/>
+  </svg>
+  <span class="pst-collapse-sidebar-label">Collapse Sidebar</span>
+  <span class="pst-expand-sidebar-label">Expand Sidebar</span>
+</button></div>
+        <div class="sidebar-primary-item">
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Python usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage-cli.html">Command-line usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage-gui.html">Graphical user interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage-r.html">Usage with R</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage-api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="downloads.html">Download web pages</a></li>
+<li class="toctree-l1"><a class="reference internal" href="crawls.html">Web crawling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deduplication.html">Deduplication</a></li>
+<li class="toctree-l1"><a class="reference internal" href="url-management.html">URL management</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="usage.html" class="nav-link">Usage</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Python usage</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="python-usage">
+<h1>Python usage<a class="headerlink" href="#python-usage" title="Link to this heading">#</a></h1>
+<section id="the-python-programming-language">
+<h2>The Python programming language<a class="headerlink" href="#the-python-programming-language" title="Link to this heading">#</a></h2>
+<p>Python can be easy to pick up whether you’re a first time programmer or you’re experienced with other languages:</p>
+<ul class="simple">
+<li><p>Official <a class="reference external" href="https://docs.python.org/3/tutorial/">Python Tutorial</a></p></li>
+<li><p><a class="reference external" href="https://docs.python-guide.org/">The Hitchhiker’s Guide to Python</a></p></li>
+<li><p><a class="reference external" href="https://www.freecodecamp.org/news/best-python-tutorial/">The Best Python Tutorials (freeCodeCamp)</a></p></li>
+</ul>
+</section>
+<section id="step-by-step">
+<h2>Step-by-step<a class="headerlink" href="#step-by-step" title="Link to this heading">#</a></h2>
+<section id="quickstart">
+<h3>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">#</a></h3>
+<p>For the basics see <a class="reference external" href="quickstart.html">quickstart documentation page</a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For a hands-on tutorial see also the Python Notebook <a class="reference external" href="https://github.com/adbar/trafilatura/blob/master/docs/Trafilatura_Overview.ipynb">Trafilatura Overview</a>.</p>
+</div>
+</section>
+<section id="extraction-functions">
+<h3>Extraction functions<a class="headerlink" href="#extraction-functions" title="Link to this heading">#</a></h3>
+<p>The functions can be imported using <code class="docutils literal notranslate"><span class="pre">from</span> <span class="pre">trafilatura</span> <span class="pre">import</span> <span class="pre">...</span></code> and used on raw documents (strings) or parsed HTML (LXML elements).</p>
+<p>Main text extraction, good balance between precision and recall:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">extract</span></code>: Main extraction function — runs Trafilatura’s own rule-based extractor, then falls back to readability and jusText if the result is too short (see <a class="reference external" href="extraction-overview.html">how extraction works</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bare_extraction</span></code>: Same cascade as <code class="docutils literal notranslate"><span class="pre">extract()</span></code>, but returns a <code class="docutils literal notranslate"><span class="pre">Document</span></code> object with structured access to text, comments, and metadata</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">extract_with_metadata</span></code>: Shorthand for <code class="docutils literal notranslate"><span class="pre">extract()</span></code> with <code class="docutils literal notranslate"><span class="pre">with_metadata=True</span></code></p></li>
+</ul>
+<p>Simpler alternatives (no cascade, faster):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">baseline</span></code>: Targets text paragraphs and/or JSON metadata only</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">html2txt</span></code>: Extracts all text in the document, including navigation and footers</p></li>
+</ul>
+</section>
+<section id="output">
+<h3>Output<a class="headerlink" href="#output" title="Link to this heading">#</a></h3>
+<p>By default, the output is in plain text (TXT) format without metadata. The following additional formats are available:</p>
+<ul class="simple">
+<li><p>CSV</p></li>
+<li><p>HTML</p></li>
+<li><p>JSON</p></li>
+<li><p>Markdown</p></li>
+<li><p>XML and XML-TEI (following the guidelines of the Text Encoding Initiative)</p></li>
+</ul>
+<p>To specify the output format, use one of the following strings: <code class="docutils literal notranslate"><span class="pre">&quot;csv&quot;,</span> <span class="pre">&quot;json&quot;,</span> <span class="pre">&quot;html&quot;,</span> <span class="pre">&quot;markdown&quot;,</span> <span class="pre">&quot;txt&quot;,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;xmltei&quot;</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">bare_extraction</span></code> function uses the <code class="docutils literal notranslate"><span class="pre">python</span></code> format by default and returns a <code class="docutils literal notranslate"><span class="pre">Document</span></code> object for direct use in Python.</p>
+<p>To extract and include metadata in the output, use the <code class="docutils literal notranslate"><span class="pre">with_metadata=True</span></code> argument.</p>
+<section id="examples">
+<h4>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h4>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># some formatting preserved in basic XML structure</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">output_format</span><span class="o">=</span><span class="s2">"xml"</span><span class="p">)</span>
+
+<span class="c1"># output in JSON format with metadata extracted</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">output_format</span><span class="o">=</span><span class="s2">"json"</span><span class="p">,</span> <span class="n">with_metadata</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Note that combining TXT and CSV formats with certain structural elements (e.g. formatting or links) triggers output in Markdown format (plain text with additional elements). <code class="docutils literal notranslate"><span class="pre">include_formatting</span></code> has no effect on JSON output.</p>
+</section>
+</section>
+<section id="choice-of-html-elements">
+<h3>Choice of HTML elements<a class="headerlink" href="#choice-of-html-elements" title="Link to this heading">#</a></h3>
+<p>Customize the extraction process by including or excluding specific HTML elements:</p>
+<ul class="simple">
+<li><dl class="simple">
+<dt>Text elements:</dt><dd><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">include_comments=True</span></code></dt><dd><p>Include comment sections at the bottom of articles.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">include_tables=True</span></code></dt><dd><p>Extract text from HTML <code class="docutils literal notranslate"><span class="pre">&lt;table&gt;</span></code> elements.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Structural elements:</dt><dd><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">include_formatting=True</span></code></dt><dd><p>Keep structural elements related to formatting (<code class="docutils literal notranslate"><span class="pre">&lt;b&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;strong&gt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;emph&gt;</span></code> etc.)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">include_links=True</span></code></dt><dd><p>Keep link targets (in <code class="docutils literal notranslate"><span class="pre">href=&quot;...&quot;</span></code>)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">include_images=True</span></code></dt><dd><p>Keep track of images along with their targets (<code class="docutils literal notranslate"><span class="pre">&lt;img&gt;</span></code> attributes: alt, src, title)</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</li>
+</ul>
+<p>To operate on these elements, pass the corresponding parameters to the <code class="docutils literal notranslate"><span class="pre">extract()</span></code> function:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># exclude comments from the output</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">include_comments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="c1"># skip tables and include links in the output</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">include_tables</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">include_links</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># convert relative links to absolute links where possible</span>
+<span class="c1"># (pass the same URL used to fetch "downloaded")</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">output_format</span><span class="o">=</span><span class="s1">'xml'</span><span class="p">,</span> <span class="n">include_links</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="s2">"https://www.example.org"</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="important-notes">
+<h4>Important notes<a class="headerlink" href="#important-notes" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">include_comments</span></code> and <code class="docutils literal notranslate"><span class="pre">include_tables</span></code> are activated by default.</p></li>
+<li><p>Including extra elements works best with conversion to XML formats or using <code class="docutils literal notranslate"><span class="pre">bare_extraction()</span></code>. This allows for direct display and manipulation of the elements.</p></li>
+<li><p>Certain elements may not be visible in the output if the chosen format does not allow it.</p></li>
+<li><p>Selecting Markdown automatically includes text formatting.</p></li>
+</ul>
+<div class="admonition hint">
+<p class="admonition-title">Hint</p>
+<p>The heuristics used by the main algorithm change according to the presence of certain elements in the HTML. If the output seems odd, try removing a constraint (e.g. formatting) to improve the result.</p>
+</div>
+</section>
+</section>
+<section id="the-precision-and-recall-presets">
+<h3>The precision and recall presets<a class="headerlink" href="#the-precision-and-recall-presets" title="Link to this heading">#</a></h3>
+<p>The main extraction functions offer two presets to adjust the focus of the extraction process:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># less noise, possibly less text</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">favor_precision</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># more text, possibly more noise</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">favor_recall</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="precision">
+<h4>Precision<a class="headerlink" href="#precision" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Use when your results contain too much boilerplate or irrelevant content.</p></li>
+<li><p>Comments are pruned more aggressively, link-heavy sections are discarded, and fallback stages are skipped.</p></li>
+<li><p>Additionally, you can use the <code class="docutils literal notranslate"><span class="pre">prune_xpath</span></code> parameter to target specific HTML elements using a list of XPath expressions:</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># remove elements matching a custom XPath before extraction</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">prune_xpath</span><span class="o">=</span><span class="s1">'//div[@class="ad"]'</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="recall">
+<h4>Recall<a class="headerlink" href="#recall" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Use when parts of your documents are missing.</p></li>
+<li><p>Lists inside discarded sections are kept, text tails are preserved, and link density thresholds are relaxed.</p></li>
+<li><p>If content is still missing, try <code class="docutils literal notranslate"><span class="pre">html2txt()</span></code> or refer to the <a class="reference external" href="troubleshooting.html">troubleshooting guide</a>.</p></li>
+</ul>
+<p>For a detailed comparison of what each mode changes, see <a class="reference external" href="extraction-overview.html#extraction-modes">how extraction works</a>.</p>
+</section>
+</section>
+<section id="additional-functions-for-text-extraction">
+<h3>Additional functions for text extraction<a class="headerlink" href="#additional-functions-for-text-extraction" title="Link to this heading">#</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">html2txt</span></code> and <code class="docutils literal notranslate"><span class="pre">baseline</span></code> functions offer simpler approaches to extracting text from HTML content, prioritizing performance over precision.</p>
+<section id="html2txt">
+<h4>html2txt()<a class="headerlink" href="#html2txt" title="Link to this heading">#</a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">html2txt</span></code> function serves as a last resort for extracting text from HTML content. It emulates the behavior of similar functions in other packages and can be used to output all possible text from a given HTML source, maximizing recall. However, it may not always produce accurate or meaningful results, as it does not consider the context of the extracted sections.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">html2txt</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">html2txt</span><span class="p">(</span><span class="n">downloaded</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="baseline">
+<h4>baseline()<a class="headerlink" href="#baseline" title="Link to this heading">#</a></h4>
+<p>For a better balance between precision and recall, as well as improved performance, consider using the <code class="docutils literal notranslate"><span class="pre">baseline</span></code> function instead. This function returns a tuple containing an LXML element with the body, the extracted text as a string, and the length of the text.  It uses a set of heuristics to extract text from the HTML content, which generally produces more accurate results than <code class="docutils literal notranslate"><span class="pre">html2txt</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">baseline</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">postbody</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">len_text</span> <span class="o">=</span> <span class="n">baseline</span><span class="p">(</span><span class="n">downloaded</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For more advanced use cases, consider using other functions in the package that provide more control and customization over the text extraction process.</p>
+</section>
+</section>
+<section id="guessing-if-text-can-be-found">
+<h3>Guessing if text can be found<a class="headerlink" href="#guessing-if-text-can-be-found" title="Link to this heading">#</a></h3>
+<p>The function <code class="docutils literal notranslate"><span class="pre">is_probably_readerable()</span></code> (ported from Mozilla’s Readability.js) provides a way to guess if a page probably has a main text to extract.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura.readability_lxml</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_probably_readerable</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">is_probably_readerable</span><span class="p">(</span><span class="n">downloaded</span><span class="p">)</span>  <span class="c1"># HTML string or already parsed tree</span>
+</pre></div>
+</div>
+</section>
+<section id="language-identification">
+<h3>Language identification<a class="headerlink" href="#language-identification" title="Link to this heading">#</a></h3>
+<p>The target language can also be set using 2-letter codes (ISO 639-1), there will be no output if the detected language of the result does not match and no such filtering if the identification component has not been installed (see above <a class="reference external" href="installation.html">installation instructions</a>) or if the target language is not available.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This feature requires additional components: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">trafilatura[all]</span></code>.
+It currently uses the <a class="reference external" href="https://github.com/adbar/py3langid">py3langid package</a> and is dependent on language availability and performance of the original model.</p>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">target_language</span><span class="o">=</span><span class="s2">"de"</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="optimizing-for-speed">
+<h3>Optimizing for speed<a class="headerlink" href="#optimizing-for-speed" title="Link to this heading">#</a></h3>
+<p>Execution speed not only depends on the platform and on supplementary packages (<code class="docutils literal notranslate"><span class="pre">trafilatura[all]</span></code>, <code class="docutils literal notranslate"><span class="pre">htmldate[speed]</span></code>), but also on the extraction strategy.</p>
+<p>By default, <code class="docutils literal notranslate"><span class="pre">extract()</span></code> runs a cascade: its own rule-based extractor first, then readability and jusText as fallbacks if the initial result is too short. These fallbacks improve accuracy but are slower. In <em>fast</em> mode they are skipped entirely, making extraction about twice as fast:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># skip algorithms used as fallback</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">fast</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The following combination usually leads to shorter processing times:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">include_comments</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">include_tables</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fast</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="extraction-settings">
+<h2>Extraction settings<a class="headerlink" href="#extraction-settings" title="Link to this heading">#</a></h2>
+<div class="admonition hint">
+<p class="admonition-title">Hint</p>
+<p>See also <a class="reference external" href="settings.html">settings page</a>.</p>
+</div>
+<section id="function-parameters">
+<h3>Function parameters<a class="headerlink" href="#function-parameters" title="Link to this heading">#</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Extractor</span></code> class provides a convenient way to define and manage extraction parameters. It is useful when reusing the same settings across multiple extractions or when configuring options not exposed as <code class="docutils literal notranslate"><span class="pre">extract()</span></code> parameters.</p>
+<p>Here is how to use the class:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import the Extractor class from the settings module</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura.settings</span><span class="w"> </span><span class="kn">import</span> <span class="n">Extractor</span>
+
+<span class="c1"># set multiple options at once</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">options</span> <span class="o">=</span> <span class="n">Extractor</span><span class="p">(</span><span class="n">output_format</span><span class="o">=</span><span class="s2">"json"</span><span class="p">,</span> <span class="n">with_metadata</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># add or adjust settings as needed</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">options</span><span class="o">.</span><span class="n">formatting</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># same as include_formatting</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">options</span><span class="o">.</span><span class="n">source</span> <span class="o">=</span> <span class="s2">"My Source"</span>  <span class="c1"># useful for debugging</span>
+
+<span class="c1"># use the options in an extraction function</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">options</span><span class="o">=</span><span class="n">options</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>See the <code class="docutils literal notranslate"><span class="pre">settings.py</span></code> file for a full example.</p>
+</section>
+<section id="metadata-extraction">
+<h3>Metadata extraction<a class="headerlink" href="#metadata-extraction" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">with_metadata=True</span></code>: extract metadata fields and include them in the output</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">only_with_metadata=True</span></code>: only output documents featuring all essential metadata (date, title, url)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">record_id</span></code>: attach a custom ID to the <code class="docutils literal notranslate"><span class="pre">id</span></code> metadata field, useful for tracking documents through a corpus-building pipeline (see <a class="reference external" href="tutorial-datasets.html">building a training corpus</a>)</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">record_id</span><span class="o">=</span><span class="s2">"doc-042"</span><span class="p">,</span> <span class="n">output_format</span><span class="o">=</span><span class="s2">"json"</span><span class="p">,</span> <span class="n">with_metadata</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="date">
+<h4>Date<a class="headerlink" href="#date" title="Link to this heading">#</a></h4>
+<p>Among metadata extraction, dates are handled by an external module: <a class="reference external" href="https://github.com/adbar/htmldate">htmldate</a>. By default, focus is on original dates and the extraction replicates the <em>fast</em> option.</p>
+<p><a class="reference external" href="https://htmldate.readthedocs.io/en/latest/corefunctions.html#handling-date-extraction">Custom parameters</a> can be passed through the extraction function or through the <code class="docutils literal notranslate"><span class="pre">extract_metadata</span></code> function in <code class="docutils literal notranslate"><span class="pre">trafilatura.metadata</span></code>, most notably:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">extensive_search</span></code> (boolean), to activate further heuristics (higher recall, lower precision)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">original_date</span></code> (boolean) to look for the original publication date,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">outputformat</span></code> (string), to provide a custom datetime format,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_date</span></code> (string), to set the latest acceptable date manually (YYYY-MM-DD format).</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import the extract() function, use a previously downloaded document</span>
+<span class="c1"># pass the new parameters as dict</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">extract</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">output_format</span><span class="o">=</span><span class="s2">"xml"</span><span class="p">,</span> <span class="n">date_extraction_params</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">"extensive_search"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"max_date"</span><span class="p">:</span> <span class="s2">"2018-07-01"</span>
+    <span class="p">})</span>
+</pre></div>
+</div>
+</section>
+<section id="url">
+<h4>URL<a class="headerlink" href="#url" title="Link to this heading">#</a></h4>
+<p>Even if the page to process has already been downloaded it can still be useful to pass the URL as an argument. See this <a class="reference external" href="https://github.com/adbar/trafilatura/issues/75">previous bug</a> for an example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># define a URL and download the example</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">url</span> <span class="o">=</span> <span class="s2">"https://web.archive.org/web/20210613232513/https://www.thecanary.co/feature/2021/05/19/another-by-election-headache-is-incoming-for-keir-starmer/"</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">downloaded</span> <span class="o">=</span> <span class="n">fetch_url</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+
+<span class="c1"># content discarded since necessary metadata couldn't be extracted</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">bare_extraction</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">only_with_metadata</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span>
+
+<span class="c1"># date found in URL, extraction successful</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">bare_extraction</span><span class="p">(</span><span class="n">downloaded</span><span class="p">,</span> <span class="n">only_with_metadata</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="n">url</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="memory-use">
+<h3>Memory use<a class="headerlink" href="#memory-use" title="Link to this heading">#</a></h3>
+<p>Trafilatura uses caches to speed up extraction and cleaning processes. This may lead to memory leaks in some cases, particularly in large-scale applications. If that happens you can reset all cached information in order to release RAM:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="go"># import the function</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura.meta</span><span class="w"> </span><span class="kn">import</span> <span class="n">reset_caches</span>
+
+<span class="go"># use it at any given point</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">reset_caches</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="input-output-types">
+<h2>Input/Output types<a class="headerlink" href="#input-output-types" title="Link to this heading">#</a></h2>
+<section id="python-objects-as-output">
+<h3>Python objects as output<a class="headerlink" href="#python-objects-as-output" title="Link to this heading">#</a></h3>
+<p>The extraction can be customized using a series of parameters, for more see the <a class="reference external" href="corefunctions.html">core functions</a> page.</p>
+<p>The function <code class="docutils literal notranslate"><span class="pre">bare_extraction</span></code> can be used to bypass output conversion. It returns a <code class="docutils literal notranslate"><span class="pre">Document</span></code> object with metadata as string attributes (<code class="docutils literal notranslate"><span class="pre">.title</span></code>, <code class="docutils literal notranslate"><span class="pre">.author</span></code>, <code class="docutils literal notranslate"><span class="pre">.text</span></code>, <code class="docutils literal notranslate"><span class="pre">.comments</span></code>, etc.) and the extracted content as LXML elements (<code class="docutils literal notranslate"><span class="pre">.body</span></code>, <code class="docutils literal notranslate"><span class="pre">.commentsbody</span></code>). Call <code class="docutils literal notranslate"><span class="pre">.as_dict()</span></code> on the result to get a plain dictionary.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">bare_extraction</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bare_extraction</span><span class="p">(</span><span class="n">downloaded</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="raw-http-response-objects">
+<h3>Raw HTTP response objects<a class="headerlink" href="#raw-http-response-objects" title="Link to this heading">#</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">fetch_response()</span></code> function can pass a response object straight to the extraction.</p>
+<p>This can be useful to get the final redirection URL with <code class="docutils literal notranslate"><span class="pre">response.url</span></code> and then pass it directly as a URL argument to the extraction function:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># necessary components</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_response</span><span class="p">,</span> <span class="n">bare_extraction</span>
+
+<span class="c1"># load an example</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">response</span> <span class="o">=</span> <span class="n">fetch_response</span><span class="p">(</span><span class="s2">"https://www.example.org"</span><span class="p">)</span>
+
+<span class="c1"># perform extract() or bare_extraction() on Trafilatura's response object</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">bare_extraction</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>  <span class="c1"># here is the redirection URL</span>
+</pre></div>
+</div>
+</section>
+<section id="lxml-objects">
+<h3>LXML objects<a class="headerlink" href="#lxml-objects" title="Link to this heading">#</a></h3>
+<p>The input can consist of a previously parsed tree (i.e. a <em>lxml.html</em> object), which is then handled seamlessly:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="go"># define document and load it with LXML</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">lxml</span><span class="w"> </span><span class="kn">import</span> <span class="n">html</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">my_doc</span> <span class="o">=</span> <span class="s2">"""&lt;html&gt;&lt;body&gt;&lt;article&gt;&lt;p&gt;</span>
+<span class="gp">... </span><span class="s2">                Here is the main text.</span>
+<span class="gp">... </span><span class="s2">                &lt;/p&gt;&lt;/article&gt;&lt;/body&gt;&lt;/html&gt;"""</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">mytree</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">my_doc</span><span class="p">)</span>
+
+<span class="go"># extract from the already loaded LXML tree</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">extract</span><span class="p">(</span><span class="n">mytree</span><span class="p">)</span>
+<span class="go">'Here is the main text.'</span>
+</pre></div>
+</div>
+</section>
+<section id="interaction-with-beautifulsoup">
+<h3>Interaction with BeautifulSoup<a class="headerlink" href="#interaction-with-beautifulsoup" title="Link to this heading">#</a></h3>
+<p>Trafilatura works with LXML trees, not BeautifulSoup objects. If you already have a BS4 parse tree, convert it first:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">bs4</span><span class="w"> </span><span class="kn">import</span> <span class="n">BeautifulSoup</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">lxml.html.soupparser</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_tree</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">lxml</span><span class="w"> </span><span class="kn">import</span> <span class="n">etree</span><span class="p">,</span> <span class="n">html</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="s2">"&lt;html&gt;&lt;body&gt;&lt;article&gt;&lt;p&gt;The date is Feb 2, 2024.&lt;/p&gt;&lt;/article&gt;&lt;/body&gt;&lt;/html&gt;"</span><span class="p">,</span> <span class="s2">"lxml"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">lxml_tree</span> <span class="o">=</span> <span class="n">convert_tree</span><span class="p">(</span><span class="n">soup</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><code class="docutils literal notranslate"><span class="pre">convert_tree()</span></code> returns a tree rooted at <code class="docutils literal notranslate"><span class="pre">&lt;body&gt;</span></code>, not <code class="docutils literal notranslate"><span class="pre">&lt;html&gt;</span></code>. Passing it to <code class="docutils literal notranslate"><span class="pre">extract()</span></code> as-is returns <code class="docutils literal notranslate"><span class="pre">None</span></code> regardless of content, since the extractor expects a document rooted at <code class="docutils literal notranslate"><span class="pre">&lt;html&gt;</span></code>. Re-wrap it first:</p>
+</div>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">wrapped</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="s2">"&lt;html&gt;"</span> <span class="o">+</span> <span class="n">etree</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">lxml_tree</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span> <span class="o">+</span> <span class="s2">"&lt;/html&gt;"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">extract</span><span class="p">(</span><span class="n">wrapped</span><span class="p">)</span>
+<span class="go">'The date is Feb 2, 2024.'</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="navigation">
+<h2>Navigation<a class="headerlink" href="#navigation" title="Link to this heading">#</a></h2>
+<p>Trafilatura can discover URLs to extract from via three strategies:</p>
+<ul class="simple">
+<li><p><strong>Feeds</strong> (Atom/RSS): mostly for fresh content</p></li>
+<li><p><strong>Sitemaps</strong>: for exhaustivity — all potential pages as listed by the site owners</p></li>
+<li><p><strong>Web crawling</strong>: follow internal links to discover pages</p></li>
+</ul>
+<section id="feeds">
+<h3>Feeds<a class="headerlink" href="#feeds" title="Link to this heading">#</a></h3>
+<p>The function <code class="docutils literal notranslate"><span class="pre">find_feed_urls</span></code> is a all-in-one utility that attempts to discover the feeds from a webpage if required and/or downloads and parses feeds. It returns the extracted links as list, more precisely as a sorted list of unique links.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import the feeds module</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">feeds</span>
+
+<span class="c1"># use the homepage to automatically retrieve feeds</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span> <span class="o">=</span> <span class="n">feeds</span><span class="o">.</span><span class="n">find_feed_urls</span><span class="p">(</span><span class="s1">'https://www.theguardian.com/'</span><span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span>
+<span class="p">[</span><span class="s1">'https://www.theguardian.com/international/rss'</span><span class="p">,</span> <span class="s1">'...'</span><span class="p">]</span> <span class="c1"># and so on</span>
+
+<span class="c1"># use a predetermined feed URL directly</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span> <span class="o">=</span> <span class="n">feeds</span><span class="o">.</span><span class="n">find_feed_urls</span><span class="p">(</span><span class="s1">'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml'</span><span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="nb">bool</span><span class="p">(</span><span class="n">mylist</span><span class="p">)</span>
+<span class="kc">True</span> <span class="c1"># it's not empty</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The links are seamlessly filtered for patterns given by the user, e.g. using <code class="docutils literal notranslate"><span class="pre">https://www.un.org/en/</span></code> as argument implies taking all URLs corresponding to this category.</p>
+</div>
+<p>An optional argument <code class="docutils literal notranslate"><span class="pre">target_lang</span></code> makes it possible to filter links according to their expected target language. A series of heuristics are applied on the link path and parameters to try to discard unwanted URLs, thus saving processing time and download bandwidth.</p>
+<p>An optional <code class="docutils literal notranslate"><span class="pre">external</span></code> argument controls whether URLs from other domains are included. By default, only URLs matching the input domain are returned (<code class="docutils literal notranslate"><span class="pre">external=False</span></code>).</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># the feeds module has to be imported</span>
+<span class="c1"># search for feeds in English</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span> <span class="o">=</span> <span class="n">feeds</span><span class="o">.</span><span class="n">find_feed_urls</span><span class="p">(</span><span class="s1">'https://www.un.org/en/rss.xml'</span><span class="p">,</span> <span class="n">target_lang</span><span class="o">=</span><span class="s1">'en'</span><span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="nb">bool</span><span class="p">(</span><span class="n">mylist</span><span class="p">)</span>
+<span class="kc">True</span> <span class="c1"># links found as expected</span>
+
+<span class="c1"># target_lang set to Japanese, the English links are discarded</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span> <span class="o">=</span> <span class="n">feeds</span><span class="o">.</span><span class="n">find_feed_urls</span><span class="p">(</span><span class="s1">'https://www.un.org/en/rss.xml'</span><span class="p">,</span> <span class="n">target_lang</span><span class="o">=</span><span class="s1">'ja'</span><span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylist</span>
+<span class="p">[]</span>
+</pre></div>
+</div>
+<p>For more information about feeds and web crawling see:</p>
+<ul class="simple">
+<li><p>This blog post: <a class="reference external" href="https://adrien.barbaresi.eu/blog/using-feeds-text-extraction-python.html">Using RSS and Atom feeds to collect web pages with Python</a></p></li>
+<li><p>This Youtube tutorial: <a class="reference external" href="https://www.youtube.com/watch?v=NW2ISdOx08M&amp;list=PL-pKWbySIRGMgxXQOtGIz1-nbfYLvqrci&amp;index=2&amp;t=136s">Extracting links from ATOM and RSS feeds</a></p></li>
+</ul>
+</section>
+<section id="sitemaps">
+<h3>Sitemaps<a class="headerlink" href="#sitemaps" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Youtube tutorial: <a class="reference external" href="https://www.youtube.com/watch?v=uWUyhxciTOs">Learn how to process XML sitemaps to extract all texts present on a website</a></p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># load sitemaps module</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">trafilatura</span><span class="w"> </span><span class="kn">import</span> <span class="n">sitemaps</span>
+
+<span class="c1"># automatically find sitemaps by providing the homepage</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylinks</span> <span class="o">=</span> <span class="n">sitemaps</span><span class="o">.</span><span class="n">sitemap_search</span><span class="p">(</span><span class="s1">'https://developer.mozilla.org/'</span><span class="p">)</span>
+
+<span class="c1"># the target_lang argument works as explained above</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">mylinks</span> <span class="o">=</span> <span class="n">sitemaps</span><span class="o">.</span><span class="n">sitemap_search</span><span class="p">(</span><span class="s1">'https://developer.mozilla.org/'</span><span class="p">,</span> <span class="n">target_lang</span><span class="o">=</span><span class="s1">'en'</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The links are also seamlessly filtered for patterns given by the user, e.g. using <code class="docutils literal notranslate"><span class="pre">https://developer.mozilla.org/en-US/docs/Web/CSS</span></code> as argument implies taking all URLs corresponding to the CSS documentation category.</p>
+<p>An optional <code class="docutils literal notranslate"><span class="pre">external</span></code> argument controls whether URLs from other domains are included. By default, only URLs matching the input domain are returned (<code class="docutils literal notranslate"><span class="pre">external=False</span></code>).</p>
+</section>
+<section id="web-crawling">
+<h3>Web crawling<a class="headerlink" href="#web-crawling" title="Link to this heading">#</a></h3>
+<p>See the <a class="reference external" href="crawls.html">documentation page on web crawling</a> for more information.</p>
+<div class="admonition hint">
+<p class="admonition-title">Hint</p>
+<p>For more information on how to refine and filter a URL collection, see the underlying <a class="reference external" href="https://github.com/adbar/courlan">courlan</a> library.</p>
+</div>
+</section>
+</section>
+<section id="deprecations">
+<h2>Deprecations<a class="headerlink" href="#deprecations" title="Link to this heading">#</a></h2>
+<p>See the <a class="reference external" href="deprecations.html">deprecations and migration</a> page for a full list of deprecated functions, arguments, and migration instructions.</p>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference external" href="settings.html">Settings and customization</a>, <a class="reference external" href="usage-cli.html">Command-line usage</a>, <a class="reference external" href="corefunctions.html">Core functions</a></p>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="usage.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Usage</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="usage-cli.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Command-line usage</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-python-programming-language">The Python programming language</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-by-step">Step-by-step</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#quickstart">Quickstart</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#extraction-functions">Extraction functions</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#output">Output</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#choice-of-html-elements">Choice of HTML elements</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#important-notes">Important notes</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#the-precision-and-recall-presets">The precision and recall presets</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#precision">Precision</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#recall">Recall</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#additional-functions-for-text-extraction">Additional functions for text extraction</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#html2txt">html2txt()</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#baseline">baseline()</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#guessing-if-text-can-be-found">Guessing if text can be found</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#language-identification">Language identification</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optimizing-for-speed">Optimizing for speed</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#extraction-settings">Extraction settings</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#function-parameters">Function parameters</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#metadata-extraction">Metadata extraction</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#date">Date</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#url">URL</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-use">Memory use</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#input-output-types">Input/Output types</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#python-objects-as-output">Python objects as output</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#raw-http-response-objects">Raw HTTP response objects</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#lxml-objects">LXML objects</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#interaction-with-beautifulsoup">Interaction with BeautifulSoup</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#navigation">Navigation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#feeds">Feeds</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sitemaps">Sitemaps</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#web-crawling">Web crawling</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deprecations">Deprecations</a></li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+
+  <div class="tocsection sourcelink">
+    <a href="_sources/usage-python.rst.txt">
+      <i class="fa-solid fa-file-lines"></i> Show Source
+    </a>
+  </div>
+</div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Adrien Barbaresi.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.20.0.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
