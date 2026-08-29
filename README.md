@@ -125,7 +125,7 @@ Two decisions cover nearly everyone, and both are flags in your MCP config's `ar
 |---|---|---|
 | Idea | A self-identifying automated client that a person triggered. | The person's own browser, driven on their behalf at human pace. |
 | Who else does it | Anthropic's `Claude-User`; Cloudflare's "well-behaved bot" norms | OpenAI's `ChatGPT-User` stance; every computer-use product (Claude in Chrome, Playwright MCP, Browser Use) |
-| Flags | *(none)* | `--robots off --handoff` |
+| Flags | *(none)* | `--robots off --handoff`, or `--robots off --browser extension` after `fearch extension install` |
 | robots.txt | honoured | not consulted, like a browser |
 | Browser | bundled Chromium, headless, names the tool in `From`/`X-Agent` | your installed Chrome in a visible window; challenges are handed to you, never solved |
 | Search engines | DuckDuckGo lite (the one engine whose robots.txt allows it) | Google first, then DuckDuckGo |
@@ -142,6 +142,30 @@ check is shown to you instead — pass it and the search continues; ignore it an
 Google and Bing are only *eligible* with `--robots off`, because their robots.txt disallows `/search`;
 the tool says so in the results when a listed engine was skipped.
 
+**The extension tier — your own Chrome, nothing automated.** `--browser extension` opens pages in the
+Chrome you already have, through a tiny bundled extension ("fearch bridge"). There are no automation
+flags, no DevTools connection, nothing fabricated — it is your browser doing what browsers do, on your
+behalf — so engines see an ordinary visitor, and there is nothing to hide because nothing is claimed.
+Google works without a challenge in the usual case; if one does appear, the tab is already in your
+Chrome and the handoff (on by default here) waits for you. One-time setup:
+
+```bash
+npx fearch extension install
+```
+
+That copies the extension to `~/.fearch/extension`, puts the path on your clipboard, opens
+`chrome://extensions`, and waits for the extension to connect. In Chrome: turn on **Developer mode**,
+click **Load unpacked**, paste the path. (Chrome offers no way to install an unpacked extension from
+outside; a Web Store listing will make this one click.) `fearch extension status` checks it later;
+`fearch doctor` reports it too. If the extension isn't connected, fearch falls back to the headless
+tier and says so.
+
+The extension knows three verbs — open a URL in a background tab, read it, close it — plus "bring this
+tab forward" for the handoff. It never clicks, types or submits anything, only touches tabs it opened,
+and only talks to a fearch running on this machine (loopback, and only from the extension's own fixed
+ID). Pages open with your real profile, so your logins and your Google history apply; add
+`--incognito` (after enabling **Allow in Incognito** for the extension) to keep your profile out of it.
+
 **The headed profile.** Chrome refuses automation on your real profile, so headed mode launches your
 installed Chrome with a tool-owned profile (`~/.cache/fearch/browser-state.json`) that starts
 empty. Anything in it — a passed Google check, a login you chose to do in that window — is something
@@ -153,8 +177,10 @@ are then labelled `your session`). Delete the file to forget it.
 ```
 --robots default|strict|minimal|off   robots.txt groups: default = * + own token + Claude-User/ChatGPT-User;
                                       strict = also training-crawler opt-outs; minimal = * + own token; off = not consulted
---browser headless|headed|off          Playwright: bundled headless Chromium (default), your installed Chrome in a window, or none
---handoff                              hand challenges to you in the window (implies --browser headed)
+--browser headless|headed|extension|off  bundled headless Chromium (default), your installed Chrome in a window, your own
+                                       Chrome via the fearch bridge extension (no automation signals; `fearch extension install` once), or none
+--handoff                              hand challenges to you in the window (implies --browser headed; on by default with extension)
+--incognito                            extension only: open pages in an incognito window (enable "Allow in Incognito" first)
 --engines google,bing,duckduckgo       engine order; default duckduckgo, or google,duckduckgo with --robots off --handoff
 --session                              send cookies from the tool profile to ordinary pages (headed only; labelled)
 --identity header|none                 how the browser names the tool (default header: From/X-Agent headers)

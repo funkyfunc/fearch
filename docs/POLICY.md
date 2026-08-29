@@ -63,7 +63,17 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   visible window, with a **tool-owned profile** persisted under the cache directory. Chrome refuses
   automation on a person's real profile; this profile starts empty and only ever contains what the
   person did in that window.
-- **Human handoff** (`FEARCH_HANDOFF=1`, headed only). When a page or search engine shows a
+- **Extension mode** (`--browser extension`). Pages are opened in the person's own Chrome by the bundled
+  "fearch bridge" extension (`packages/core/extension`, ~150 lines, readable in full). No automation
+  flags, no DevTools/CDP, no injected scripts beyond reading the page: it is the person's browser doing
+  what browsers do. The extension knows `open` (a background tab, http(s) only, private addresses
+  refused server-side), `read`, `close`, and `activate` (bring a tab forward for the handoff); it never
+  clicks, types or submits, and only touches tabs it opened. It talks only to a fearch on the same
+  machine: the server binds 127.0.0.1 and accepts requests only from the extension's fixed origin, which
+  is what stops web pages from driving it. Pages open with the person's own profile (their logins,
+  their search history); `--incognito` opens them in an incognito window instead. If the extension is
+  not connected, fearch falls back to the headless tier and says so in the log.
+- **Human handoff** (`FEARCH_HANDOFF=1`, headed only; on by default in extension mode). When a page or search engine shows a
   challenge, the tab is brought to the front and the tool waits (default 180 s) for the person to deal
   with it, then continues with what they were shown. The tool clicks, types and solves nothing; it only
   watches for the page to stop being a challenge. Without handoff, a challenge is final.

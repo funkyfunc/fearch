@@ -11,7 +11,8 @@
     "fearch": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "extension"
   ],
   "engines": {
     "node": ">=22.5"

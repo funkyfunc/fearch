@@ -34,6 +34,18 @@ export interface Rendered {
   usedSession: boolean;
   /** A challenge was shown and the person dealt with it in the visible window. */
   handedOff: boolean;
+  /** Extra provenance shown in the result header (e.g. "your Chrome"). */
+  label?: string;
+}
+
+/** What the pipeline and the engines need from a browser tier; BrowserRenderer and ExtensionRenderer both provide it. */
+export interface BrowserTier {
+  enabled(): boolean;
+  readonly headed: boolean;
+  readonly browserUserAgent: string;
+  readonly browserChannel: string;
+  render(url: string, opts?: RenderOptions): Promise<Rendered>;
+  close(): Promise<void>;
 }
 
 export interface RenderOptions {
@@ -85,7 +97,7 @@ export async function waitForHuman(
   return { ...last, passed: true };
 }
 
-export class BrowserRenderer {
+export class BrowserRenderer implements BrowserTier {
   private browser: Browser | null = null;
   private plain: BrowserContext | null = null;
   private profile: BrowserContext | null = null;

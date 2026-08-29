@@ -7,7 +7,8 @@ import { Cache } from "./cache.js";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { settingsFromEnv, type Settings } from "./config.js";
-import { BrowserRenderer } from "./fetch/browser.js";
+import { BrowserRenderer, type BrowserTier } from "./fetch/browser.js";
+import { ExtensionBridge, ExtensionRenderer } from "./fetch/extension.js";
 import { applyBudget } from "./fetch/budget.js";
 import { renderDiagnosis } from "./fetch/diagnose.js";
 import { makeCursor, resolveCursor, viewId } from "./fetch/cursor.js";
@@ -58,7 +59,7 @@ export interface AppState {
   robots: RobotsChecker;
   fetcher: Fetcher;
   search: SearchRegistry;
-  browser: BrowserRenderer;
+  browser: BrowserTier;
 }
 
 /** One-time move of the browser profile from the pre-rename cache directory (websearch-mcp → fearch). */
@@ -91,7 +92,10 @@ export function createState(settings = settingsFromEnv()): AppState {
     settings.ignoreRobots,
     settings.robotsPolicy,
   );
-  const browser = new BrowserRenderer(settings, audit);
+  const browser: BrowserTier =
+    settings.browser === "extension"
+      ? new ExtensionRenderer(settings, audit, new ExtensionBridge(audit), new BrowserRenderer({ ...settings, browser: "headless" }, audit))
+      : new BrowserRenderer(settings, audit);
   const fetcher = new Fetcher(settings, cache, transport, robots, politeness, audit, browser);
   const engines = engineProviders(settings, browser, robots, politeness);
   const search = new SearchRegistry(settings, cache, audit, fetcher.http("search", { budget: false }), engines);

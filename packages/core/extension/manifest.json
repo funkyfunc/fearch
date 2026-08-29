@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "fearch bridge",
+  "version": "2.0.0",
+  "description": "Lets the fearch search/fetch tool open pages in your own Chrome — read-only, no automation flags, no debugger. Nothing runs unless fearch is running on this machine.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxjL26wTWI5dfazDV43bUUDBa7xgY4ct36lhS85LVr2bK9e1WwwdP6sXLAOfVD/lOIYbdvqhq2ZNugMWBCzgE3BFAyfx9LmxcqNkSC9hVUUCUkFqEw4gdxE1ZyYRprilRBgYEVluaJ2ZB043vIvV7DWFb/Wpi++3/AaOIrhkj2vPidlucHieuMWe3cPQHBcv0u7E2AMGQTN+t3Q1Crj49bEMQlrnZW2OWhHMUB7AlH5qYYbZN9w+zc7suHTc/lszZvDfb2Bo3eLrBnuctdXy1rwefPE2vBWMsAm1SzEuOjvqmKMVqlBh8pSnPS3Ui9CqzXDPSUYLWccDohnDJJckOOwIDAQAB",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["tabs", "scripting", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "incognito": "spanning",
+  "options_page": "status.html",
+  "action": { "default_title": "fearch bridge", "default_popup": "status.html" }
+}

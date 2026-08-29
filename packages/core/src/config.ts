@@ -43,9 +43,15 @@ export interface Settings {
    * `headless` (default): bundled Chromium, new-headless. `headed`: the Chrome already installed on the
    * machine (falls back to bundled Chromium), in a visible window with a tool-owned profile that
    * persists across runs — the "user agent" posture, where the person can see what is opened and step
-   * in on a challenge (see `handoff`). `off`: no browser tier.
+   * in on a challenge (see `handoff`). `extension`: the person's own Chrome via the fearch bridge
+   * extension — no automation signals at all (falls back to headless if the extension isn't there).
+   * `off`: no browser tier.
    */
-  browser: "headless" | "headed" | "off";
+  browser: "headless" | "headed" | "extension" | "off";
+  /** Extension only: open pages in an incognito window (no cookies from the person's profile). */
+  incognito: boolean;
+  /** Extension only: how long to wait for the extension to show up before falling back (ms). */
+  extensionConnectMs: number;
   /**
    * How the browser tier identifies itself. `header` (default): stock Chrome User-Agent plus `From:`
    * (RFC 9110 §10.1.2, the header defined for robots to name their controller) and `X-Agent:` on every
@@ -122,8 +128,9 @@ export function settingsFromEnv(env: Env = process.env): Settings {
   const cacheDir = env.FEARCH_CACHE_DIR?.trim() || join(homedir(), ".cache", "fearch");
   const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ["default", "strict", "minimal", "off"] as const, "default");
   const browserRaw = env.FEARCH_BROWSER?.trim().toLowerCase();
-  const browser: Settings["browser"] = browserRaw === "off" ? "off" : browserRaw === "headed" ? "headed" : "headless";
-  const handoff = browser === "headed" && envBool(env, "FEARCH_HANDOFF");
+  const browser: Settings["browser"] = browserRaw === "off" ? "off" : browserRaw === "headed" ? "headed" : browserRaw === "extension" ? "extension" : "headless";
+  // Handoff needs a person-visible browser. In the extension it is the person's own Chrome, so it defaults on.
+  const handoff = browser === "headed" ? envBool(env, "FEARCH_HANDOFF") : browser === "extension" ? envBool(env, "FEARCH_HANDOFF", true) : false;
   const infoUrl = env.FEARCH_UA_INFO_URL?.trim() || pkg.homepage || "https://github.com/funkyfunc/fearch";
   const contact = env.FEARCH_UA_CONTACT?.trim() || "";
   return {
@@ -151,6 +158,8 @@ export function settingsFromEnv(env: Env = process.env): Settings {
     browser,
     browserIdentity: pick(env.FEARCH_BROWSER_IDENTITY, ["header", "none"] as const, "header"),
     handoff,
+    incognito: browser === "extension" && envBool(env, "FEARCH_INCOGNITO"),
+    extensionConnectMs: envInt(env, "FEARCH_EXTENSION_CONNECT_MS", 4_000),
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 180_000),
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
     // Derived default: DuckDuckGo (the robots-permitted engine); with robots off *and* a person to pass
@@ -176,7 +185,8 @@ export function domainMatches(host: string, list: string[]): boolean {
  * Command-line flags — the intended way to configure the server from an MCP config's `args`:
  *
  *   --robots default|strict|minimal|off   consent dial (default: default)
- *   --browser headless|headed|off          use Playwright, and can the person see it (default: headless)
+ *   --browser headless|headed|extension|off  bundled headless Chromium, your installed Chrome, your own Chrome via the extension, or none
+ *   --incognito                            extension only: open pages in an incognito window
  *   --handoff                              hand challenges to the person (implies --browser headed)
  *   --engines google,duckduckgo            search-engine order (default derived from the two above)
  *   --exa                                  add Exa's keyless hosted search as the fallback after the engines
@@ -192,6 +202,7 @@ export const SERVER_FLAGS: Record<string, { env: string; boolean?: boolean }> = 
   handoff: { env: "FEARCH_HANDOFF", boolean: true },
   engines: { env: "FEARCH_ENGINES" },
   exa: { env: "FEARCH_EXA", boolean: true },
+  incognito: { env: "FEARCH_INCOGNITO", boolean: true },
   session: { env: "FEARCH_BROWSER_SESSION", boolean: true },
   identity: { env: "FEARCH_BROWSER_IDENTITY" },
   "allow-domains": { env: "FEARCH_ALLOW_DOMAINS" },

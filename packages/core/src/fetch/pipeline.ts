@@ -8,7 +8,7 @@ import type { Audit } from "../audit.js";
 import type { Cache } from "../cache.js";
 import { domainMatches, type Settings } from "../config.js";
 import { BudgetExceeded, type Politeness } from "../politeness.js";
-import type { BrowserRenderer } from "./browser.js";
+import type { BrowserTier } from "./browser.js";
 import { BrowserUnavailable } from "./browser.js";
 import { BROWSER_RETRY_KINDS, diagnose, diagnoseBudget, diagnoseContentSignal, diagnoseRobots, finalizeAfterBrowser, type Diagnosis } from "./diagnose.js";
 import { cleanMarkdownSource, detectShell, htmlToMarkdown, pdfToMarkdown, splitFrontmatter } from "./extract.js";
@@ -59,7 +59,7 @@ export class Fetcher {
     private readonly robots: RobotsChecker,
     private readonly politeness: Politeness,
     private readonly audit: Audit,
-    private readonly browser?: BrowserRenderer,
+    private readonly browser?: BrowserTier,
   ) {}
 
   /**
@@ -284,7 +284,7 @@ export class Fetcher {
       finalUrl: rendered.finalUrl,
       kind: "html",
       body: rendered.html,
-      source: [rendered.salvaged ? "browser (partial render)" : "browser", rendered.handedOff ? "challenge passed by you" : "", rendered.usedSession ? "your session" : ""].filter(Boolean).join(", "),
+      source: [rendered.salvaged ? "browser (partial render)" : "browser", rendered.label ?? "", rendered.handedOff ? "challenge passed by you" : "", rendered.usedSession ? "your session" : ""].filter(Boolean).join(", "),
       status: rendered.status,
       contentType: "text/html",
       headers: {},

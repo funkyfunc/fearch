@@ -8,6 +8,12 @@
 
 import { createState, renderDoc, type AppState } from "./server.js";
 import type { Settings } from "./config.js";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { ExtensionBridge, ExtensionRenderer, EXTENSION_ID } from "./fetch/extension.js";
 import { renderResults } from "./search/render.js";
 import { SearchError } from "./search/provider.js";
 import { renderDiagnosis } from "./fetch/diagnose.js";
@@ -106,6 +112,9 @@ export async function runCommand(argv: string[], settings?: Settings): Promise<n
       } else process.stdout.write(renderResults(query, outcome));
       return 0;
     }
+    if (cmd === "extension") {
+      return await extensionCommand(state, positional[0] ?? "status", flags);
+    }
     if (cmd === "doctor") return await doctor(state); // `await` matters: finally() must not run before doctor finishes
     return usageExit();
   } finally {
@@ -120,8 +129,10 @@ export function usage(): string {
     "",
     "server flags (put these in your MCP config's args):",
     "  --robots default|strict|minimal|off   robots.txt: which groups apply, or not consulted at all (default: default)",
-    "  --browser headless|headed|off          Playwright: bundled headless Chromium, your installed Chrome in a window, or none (default: headless)",
-    "  --handoff                              challenges are handed to you in the window, never solved (implies --browser headed)",
+    "  --browser headless|headed|extension|off  bundled headless Chromium (default), your installed Chrome in a window, your own Chrome via",
+    "                                         the fearch bridge extension (no automation signals; run `fearch extension install` once), or none",
+    "  --handoff                              challenges are handed to you in the window, never solved (implies --browser headed; on by default with extension)",
+    "  --incognito                            extension only: open pages in an incognito window (needs “Allow in Incognito”)",
     "  --engines google,bing,duckduckgo       engine result pages in preference order (default: duckduckgo; google,duckduckgo with --robots off --handoff)",
     "  --session                              send cookies from the tool's browser profile to ordinary pages (headed only)",
     "  --identity header|none                 how the browser names the tool (default: header = From/X-Agent headers)",
@@ -136,6 +147,7 @@ export function usage(): string {
     "  fetch <url> [--mode read|focus|section|pattern|raw] [--query q] [--max-chars N] [--cursor c] [--links] [--archive] [--json]",
     "  search <query> [--kind web|code|qa|packages|docs|papers|community] [--site domain] [--recency d|w|m|y] [--n N] [--fetch-top N] [--json]",
     "  doctor                              check configuration, providers, browser, and network",
+    "  extension install|status|path       set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder",
     "  --version                           print the version",
     "",
     "When run by a person (a command is given), the audit log is off and only warnings are printed unless",
@@ -188,7 +200,16 @@ async function doctor(state: AppState): Promise<number> {
   }
 
   // Browser tier.
-  if (s.browser === "off") warn("browser", "off (FEARCH_BROWSER=off)");
+  // Extension tier: is the bridge extension actually there?
+  if (s.browser === "extension" && state.browser instanceof ExtensionRenderer) {
+    const bridge = state.browser.bridge;
+    const port = await bridge.start();
+    if (await bridge.waitForConnection(3_000)) {
+      const info = bridge.extensionInfo();
+      ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${info?.incognitoAllowed ? "allowed" : "not allowed"}${s.incognito && !info?.incognitoAllowed ? " — --incognito will fail until “Allow in Incognito” is enabled" : ""}`);
+    } else warn("extension", `not connected on port ${port} — run \`fearch extension install\`; falling back to the headless tier meanwhile`);
+  }
+  if (s.browser === "off") warn("browser", "off (--browser off)");
   else {
     try {
       const r = await state.browser.render("https://example.com/");
@@ -201,4 +222,78 @@ async function doctor(state: AppState): Promise<number> {
 
   process.stdout.write(lines.join("\n") + "\n");
   return lines.some((l) => l.includes("[FAIL]")) ? 1 : 0;
+}
+
+
+/** Where the bundled extension lives in this package, and where we copy it for a stable "Load unpacked" path. */
+export function bundledExtensionDir(): string {
+  return fileURLToPath(new URL("../extension/", import.meta.url));
+}
+export function installedExtensionDir(): string {
+  return join(homedir(), ".fearch", "extension");
+}
+
+function copyToClipboard(text: string): boolean {
+  try {
+    const cmd = platform() === "darwin" ? "pbcopy" : platform() === "win32" ? "clip" : "xclip";
+    const args = platform() === "linux" ? ["-selection", "clipboard"] : [];
+    const p = execFile(cmd, args, () => {});
+    p.stdin?.end(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function openExtensionsPage(): void {
+  const url = "chrome://extensions/";
+  try {
+    if (platform() === "darwin") execFile("open", ["-a", "Google Chrome", url], () => {});
+    else if (platform() === "win32") execFile("cmd", ["/c", "start", "chrome", url], () => {});
+    else execFile("google-chrome", [url], () => {});
+  } catch {
+    /* best effort */
+  }
+}
+
+async function extensionCommand(state: AppState, sub: string, flags: Record<string, string | true>): Promise<number> {
+  const out = (t: string) => process.stdout.write(t + "\n");
+  const dir = installedExtensionDir();
+  if (sub === "path") {
+    out(dir);
+    return 0;
+  }
+  const bridge = state.browser instanceof ExtensionRenderer ? state.browser.bridge : new ExtensionBridge(state.audit);
+  if (sub === "install") {
+    mkdirSync(dir, { recursive: true });
+    cpSync(bundledExtensionDir(), dir, { recursive: true });
+    const copied = copyToClipboard(dir);
+    const port = await bridge.start();
+    out(`fearch bridge extension copied to:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
+    out("In Chrome (opening chrome://extensions for you):");
+    out("  1. turn on “Developer mode” (top right)");
+    out("  2. click “Load unpacked” and paste the folder above");
+    out("  3. optional: in the extension's details, enable “Allow in Incognito” for --incognito");
+    out(`\nExpected extension ID: ${EXTENSION_ID}.  Status page: http://127.0.0.1:${port}/setup`);
+    openExtensionsPage();
+    out("\nWaiting for the extension to connect (up to 3 minutes; Ctrl-C to stop)…");
+    const ok = await bridge.waitForConnection(180_000);
+    if (ok) {
+      const info = bridge.extensionInfo();
+      out(`✔ connected — fearch bridge ${info?.version}; incognito ${info?.incognitoAllowed ? "allowed" : "not allowed (optional)"}.`);
+      out("Use it with: fearch --browser extension … (add --robots off for Google/Bing, --incognito to keep your profile out of it)");
+      await bridge.close();
+      return 0;
+    }
+    out("✘ not connected yet. Finish the steps above and run `fearch extension status`.");
+    await bridge.close();
+    return 1;
+  }
+  const port = await bridge.start();
+  const wait = typeof flags.wait === "string" ? Number(flags.wait) * 1000 : 5_000;
+  const ok = await bridge.waitForConnection(wait);
+  const info = bridge.extensionInfo();
+  out(ok ? `✔ fearch bridge ${info?.version} connected on port ${port}; incognito ${info?.incognitoAllowed ? "allowed" : "not allowed"}` : `✘ no extension connected on port ${port} within ${Math.round(wait / 1000)} s — installed? run \`fearch extension install\`. Folder: ${existsSync(dir) ? dir : "(not installed)"}`);
+  await bridge.close();
+  return ok ? 0 : 1;
 }

@@ -15,7 +15,7 @@ import * as cheerio from "cheerio";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Settings } from "../config.js";
-import type { BrowserRenderer } from "../fetch/browser.js";
+import type { BrowserTier } from "../fetch/browser.js";
 import type { RobotsChecker } from "../fetch/robots.js";
 import type { Politeness } from "../politeness.js";
 import { dedupe, filterDomains, SearchError, type SearchProvider, type SearchQuery, type SearchResult } from "./provider.js";
@@ -250,7 +250,7 @@ export class EngineProvider implements SearchProvider {
   constructor(
     readonly spec: EngineSpec,
     private readonly settings: Settings,
-    private readonly browser: BrowserRenderer,
+    private readonly browser: BrowserTier,
     private readonly robots: RobotsChecker,
     private readonly politeness: Politeness,
     private readonly gapMs = 3000,
@@ -259,7 +259,7 @@ export class EngineProvider implements SearchProvider {
   }
 
   get disclosure(): string {
-    const how = this.browser.headed ? "the visible browser window" : "the self-identified headless browser";
+    const how = this.browser.browserChannel === "extension" ? "your own Chrome (fearch bridge extension)" : this.browser.headed ? "the visible browser window" : "the self-identified headless browser";
     const robots = this.spec.robotsPermitted ? "robots.txt allows this page" : "robots.txt disallows result pages; opened because robots is off";
     return `${this.spec.label} via ${how} (${robots}; ${this.spec.privacy})`;
   }
@@ -326,7 +326,7 @@ export class EngineProvider implements SearchProvider {
 }
 
 /** All known engines, in FEARCH_ENGINES order first, then the rest (unlisted ones are never available). */
-export function engineProviders(settings: Settings, browser: BrowserRenderer, robots: RobotsChecker, politeness: Politeness): EngineProvider[] {
+export function engineProviders(settings: Settings, browser: BrowserTier, robots: RobotsChecker, politeness: Politeness): EngineProvider[] {
   const order = [...settings.engines, ...Object.keys(ENGINE_SPECS).filter((n) => !settings.engines.includes(n))];
   return order.map((n) => new EngineProvider(ENGINE_SPECS[n], settings, browser, robots, politeness));
 }
