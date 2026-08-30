@@ -64,6 +64,12 @@ const NOISE_CLASS_RE =
   /(^|[\s_-])(cookie|consent|gdpr|sidebar|side-nav|sidenav|breadcrumbs?|share|social|advert|ads?|promo|newsletter|popup|modal|subscribe|related|recommended|footer|navbar|topbar|menu|skip-link|skip-to|toc|table-of-contents|pagination|pager|announcement|banner|edit-this-page|feedback|on-this-page|page-nav|prev-next|theme-doc-toc|docs-toc)([\s_-]|$)/i;
 
 const BLOCK_TAGS = "div, section, ul, ol, li, table, p, dl, details, figure, span";
+/** Blocks that can be pure link farms (language pickers, tag clouds, "related" rails) even inside <main>. */
+const LINK_FARM_TAGS = "ul, ol, table, nav, section, div";
+const LINK_FARM_MIN_CHARS = 60;
+const LINK_FARM_DENSITY = 0.85;
+/** A content container must hold this share of the page's (de-noised) text, or it isn't the content. */
+const MIN_CONTENT_SHARE = 0.5;
 const HEADING_TAGS = "h1, h2, h3, h4, h5, h6";
 const PERMALINK_TEXT = new Set(["¶", "#", "🔗", "", "Permalink", "permalink", "Link to this heading", "Anchor"]);
 
@@ -188,6 +194,7 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
     const ident = `${$el.attr("class") ?? ""} ${$el.attr("id") ?? ""}`.trim();
     if (ident && NOISE_CLASS_RE.test(ident)) $el.remove();
   });
+  removeLinkFarms($, $root);
   // Permalink anchors (¶, #, "Link to this heading") add nothing but noise.
   $root.find("a").each((_, el) => {
     const $a = $(el);
@@ -215,6 +222,43 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
     if (ownHeader) return;
     for (const node of [el, ...$t.find("tr, td, tbody, thead, tfoot").toArray()]) (node as DomElement).tagName = "div";
   });
+}
+
+/**
+ * Detach blocks that are almost entirely link text: navigation rails, "related articles" boxes,
+ * language pickers. Prose never approaches this density, so only navigation-shaped noise goes.
+ * Sizes are computed once per node (children before parents) rather than per candidate.
+ */
+function removeLinkFarms($: CheerioAPI, $root: Cheerio<AnyNode>): void {
+  const sizes = new Map<AnyNode, { text: number; link: number }>();
+  const measure = (node: AnyNode): { text: number; link: number } => {
+    const known = sizes.get(node);
+    if (known) return known;
+    let text = 0;
+    let link = 0;
+    if (node.type === "text") {
+      text = node.data.replace(/\s+/g, "").length;
+    } else if (node.type === "tag") {
+      for (const child of node.children) {
+        const c = measure(child);
+        text += c.text;
+        link += c.link;
+      }
+      if (node.name === "a") link = text;
+    }
+    const size = { text, link };
+    sizes.set(node, size);
+    return size;
+  };
+  const farms = $root
+    .find(LINK_FARM_TAGS)
+    .toArray()
+    .filter((el) => {
+      const { text, link } = measure(el);
+      return text >= LINK_FARM_MIN_CHARS && link >= text * LINK_FARM_DENSITY;
+    });
+  // Outermost farms only: a farm inside a farm is gone with its parent.
+  for (const el of farms) if (!farms.some((other) => other !== el && $(other).find(el).length)) $(el).remove();
 }
 
 function findMain($: CheerioAPI): Cheerio<AnyNode> | null {
@@ -280,6 +324,18 @@ export function htmlSnippetToMarkdown(html: string): string {
 
 // --- main entry -----------------------------------------------------------------
 
+/**
+ * Content is never dropped by mistake: a container that holds less than half of the page's
+ * de-noised text is a sidebar or a summary, not the article — fall through to the other methods.
+ */
+function holdsMostText($: CheerioAPI, candidate: Cheerio<AnyNode>): boolean {
+  const $page = cheerio.load($.html());
+  const body = $page("body").length ? $page("body") : $page.root();
+  stripBoilerplate($page, body);
+  const pageText = visibleText(body).length;
+  return pageText === 0 || visibleText(candidate).length >= pageText * MIN_CONTENT_SHARE;
+}
+
 export function htmlToMarkdown(html: string): Extracted {
   const $ = cheerio.load(html);
   const title = pageTitle($);
@@ -309,7 +365,7 @@ export function htmlToMarkdown(html: string): Extracted {
   if (main) {
     stripBoilerplate($, main);
     const md = cleanMarkdownSource(turndown().turndown($.html(main)));
-    if (guardOk(md, dataTables($, main))) return { title, markdown: md, method: "main" };
+    if (guardOk(md, dataTables($, main)) && holdsMostText($, main)) return { title, markdown: md, method: "main" };
   }
 
   // No usable container: let Readability find the content block.

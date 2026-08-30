@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import { cleanMarkdownSource, detectShell, htmlToMarkdown, splitFrontmatter } from "../src/fetch/extract.js";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/html");
+// Documentation pages: the code-retention and size thresholds below are docs-shaped. The full fixture
+// set (threads, articles, listings) is covered by the golden snapshots instead.
+const countPre = (f: string) => (readFileSync(join(FIXTURES, f), "utf8").match(/<pre/g) ?? []).length;
 const fixtures = readdirSync(FIXTURES)
-  .filter((f) => f.endsWith(".html"))
+  .filter((f) => f.endsWith(".html") && countPre(f) >= 2)
   .sort();
 
 const SYNTHETIC = `<html><head><title>Retries — Lib Docs</title></head><body>
@@ -114,5 +117,24 @@ describe("detectShell", () => {
     expect(detectShell(`<html><body><div id="app"></div><script>render()</script></body></html>`)).toBe(true);
     expect(detectShell(`<html><body><p>Loading...</p><script src="/bundle.js"></script></body></html>`)).toBe(true);
     expect(detectShell(`<html><body><p>ok</p></body></html>`)).toBe(false);
+  });
+});
+
+describe("content selection guards", () => {
+  const prose = (n: number) => `<p>${"Plain prose sentence that says something. ".repeat(n)}</p>`;
+  it("prunes link farms (navigation rails inside <main>) but keeps prose with links in it", () => {
+    const farm = `<ul>${Array.from({ length: 12 }, (_, i) => `<li><a href="/${i}">Related article number ${i}</a></li>`).join("")}</ul>`;
+    const html = `<html><body><main><h1>Title</h1>${prose(8)}<p>See <a href="/x">this page</a> and <a href="/y">that one</a> for more.</p>${farm}</main></body></html>`;
+    const md = htmlToMarkdown(html).markdown;
+    expect(md).not.toContain("Related article number");
+    expect(md).toContain("this page");
+    expect(md).toContain("that one");
+  });
+  it("does not accept a container that holds less than half of the page's text", () => {
+    // <main> is a short summary box; the article lives outside it.
+    const html = `<html><body><main><h2>Summary</h2>${prose(3)}</main><div class="story"><h1>The article</h1>${prose(40)}</div></body></html>`;
+    const ex = htmlToMarkdown(html);
+    expect(ex.method).not.toBe("main");
+    expect(ex.markdown).toContain("The article");
   });
 });
