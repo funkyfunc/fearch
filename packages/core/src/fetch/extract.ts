@@ -79,7 +79,7 @@ const HEADING_PILCROW_RE = /^(#{1,6} .*?)\s*(?:¶|#)\s*$/gm;
 const EMPTY_ANCHOR_RE = /<a\s+(?:name|id)="[^"]*"\s*>\s*<\/a>/gi;
 const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n/;
 const MDX_COMMENT_RE = /\s*\{\/\*[\s\S]*?\*\/\}/g;
-const ZERO_WIDTH_RE = /[​‌‍⁠﻿]/g;
+const ZERO_WIDTH_RE = /\u200b|\u200c|\u200d|\u2060|\ufeff/g;
 const SKIP_LINE_RE = /^\s*(\[?Skip to (main )?content(\]\([^)]*\))?|\[?Skip to main(\]\([^)]*\))?|\s*)$/i;
 const SHELL_PATTERNS =
   /(You need to enable JavaScript to run this app|This site requires JavaScript|Please enable JavaScript|JavaScript is disabled|Loading\.\.\.$)/i;

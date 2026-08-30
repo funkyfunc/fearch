@@ -5,3 +5,5 @@ legacy-python
 tests/fixtures
 package-lock.json
 **/__golden__/
+docs/
+evals/results/

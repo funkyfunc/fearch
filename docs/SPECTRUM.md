@@ -65,7 +65,7 @@ are EU/UK law; the UK has no commercial TDM exception.
 
 ## Where this project's versions sit
 
-| | v1 (Python, `legacy-python/`) | v2 (TypeScript, `packages/core`) |
+| | v1 (Python; removed from the tree, in git history) | v2 (TypeScript, `packages/core`) |
 |---|---|---|
 | Identity | `curl_cffi` **Chrome TLS impersonation** (rung 9) | Honest UA with contact (rung 1) |
 | robots.txt | not read | honored by default for `*`, own token, and the user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); training-crawler opt-outs under `strict` (rungs 1–2); `Crawl-delay`; re-checked on cross-host redirects |

@@ -17,7 +17,7 @@ Two tools, both returning compact markdown:
   the main container, guarded by counting `<pre>` blocks in vs. fences out; Readability only as a
   fallback). Bounded output with `start_index` continuation, plus two cheaper ways to read long pages:
   `focus="phrase"` (BM25-ranked sections, no LLM) and `section="Heading"`. Docs fast paths: `Accept:
-  text/markdown` (Mintlify, Cloudflare, react.dev, Read the Docs serve markdown natively), `llms.txt`,
+text/markdown` (Mintlify, Cloudflare, react.dev, Read the Docs serve markdown natively), `llms.txt`,
   and the GitHub / PyPI / npm / StackOverflow / arXiv APIs instead of HTML. PDFs page by page.
 
 ## What "respectful" means here
@@ -25,20 +25,20 @@ Two tools, both returning compact markdown:
 Every rule is enforced in code and tested; `docs/POLICY.md` is written for security reviewers and
 `docs/SPECTRUM.md` explains the reasoning with sources.
 
-| | |
-|---|---|
-| Identity | `User-Agent: fearch/2.0.0 (+<bot-info-url>)` — a stable token operators can block, and a URL explaining it (the Googlebot/Claude-User convention); never a browser string, not configurable to one |
-| Consent | `robots.txt` (RFC 9309) honoured by default for `*`, our token, and the user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); training-crawler opt-outs are a separate `strict` policy since we don't train. **Content Signals** (`ai-input=no`) honoured. `Crawl-delay` honoured; fail-closed; re-checked on cross-host redirects |
-| Browser tier | If the plain client gets an empty JS shell or is refused, the page is opened **once** in a real Chromium (Playwright). Headless by default: bundled Chromium, Chrome's own UA, the tool named on every request in the `From:` header (RFC 9110's header for robots) and `X-Agent:`; robots.txt checked under our token first. Headed on request: your installed Chrome in a visible window, with a human handoff for challenges. In every mode: no stealth, no fingerprint tricks, `navigator.webdriver` left true, no CAPTCHA solving, no credentials held by the tool. See *Choosing your posture*. |
-| Refusals | If the browser is refused too (CAPTCHA, challenge, paywall, login, still a shell) → a structured **Diagnosis** (kind, attempts, what to do instead). No retries with different headers, IPs, proxies, or cookies. |
-| Politeness | 1 connection per host, ≥1 s between requests, `Retry-After` obeyed, conditional GETs, a per-session budget that refuses with an explanation |
-| Egress | Page fetches go direct (through `HTTPS_PROXY` if set). No reader proxies. Wayback only via explicit `via="archive"` for pages that are *gone*, never for blocked ones. Search queries go to the named provider only. No telemetry. |
-| Safety | SSRF guard (private/loopback/metadata/DNS-rebinding, re-validated per redirect hop), 10 MB / 30 s / 6-hop caps, domain allow/deny lists, JSON audit log |
-| Signals | `X-Robots-Tag`, `noai`, RSL/AIPREF/TDM headers are captured and shown in the output header |
+|              |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity     | `User-Agent: fearch/2.0.0 (+<bot-info-url>)` — a stable token operators can block, and a URL explaining it (the Googlebot/Claude-User convention); never a browser string, not configurable to one                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Consent      | `robots.txt` (RFC 9309) honoured by default for `*`, our token, and the user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); training-crawler opt-outs are a separate `strict` policy since we don't train. **Content Signals** (`ai-input=no`) honoured. `Crawl-delay` honoured; fail-closed; re-checked on cross-host redirects                                                                                                                                                                                                                                                             |
+| Browser tier | If the plain client gets an empty JS shell or is refused, the page is opened **once** in a real Chromium (Playwright). Headless by default: bundled Chromium, Chrome's own UA, the tool named on every request in the `From:` header (RFC 9110's header for robots) and `X-Agent:`; robots.txt checked under our token first. Headed on request: your installed Chrome in a visible window, with a human handoff for challenges. In every mode: no stealth, no fingerprint tricks, `navigator.webdriver` left true, no CAPTCHA solving, no credentials held by the tool. See _Choosing your posture_. |
+| Refusals     | If the browser is refused too (CAPTCHA, challenge, paywall, login, still a shell) → a structured **Diagnosis** (kind, attempts, what to do instead). No retries with different headers, IPs, proxies, or cookies.                                                                                                                                                                                                                                                                                                                                                                                     |
+| Politeness   | 1 connection per host, ≥1 s between requests, `Retry-After` obeyed, conditional GETs, a per-session budget that refuses with an explanation                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Egress       | Page fetches go direct (through `HTTPS_PROXY` if set). No reader proxies. Wayback only via explicit `via="archive"` for pages that are _gone_, never for blocked ones. Search queries go to the named provider only. No telemetry.                                                                                                                                                                                                                                                                                                                                                                    |
+| Safety       | SSRF guard (private/loopback/metadata/DNS-rebinding, re-validated per redirect hop), 10 MB / 30 s / 6-hop caps, domain allow/deny lists, JSON audit log                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Signals      | `X-Robots-Tag`, `noai`, RSL/AIPREF/TDM headers are captured and shown in the output header                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 The scraping approach most fetch servers use (browser UA rotation, TLS impersonation, CAPTCHA solving)
 is deliberately absent, and there is no hidden "personal mode" that adds it back. The one way to reach
-engines that don't permit automated clients is the *user-agent posture* below — your real Chrome, in
+engines that don't permit automated clients is the _user-agent posture_ below — your real Chrome, in
 the open, with you passing any check yourself.
 
 ## Install
@@ -70,7 +70,7 @@ Client configuration (any MCP client that supports stdio servers):
 Claude Code: `claude mcp add fearch -- node /absolute/path/to/fearch/packages/core/dist/cli.js`
 
 No identity configuration is required. The User-Agent already carries a product name and a URL (this
-README's *Bot info* section), which is the same convention Googlebot, Bingbot and Claude-User use. If your
+README's _Bot info_ section), which is the same convention Googlebot, Bingbot and Claude-User use. If your
 organisation publishes its own bot page, point `FEARCH_UA_INFO_URL` at it; `FEARCH_UA_CONTACT` is
 optional and most deployments won't set it.
 
@@ -123,15 +123,15 @@ browser tier).
 
 Two decisions cover nearly everyone, and both are flags in your MCP config's `args`:
 
-| | **Crawler posture** (default) | **User-agent posture** |
-|---|---|---|
-| Idea | A self-identifying automated client that a person triggered. | The person's own browser, driven on their behalf at human pace. |
-| Who else does it | Anthropic's `Claude-User`; Cloudflare's "well-behaved bot" norms | OpenAI's `ChatGPT-User` stance; every computer-use product (Claude in Chrome, Playwright MCP, Browser Use) |
-| Flags | *(none)* | `--robots off --handoff`, or `--robots off --browser extension` after `fearch extension install` |
-| robots.txt | honoured | not consulted, like a browser |
-| Browser | bundled Chromium, headless, names the tool in `From`/`X-Agent` | your installed Chrome in a visible window; challenges are handed to you, never solved |
-| Search engines | DuckDuckGo lite (the one engine whose robots.txt allows it) | Google first, then DuckDuckGo |
-| What never changes | pace (1 connection/host, ≥1 s gaps, session budget), refusals are final, no stealth, no CAPTCHA solving, no proxies, no credentials held by the tool, SSRF guard, audit log | same |
+|                    | **Crawler posture** (default)                                                                                                                                               | **User-agent posture**                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Idea               | A self-identifying automated client that a person triggered.                                                                                                                | The person's own browser, driven on their behalf at human pace.                                            |
+| Who else does it   | Anthropic's `Claude-User`; Cloudflare's "well-behaved bot" norms                                                                                                            | OpenAI's `ChatGPT-User` stance; every computer-use product (Claude in Chrome, Playwright MCP, Browser Use) |
+| Flags              | _(none)_                                                                                                                                                                    | `--robots off --handoff`, or `--robots off --browser extension` after `fearch extension install`           |
+| robots.txt         | honoured                                                                                                                                                                    | not consulted, like a browser                                                                              |
+| Browser            | bundled Chromium, headless, names the tool in `From`/`X-Agent`                                                                                                              | your installed Chrome in a visible window; challenges are handed to you, never solved                      |
+| Search engines     | DuckDuckGo lite (the one engine whose robots.txt allows it)                                                                                                                 | Google first, then DuckDuckGo                                                                              |
+| What never changes | pace (1 connection/host, ≥1 s gaps, session budget), refusals are final, no stealth, no CAPTCHA solving, no proxies, no credentials held by the tool, SSRF guard, audit log | same                                                                                                       |
 
 ```json
 { "mcpServers": { "fearch": { "command": "npx", "args": ["fearch", "--robots", "off", "--handoff"] } } }
@@ -141,7 +141,7 @@ Two decisions cover nearly everyone, and both are flags in your MCP config's `ar
 serves plain clients a bot-check page) → Exa's keyless endpoint, only with `--exa` → first-party APIs.
 Each is tried once per call. An engine's bot-check page is that engine's "no" (10-minute cooldown). With `--handoff` the
 check is shown to you instead — pass it and the search continues; ignore it and the chain moves on.
-Google and Bing are only *eligible* with `--robots off`, because their robots.txt disallows `/search`;
+Google and Bing are only _eligible_ with `--robots off`, because their robots.txt disallows `/search`;
 the tool says so in the results when a listed engine was skipped.
 
 **The extension tier — your own Chrome, nothing automated.** `--browser extension` opens pages in the
@@ -217,49 +217,49 @@ the browser and one search.
 
 Every flag has an environment-variable twin (flags win). The rest are tuning knobs most installs never touch.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `FEARCH_UA_INFO_URL` | this README's Bot info section | URL in the User-Agent; point it at your org's bot page if you have one. |
-| `FEARCH_UA_CONTACT` | – | Optional contact appended to the User-Agent. Not needed. |
-| `FEARCH_MAX_CHARS` | `12000` | Default `fetch` budget (≈3k tokens). |
-| `FEARCH_TIMEOUT_MS` / `FEARCH_MAX_BYTES` | `30000` / 10 MB | Per-request caps. |
-| `FEARCH_PER_HOST_DELAY_MS` | `1000` | Minimum gap between requests to one host (Crawl-delay overrides upward). |
-| `FEARCH_BUDGET_COUNT` / `FEARCH_BUDGET_WINDOW_MS` | `60` / 10 min | Per-session fetch budget. |
-| `FEARCH_ALLOW_DOMAINS` / `FEARCH_DENY_DOMAINS` | – | Comma-separated host lists (subdomains included). |
-| `FEARCH_AUDIT_LOG` | `stderr` | `stderr`, `off`, or a file path; one JSON line per request. |
-| `FEARCH_CACHE_DIR` | `~/.cache/fearch` | sqlite cache. `FEARCH_NO_CACHE=1` disables it. |
-| `FEARCH_BROWSER` | `headless` | `headless`: bundled Chromium, no window. `headed`: the Chrome already installed on the machine, in a visible window with a tool-owned profile that persists (see *Choosing your posture*). `off`: no browser tier. |
-| `FEARCH_BROWSER_IDENTITY` | `header` | `header`: stock Chrome UA + `From`/`X-Agent` headers naming the tool. `none`: plain Chrome, no identifying headers. `navigator.webdriver` is never hidden in any mode. |
-| `FEARCH_HANDOFF` | off | Headed only. When a page or engine shows a challenge, the tab is brought to the front and the tool waits (`FEARCH_HANDOFF_TIMEOUT_MS`, default 180 s) for *you* to deal with it, then continues with what you were shown. The tool never solves anything. |
-| `FEARCH_BROWSER_SESSION` | off | Headed only. Send cookies you created in the tool's browser profile (by logging in or clicking through something in that window) when reading ordinary pages. Such reads are labelled `your session`. Engine pages always use the profile. |
-| `FEARCH_ENGINES` | `duckduckgo` | Search-engine result pages the browser may open, in preference order: `duckduckgo`, `bing`, `google`. Only engines whose robots.txt permits result pages are used unless `FEARCH_ROBOTS_POLICY=off` (`doctor` shows which are listed but unused, and why). |
-| `FEARCH_BROWSER_TIMEOUT_MS` | `20000` | Navigation timeout; on timeout, whatever rendered is harvested. |
-| `FEARCH_ROBOTS_POLICY` | `default` | Which robots.txt groups apply besides `*` and our token: `default` = user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); `strict` = also training-crawler opt-outs (`GPTBot`, `CCBot`, `Google-Extended`…); `minimal` = none; `off` = robots.txt not consulted at all (the user-agent posture — a browser doesn't read it either). Stamped on every result. |
-| `FEARCH_ALLOW_PRIVATE` | off | Allow localhost/private-network URLs. |
-| `HTTPS_PROXY` / `NO_PROXY` | – | Corporate egress proxy (standard variables). |
-| `FEARCH_SEARCH_MODE` | `all` | `first-party`: no third-party search services — queries only reach the sites they concern (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News, arXiv, OpenAlex, Semantic Scholar, Marginalia). `off`: no search tool. |
-| `FEARCH_EXA` / `FEARCH_EXA_HOSTED_URL` | off / `https://mcp.exa.ai/mcp` | Twin of `--exa`; the URL can point at a self-hosted or keyed Exa MCP endpoint. |
-| `GITHUB_TOKEN` | – | Raises GitHub API limits and enables code search. |
-| `FEARCH_LOG_LEVEL` | `info` | stderr logging. |
+| Variable                                          | Default                        | Purpose                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FEARCH_UA_INFO_URL`                              | this README's Bot info section | URL in the User-Agent; point it at your org's bot page if you have one.                                                                                                                                                                                                                                                                                              |
+| `FEARCH_UA_CONTACT`                               | –                              | Optional contact appended to the User-Agent. Not needed.                                                                                                                                                                                                                                                                                                             |
+| `FEARCH_MAX_CHARS`                                | `12000`                        | Default `fetch` budget (≈3k tokens).                                                                                                                                                                                                                                                                                                                                 |
+| `FEARCH_TIMEOUT_MS` / `FEARCH_MAX_BYTES`          | `30000` / 10 MB                | Per-request caps.                                                                                                                                                                                                                                                                                                                                                    |
+| `FEARCH_PER_HOST_DELAY_MS`                        | `1000`                         | Minimum gap between requests to one host (Crawl-delay overrides upward).                                                                                                                                                                                                                                                                                             |
+| `FEARCH_BUDGET_COUNT` / `FEARCH_BUDGET_WINDOW_MS` | `60` / 10 min                  | Per-session fetch budget.                                                                                                                                                                                                                                                                                                                                            |
+| `FEARCH_ALLOW_DOMAINS` / `FEARCH_DENY_DOMAINS`    | –                              | Comma-separated host lists (subdomains included).                                                                                                                                                                                                                                                                                                                    |
+| `FEARCH_AUDIT_LOG`                                | `stderr`                       | `stderr`, `off`, or a file path; one JSON line per request.                                                                                                                                                                                                                                                                                                          |
+| `FEARCH_CACHE_DIR`                                | `~/.cache/fearch`              | sqlite cache. `FEARCH_NO_CACHE=1` disables it.                                                                                                                                                                                                                                                                                                                       |
+| `FEARCH_BROWSER`                                  | `headless`                     | `headless`: bundled Chromium, no window. `headed`: the Chrome already installed on the machine, in a visible window with a tool-owned profile that persists (see _Choosing your posture_). `off`: no browser tier.                                                                                                                                                   |
+| `FEARCH_BROWSER_IDENTITY`                         | `header`                       | `header`: stock Chrome UA + `From`/`X-Agent` headers naming the tool. `none`: plain Chrome, no identifying headers. `navigator.webdriver` is never hidden in any mode.                                                                                                                                                                                               |
+| `FEARCH_HANDOFF`                                  | off                            | Headed only. When a page or engine shows a challenge, the tab is brought to the front and the tool waits (`FEARCH_HANDOFF_TIMEOUT_MS`, default 180 s) for _you_ to deal with it, then continues with what you were shown. The tool never solves anything.                                                                                                            |
+| `FEARCH_BROWSER_SESSION`                          | off                            | Headed only. Send cookies you created in the tool's browser profile (by logging in or clicking through something in that window) when reading ordinary pages. Such reads are labelled `your session`. Engine pages always use the profile.                                                                                                                           |
+| `FEARCH_ENGINES`                                  | `duckduckgo`                   | Search-engine result pages the browser may open, in preference order: `duckduckgo`, `bing`, `google`. Only engines whose robots.txt permits result pages are used unless `FEARCH_ROBOTS_POLICY=off` (`doctor` shows which are listed but unused, and why).                                                                                                           |
+| `FEARCH_BROWSER_TIMEOUT_MS`                       | `20000`                        | Navigation timeout; on timeout, whatever rendered is harvested.                                                                                                                                                                                                                                                                                                      |
+| `FEARCH_ROBOTS_POLICY`                            | `default`                      | Which robots.txt groups apply besides `*` and our token: `default` = user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); `strict` = also training-crawler opt-outs (`GPTBot`, `CCBot`, `Google-Extended`…); `minimal` = none; `off` = robots.txt not consulted at all (the user-agent posture — a browser doesn't read it either). Stamped on every result. |
+| `FEARCH_ALLOW_PRIVATE`                            | off                            | Allow localhost/private-network URLs.                                                                                                                                                                                                                                                                                                                                |
+| `HTTPS_PROXY` / `NO_PROXY`                        | –                              | Corporate egress proxy (standard variables).                                                                                                                                                                                                                                                                                                                         |
+| `FEARCH_SEARCH_MODE`                              | `all`                          | `first-party`: no third-party search services — queries only reach the sites they concern (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News, arXiv, OpenAlex, Semantic Scholar, Marginalia). `off`: no search tool.                                                                                                                               |
+| `FEARCH_EXA` / `FEARCH_EXA_HOSTED_URL`            | off / `https://mcp.exa.ai/mcp` | Twin of `--exa`; the URL can point at a self-hosted or keyed Exa MCP endpoint.                                                                                                                                                                                                                                                                                       |
+| `GITHUB_TOKEN`                                    | –                              | Raises GitHub API limits and enables code search.                                                                                                                                                                                                                                                                                                                    |
+| `FEARCH_LOG_LEVEL`                                | `info`                         | stderr logging.                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Search providers by posture
 
-| Provider | Index | Free | Key | Posture |
-|---|---|---|---|---|
-| DuckDuckGo lite via the browser tier (default) | Bing-syndicated | keyless; DDG shows a bot-check page when it objects — treated as final, 10-min cooldown (or handed to you in headed mode) | no | 🟡 the only engine whose robots.txt permits its result pages (`/lite/`, `/html/`) and whose Terms have no automation clause; DDG doesn't log searches |
-| Bing / Google result pages via the browser tier (`FEARCH_ENGINES=bing,google` **and** `FEARCH_ROBOTS_POLICY=off`) | own indexes | keyless; Google shows an IP-level "unusual traffic" check that only a person can pass (headed + handoff) | no | 🟠 as a crawler (both `Disallow: /search`; both ToS forbid automated queries); the user-agent posture treats them as pages a person's browser opens at human pace. Your choice, stamped on every result; never used unless both dials are set |
-| Exa hosted MCP (`--exa`, off by default) | Exa's own | casual-use tier: roughly a few dozen queries per hour per IP, then rate-limited for a while | no | 🟢 a vendor's own keyless offering — but every query goes to, and is logged by, a third-party company, which is why it is not on by default |
-| GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News (Algolia), arXiv, OpenAlex, Semantic Scholar | first-party, keyless | yes | no | 🟢 (Stack Exchange and Wikipedia content is CC BY-SA — attribution shown) |
-| Marginalia (independent index, shared public key) | first-party | yes, shared pool | no | 🟢 non-commercial CC BY-NC-SA results |
-**Honest note on "free and keyless":** DuckDuckGo answers a real browser from a clean IP but shows a
-bot-check page once it decides an IP is automated (heavy testing from one machine trips it for a while);
-we treat that page as "no", cool the provider down, and say so in the results. Under the default
-posture we do **not** query Google, Bing, Brave, Mojeek or Startpage — their robots.txt forbid result
-pages to all agents — nor hide that the browser is automated (`navigator.webdriver` is left true, nothing
-is spoofed). The first-party APIs are good for developer questions and weak for general prose. Searches
-are cached 15 minutes, so repeats are free. There are no keyed providers: a tool chosen for being
-keyless should not grow a config table of `*_API_KEY` rows. Keyed adapters people actually want
-(Gemini's Google-grounded search has a free tier) are welcome as pull requests.
+| Provider                                                                                                          | Index                | Free                                                                                                                      | Key | Posture                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DuckDuckGo lite via the browser tier (default)                                                                    | Bing-syndicated      | keyless; DDG shows a bot-check page when it objects — treated as final, 10-min cooldown (or handed to you in headed mode) | no  | 🟡 the only engine whose robots.txt permits its result pages (`/lite/`, `/html/`) and whose Terms have no automation clause; DDG doesn't log searches                                                                                         |
+| Bing / Google result pages via the browser tier (`FEARCH_ENGINES=bing,google` **and** `FEARCH_ROBOTS_POLICY=off`) | own indexes          | keyless; Google shows an IP-level "unusual traffic" check that only a person can pass (headed + handoff)                  | no  | 🟠 as a crawler (both `Disallow: /search`; both ToS forbid automated queries); the user-agent posture treats them as pages a person's browser opens at human pace. Your choice, stamped on every result; never used unless both dials are set |
+| Exa hosted MCP (`--exa`, off by default)                                                                          | Exa's own            | casual-use tier: roughly a few dozen queries per hour per IP, then rate-limited for a while                               | no  | 🟢 a vendor's own keyless offering — but every query goes to, and is logged by, a third-party company, which is why it is not on by default                                                                                                   |
+| GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News (Algolia), arXiv, OpenAlex, Semantic Scholar  | first-party, keyless | yes                                                                                                                       | no  | 🟢 (Stack Exchange and Wikipedia content is CC BY-SA — attribution shown)                                                                                                                                                                     |
+| Marginalia (independent index, shared public key)                                                                 | first-party          | yes, shared pool                                                                                                          | no  | 🟢 non-commercial CC BY-NC-SA results                                                                                                                                                                                                         |
+| **Honest note on "free and keyless":** DuckDuckGo answers a real browser from a clean IP but shows a              |
+| bot-check page once it decides an IP is automated (heavy testing from one machine trips it for a while);          |
+| we treat that page as "no", cool the provider down, and say so in the results. Under the default                  |
+| posture we do **not** query Google, Bing, Brave, Mojeek or Startpage — their robots.txt forbid result             |
+| pages to all agents — nor hide that the browser is automated (`navigator.webdriver` is left true, nothing         |
+| is spoofed). The first-party APIs are good for developer questions and weak for general prose. Searches           |
+| are cached 15 minutes, so repeats are free. There are no keyed providers: a tool chosen for being                 |
+| keyless should not grow a config table of `*_API_KEY` rows. Keyed adapters people actually want                   |
+| (Gemini's Google-grounded search has a free tier) are welcome as pull requests.                                   |
 
 ## Tool reference
 
@@ -318,18 +318,21 @@ Diagnosis:
 ## Development
 
 ```bash
-npm test                  # unit + fixture tests (no network; includes a real headless-Chromium render)
+npm test                  # unit + fixture + golden tests (no network; includes a real headless-Chromium render)
 npm run test:live         # live smoke tests (network)
 npm run eval              # evals/questions.json: search → fetch(focus) → grade; writes evals/results/latest.json
 npm run typecheck
 ```
 
-`tests/fixtures/html/` holds real pages (Sphinx, MDN, Read the Docs, MkDocs, Docusaurus, Medium); the
-extraction test asserts ≥80% code-block retention on each — the property heuristic extractors fail.
+`tests/fixtures/html/` holds twelve real pages of different kinds (Sphinx, MDN, Read the Docs, MkDocs,
+Docusaurus, Medium, Wikipedia, PEP 8, a GitHub repo, Hacker News, a news article). Two layers of tests
+cover conversion: property tests (≥80% code-block retention on every documentation page — the property
+heuristic extractors fail) and golden files (`packages/core/tests/__golden__/` snapshots the full
+converter output per fixture; `npx vitest run -u` accepts a reviewed change).
 
-`legacy-python/` is the earlier Python implementation (v1). It scrapes search engines with browser TLS
-impersonation and routes around blocks; it is kept for reference and personal use only and is not part
-of the build.
+Tooling: Prettier formats (`npm run format`), ESLint lints (`npm run lint`), and Husky enforces both on
+commit and the type-check plus fast tests on push; CI runs the full suite. `npm run typecheck` and
+`npm test` work standalone.
 
 ## Docs
 
