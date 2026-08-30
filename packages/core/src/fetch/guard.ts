@@ -14,7 +14,16 @@ export class BlockedURL extends Error {
 }
 
 const BLOCKED_HOSTNAMES = new Set(["localhost", "metadata.google.internal", "metadata", "instance-data"]);
-const BLOCKED_SUFFIXES = [".local", ".localhost", ".internal", ".nip.io", ".sslip.io", ".1u.ms", ".xip.io", ".localtest.me"];
+const BLOCKED_SUFFIXES = [
+  ".local",
+  ".localhost",
+  ".internal",
+  ".nip.io",
+  ".sslip.io",
+  ".1u.ms",
+  ".xip.io",
+  ".localtest.me",
+];
 
 function v4ToInt(ip: string): number {
   return ip.split(".").reduce((acc, o) => ((acc << 8) + Number(o)) >>> 0, 0);
@@ -40,7 +49,7 @@ const V4_PRIVATE: Array<[string, number]> = [
 
 function inV4(ip: string, base: string, bits: number): boolean {
   const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-  return ((v4ToInt(ip) & mask) >>> 0) === ((v4ToInt(base) & mask) >>> 0);
+  return (v4ToInt(ip) & mask) >>> 0 === (v4ToInt(base) & mask) >>> 0;
 }
 
 export function isPrivateAddress(ip: string): boolean {
@@ -106,7 +115,8 @@ export async function assertPublicUrl(raw: string, opts: GuardOptions = {}): Pro
     throw new BlockedURL(`Refusing to fetch private host '${host}' (set FEARCH_ALLOW_PRIVATE=1 to allow).`);
   }
   if (isIP(host)) {
-    if (isPrivateAddress(host)) throw new BlockedURL(`Refusing to fetch private address ${host} (set FEARCH_ALLOW_PRIVATE=1 to allow).`);
+    if (isPrivateAddress(host))
+      throw new BlockedURL(`Refusing to fetch private address ${host} (set FEARCH_ALLOW_PRIVATE=1 to allow).`);
     return url;
   }
   let addrs: Array<{ address: string }>;

@@ -10,7 +10,7 @@
 import { Readability } from "@mozilla/readability";
 import * as cheerio from "cheerio";
 import type { Cheerio, CheerioAPI } from "cheerio";
-import type { AnyNode } from "domhandler";
+import type { AnyNode, Element as DomElement } from "domhandler";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 // turndown-plugin-gfm ships no types
@@ -25,10 +25,28 @@ export interface Extracted {
 }
 
 const MAIN_SELECTORS = [
-  "main", "[role=main]", "article", "#main-content", "#content-main", "#main", "#content", "#docs-content",
-  ".markdown-body", ".theme-doc-markdown", ".rst-content", ".md-content", ".docs-content", ".doc-content",
-  ".document", ".post-content", ".entry-content", ".article-body", ".article-content", ".main-content",
-  ".content", ".prose",
+  "main",
+  "[role=main]",
+  "article",
+  "#main-content",
+  "#content-main",
+  "#main",
+  "#content",
+  "#docs-content",
+  ".markdown-body",
+  ".theme-doc-markdown",
+  ".rst-content",
+  ".md-content",
+  ".docs-content",
+  ".doc-content",
+  ".document",
+  ".post-content",
+  ".entry-content",
+  ".article-body",
+  ".article-content",
+  ".main-content",
+  ".content",
+  ".prose",
 ];
 
 const REMOVE_SELECTORS =
@@ -57,7 +75,8 @@ const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n/;
 const MDX_COMMENT_RE = /\s*\{\/\*[\s\S]*?\*\/\}/g;
 const ZERO_WIDTH_RE = /[​‌‍⁠﻿]/g;
 const SKIP_LINE_RE = /^\s*(\[?Skip to (main )?content(\]\([^)]*\))?|\[?Skip to main(\]\([^)]*\))?|\s*)$/i;
-const SHELL_PATTERNS = /(You need to enable JavaScript to run this app|This site requires JavaScript|Please enable JavaScript|JavaScript is disabled|Loading\.\.\.$)/i;
+const SHELL_PATTERNS =
+  /(You need to enable JavaScript to run this app|This site requires JavaScript|Please enable JavaScript|JavaScript is disabled|Loading\.\.\.$)/i;
 
 // --- turndown ------------------------------------------------------------------
 
@@ -91,7 +110,19 @@ function turndown(): TurndownService {
   td.use(gfm);
   // Do not escape markdown punctuation in prose — LLM readers don't need it and it adds noise.
   td.escape = (s: string) => s;
-  const dropTags = new Set(["script", "style", "noscript", "iframe", "svg", "canvas", "template", "video", "audio", "source", "picture"]);
+  const dropTags = new Set([
+    "script",
+    "style",
+    "noscript",
+    "iframe",
+    "svg",
+    "canvas",
+    "template",
+    "video",
+    "audio",
+    "source",
+    "picture",
+  ]);
   td.remove((node) => dropTags.has(node.nodeName.toLowerCase()));
   td.addRule("images", { filter: "img", replacement: () => "" });
   td.addRule("pre", {
@@ -120,7 +151,10 @@ export function detectShell(html: string): boolean {
   const $ = cheerio.load(html);
   const scripts = $("script[src], script:not([type])").length;
   // An empty client-side mount point (React/Vue/Next/Nuxt/Angular) is the signature of a shell.
-  const emptyMount = $("#app, #root, #__next, #__nuxt, #___gatsby, [data-reactroot], [ng-version], app-root").filter((_, e) => !$(e).text().trim()).length > 0;
+  const emptyMount =
+    $("#app, #root, #__next, #__nuxt, #___gatsby, [data-reactroot], [ng-version], app-root").filter(
+      (_, e) => !$(e).text().trim(),
+    ).length > 0;
   $("script, style, noscript").remove();
   const text = visibleText($("body").length ? $("body") : $.root());
   // A short page is only a shell if scripts are doing the rendering; a short static page
@@ -160,23 +194,26 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
     if (PERMALINK_TEXT.has($a.text().trim()) && !$a.find("img").length) $a.remove();
   });
   // Links inside headings become plain heading text.
-  $root.find(HEADING_TAGS).find("a").each((_, el) => {
-    const $a = $(el);
-    $a.replaceWith($a.contents());
-  });
+  $root
+    .find(HEADING_TAGS)
+    .find("a")
+    .each((_, el) => {
+      const $a = $(el);
+      $a.replaceWith($a.contents());
+    });
   // Layout tables (no header row) — Hacker News, old forums, email-style pages — would otherwise pass
   // through Turndown as raw HTML. Unwrap them into block elements so their text converts normally.
   $root.find("table").each((_, el) => {
     const $t = $(el);
     // A data table has a header row belonging to *this* table (not a nested one): leave it to GFM.
-    const ownHeader = $t.children("thead").length > 0 || $t.find("th").toArray().some((th) => $(th).closest("table")[0] === el);
+    const ownHeader =
+      $t.children("thead").length > 0 ||
+      $t
+        .find("th")
+        .toArray()
+        .some((th) => $(th).closest("table")[0] === el);
     if (ownHeader) return;
-    $t.find("tr, td, tbody, thead, tfoot").each((_, cell) => {
-      (cell as unknown as { tagName: string; name: string }).tagName = "div";
-      (cell as unknown as { tagName: string; name: string }).name = "div";
-    });
-    (el as unknown as { tagName: string; name: string }).tagName = "div";
-    (el as unknown as { tagName: string; name: string }).name = "div";
+    for (const node of [el, ...$t.find("tr, td, tbody, thead, tfoot").toArray()]) (node as DomElement).tagName = "div";
   });
 }
 
@@ -223,7 +260,10 @@ export function splitFrontmatter(md: string): { meta: Record<string, string>; bo
   for (const line of m[1].split("\n")) {
     if (line.includes(":") && !/^[\s-]/.test(line)) {
       const [k, ...rest] = line.split(":");
-      meta[k.trim().toLowerCase()] = rest.join(":").trim().replace(/^["']|["']$/g, "");
+      meta[k.trim().toLowerCase()] = rest
+        .join(":")
+        .trim()
+        .replace(/^["']|["']$/g, "");
     }
   }
   return { meta, body: md.slice(m[0].length) };
@@ -240,7 +280,7 @@ export function htmlSnippetToMarkdown(html: string): string {
 
 // --- main entry -----------------------------------------------------------------
 
-export function htmlToMarkdown(html: string, url?: string): Extracted {
+export function htmlToMarkdown(html: string): Extracted {
   const $ = cheerio.load(html);
   const title = pageTitle($);
   const preTotal = $("pre").length;
@@ -250,7 +290,14 @@ export function htmlToMarkdown(html: string, url?: string): Extracted {
     root
       .find("table")
       .toArray()
-      .filter((t) => $x(t).children("thead").length || $x(t).find("th").toArray().some((th) => $x(th).closest("table")[0] === t)).length;
+      .filter(
+        (t) =>
+          $x(t).children("thead").length ||
+          $x(t)
+            .find("th")
+            .toArray()
+            .some((th) => $x(th).closest("table")[0] === t),
+      ).length;
   const tableCount = (md: string) => (md.match(/^\s*\|?\s*:?-{3,}/gm) ?? []).length;
   const guardOk = (md: string, tableTotal: number) =>
     md.trim().length >= 200 &&
@@ -275,7 +322,8 @@ export function htmlToMarkdown(html: string, url?: string): Extracted {
       const root = $a("body").length ? $a("body") : $a.root();
       stripBoilerplate($a, root);
       const md = cleanMarkdownSource(turndown().turndown($a.html(root)));
-      if (guardOk(md, dataTables($a, root))) return { title: title || article.title || "", markdown: md, method: "readability" };
+      if (guardOk(md, dataTables($a, root)))
+        return { title: title || article.title || "", markdown: md, method: "readability" };
     }
   } catch {
     // fall through
@@ -286,7 +334,6 @@ export function htmlToMarkdown(html: string, url?: string): Extracted {
   const body = $2("body").length ? $2("body") : $2.root();
   stripBoilerplate($2, body);
   const md = cleanMarkdownSource(turndown().turndown($2.html(body)));
-  void url;
   return { title, markdown: md, method: "body" };
 }
 

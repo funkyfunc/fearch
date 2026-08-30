@@ -13,8 +13,12 @@ describe("transport", () => {
       if (req.url === "/redir-same") return res.writeHead(302, { location: "/target" }).end();
       if (req.url === "/redir-cross") return res.writeHead(302, { location: `http://localhost:${port}/target` }).end();
       if (req.url === "/loop") return res.writeHead(302, { location: "/loop" }).end();
-      if (req.url === "/big") return res.writeHead(200, { "content-type": "text/plain", "content-length": "99999999" }).end("x");
-      if (req.url === "/target") return res.writeHead(200, { "content-type": "text/plain" }).end(`ok from ${host} ua=${req.headers["user-agent"]}`);
+      if (req.url === "/big")
+        return res.writeHead(200, { "content-type": "text/plain", "content-length": "99999999" }).end("x");
+      if (req.url === "/target")
+        return res
+          .writeHead(200, { "content-type": "text/plain" })
+          .end(`ok from ${host} ua=${req.headers["user-agent"]}`);
       res.writeHead(404).end();
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -37,7 +41,9 @@ describe("transport", () => {
 
   it("consults the callback before a cross-host redirect and can refuse it", async () => {
     const seen: string[] = [];
-    const r = await t().get(`http://127.0.0.1:${port}/redir-cross`, { beforeCrossHostRedirect: async (u) => void seen.push(u) });
+    const r = await t().get(`http://127.0.0.1:${port}/redir-cross`, {
+      beforeCrossHostRedirect: async (u) => void seen.push(u),
+    });
     expect(seen).toEqual([`http://localhost:${port}/target`]);
     expect(r.finalUrl).toBe(`http://localhost:${port}/target`);
     await expect(
@@ -57,11 +63,17 @@ describe("transport", () => {
 
 describe("network error descriptions", () => {
   it("names the NODE_EXTRA_CA_CERTS fix for TLS-interception failures and classifies the rest", () => {
-    const tls = Object.assign(new Error("fetch failed"), { cause: { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE", message: "unable to verify the first certificate" } });
+    const tls = Object.assign(new Error("fetch failed"), {
+      cause: { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE", message: "unable to verify the first certificate" },
+    });
     expect(isTlsError(tls)).toBe(true);
     expect(describeNetworkError(tls)).toMatch(/TLS certificate not trusted.*NODE_EXTRA_CA_CERTS/);
-    expect(describeNetworkError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe("DNS lookup failed");
-    expect(describeNetworkError(Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } }))).toBe("connection refused");
+    expect(describeNetworkError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe(
+      "DNS lookup failed",
+    );
+    expect(describeNetworkError(Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } }))).toBe(
+      "connection refused",
+    );
     expect(isTlsError(new Error("fetch failed"))).toBe(false);
   });
 });

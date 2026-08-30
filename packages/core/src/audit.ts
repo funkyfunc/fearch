@@ -18,7 +18,9 @@ export interface AuditEvent {
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
 
 export class Audit {
-  constructor(private readonly settings: Pick<Settings, "auditLog" | "logLevel"> & Partial<Pick<Settings, "logFile">>) {}
+  constructor(
+    private readonly settings: Pick<Settings, "auditLog" | "logLevel"> & Partial<Pick<Settings, "logFile">>,
+  ) {}
 
   private tee(line: string): void {
     if (!this.settings.logFile) return;

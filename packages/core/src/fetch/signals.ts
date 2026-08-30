@@ -32,7 +32,8 @@ export function parseContentSignal(value: string | undefined | null): ContentSig
 export function knownLicence(host: string): string | null {
   const h = host.toLowerCase();
   if (/(^|\.)wikipedia\.org$/.test(h)) return "CC BY-SA 4.0 (Wikipedia) — attribute and link when reusing";
-  if (/(^|\.)stackoverflow\.com$|(^|\.)stackexchange\.com$/.test(h)) return "CC BY-SA 4.0 (Stack Exchange) — attribute authors and link when reusing";
+  if (/(^|\.)stackoverflow\.com$|(^|\.)stackexchange\.com$/.test(h))
+    return "CC BY-SA 4.0 (Stack Exchange) — attribute authors and link when reusing";
   if (h === "developer.mozilla.org") return "CC BY-SA 2.5 prose, CC0 code samples (MDN)";
   return null;
 }

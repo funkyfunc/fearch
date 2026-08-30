@@ -4,7 +4,7 @@
  *
  * - `headless` (default): the bundled Chromium in new-headless mode. No cookies survive the process.
  * - `headed`: the Chrome already installed on the machine (bundled Chromium if none), in a visible
- *   window. The person can see every tab the tool opens, and with `FEARCH_HANDOFF=1` is handed a
+ *   window. The person can see every tab the tool opens, and with `--handoff` is handed a
  *   challenge page to deal with themselves — the tool waits, then continues with what they were
  *   shown. A tool-owned profile (cookies/storage) persists under the cache dir so a passed check or a
  *   login the person chose to do in that window is remembered. It is never the person's own Chrome
@@ -51,7 +51,7 @@ export interface BrowserTier {
 export interface RenderOptions {
   /** Use the persistent tool profile (headed). Engine pages always do; page reads only with browserSession. */
   session?: boolean;
-  /** Allow the human handoff on a challenge (headed + FEARCH_HANDOFF). Default true. */
+  /** Allow the human handoff on a challenge (headed + --handoff). Default true. */
   handoff?: boolean;
   /** Engine-specific challenge detector (gets the current URL too); default is the generic one. */
   isChallenge?: (html: string, status: number, url: string) => boolean;
@@ -133,9 +133,12 @@ export class BrowserRenderer implements BrowserTier {
   /** Free the ~200 MB browser process after inactivity; it relaunches lazily (state is on disk). */
   private scheduleIdleClose(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      if (this.inFlight === 0) void this.close();
-    }, this.headed ? 180_000 : 60_000);
+    this.idleTimer = setTimeout(
+      () => {
+        if (this.inFlight === 0) void this.close();
+      },
+      this.headed ? 180_000 : 60_000,
+    );
     this.idleTimer.unref();
   }
 
@@ -167,7 +170,9 @@ export class BrowserRenderer implements BrowserTier {
         }
       }
       if (!this.browser) {
-        throw new BrowserUnavailable(`Chromium could not be launched (${lastErr}). Run: npx playwright install chromium`);
+        throw new BrowserUnavailable(
+          `Chromium could not be launched (${lastErr}). Run: npx playwright install chromium`,
+        );
       }
       const probe = await this.browser.newContext();
       const page = await probe.newPage();
@@ -177,8 +182,12 @@ export class BrowserRenderer implements BrowserTier {
       this.audit.log(
         "info",
         `browser tier ready (${this.channel} ${this.browser.version()}, ${headless ? "headless" : "headed"}); identity=${this.settings.browserIdentity}; UA: ${this.userAgent}` +
-          (this.settings.browserIdentity === "none" ? "" : `; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}`) +
-          (this.headed ? `; handoff=${this.settings.handoff ? "on" : "off"}; session=${this.settings.browserSession ? "on" : "off"}` : ""),
+          (this.settings.browserIdentity === "none"
+            ? ""
+            : `; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}`) +
+          (this.headed
+            ? `; handoff=${this.settings.handoff ? "on" : "off"}; session=${this.settings.browserSession ? "on" : "off"}`
+            : ""),
       );
       return this.browser;
     })();
@@ -216,12 +225,18 @@ export class BrowserRenderer implements BrowserTier {
     if (kind === "profile" && this.headed) {
       if (this.profile) return this.profile;
       const path = this.settings.browserStatePath;
-      const ctx = await browser.newContext({ ...this.contextOptions(), ...(existsSync(path) ? { storageState: path } : {}) });
+      const ctx = await browser.newContext({
+        ...this.contextOptions(),
+        ...(existsSync(path) ? { storageState: path } : {}),
+      });
       ctx.setDefaultTimeout(this.settings.browserTimeoutMs);
       await ctx.route("**/*", (route) => this.gate(route));
       this.profile = ctx;
       const cookies = await ctx.cookies();
-      this.audit.log("info", `browser profile loaded from ${path}: ${cookies.length} cookie(s)${cookies.length ? ` for ${[...new Set(cookies.map((c) => c.domain))].join(", ")}` : ""}`);
+      this.audit.log(
+        "info",
+        `browser profile loaded from ${path}: ${cookies.length} cookie(s)${cookies.length ? ` for ${[...new Set(cookies.map((c) => c.domain))].join(", ")}` : ""}`,
+      );
       return ctx;
     }
     if (this.plain) return this.plain;
@@ -237,26 +252,16 @@ export class BrowserRenderer implements BrowserTier {
     try {
       await mkdir(dirname(this.settings.browserStatePath), { recursive: true });
       const state = await this.profile.storageState({ path: this.settings.browserStatePath });
-      this.audit.log("debug", `browser profile saved: ${state.cookies.length} cookie(s) (${state.cookies.map((c) => `${c.name}@${c.domain}`).join(", ").slice(0, 300)})`);
+      this.audit.log(
+        "debug",
+        `browser profile saved: ${state.cookies.length} cookie(s) (${state.cookies
+          .map((c) => `${c.name}@${c.domain}`)
+          .join(", ")
+          .slice(0, 300)})`,
+      );
     } catch (e) {
       this.audit.log("warn", `could not persist browser profile: ${(e as Error).message}`);
     }
-  }
-
-  /** Does the tool profile hold cookies for this URL (i.e. would a read use the person's session)? */
-  async hasSession(url: string): Promise<boolean> {
-    if (!this.headed) return false;
-    const ctx = await this.context("profile");
-    return (await ctx.cookies(url)).length > 0;
-  }
-
-  /** Forget everything the tool profile holds (cookies, storage). */
-  async clearProfile(): Promise<void> {
-    await this.profile?.clearCookies();
-    await this.profile?.close().catch(() => {});
-    this.profile = null;
-    const { rm } = await import("node:fs/promises");
-    await rm(this.settings.browserStatePath, { force: true });
   }
 
   /**
@@ -282,7 +287,7 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
-    if (!this.enabled()) throw new BrowserUnavailable("browser tier disabled (FEARCH_BROWSER=off)");
+    if (!this.enabled()) throw new BrowserUnavailable("browser tier disabled (--browser off)");
     const target = normalizeUrl(url);
     const useProfile = this.headed && !!opts.session;
     const ctx = await this.context(useProfile ? "profile" : "plain");
@@ -330,7 +335,10 @@ export class BrowserRenderer implements BrowserTier {
       if (this.headed && this.settings.handoff && opts.handoff !== false && isChallenge(html, status, page.url())) {
         // The human handoff: bring the tab forward and wait for the person. Nothing is clicked, typed
         // or solved by the tool; it only watches for the page to stop being a challenge.
-        this.audit.log("warn", `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`);
+        this.audit.log(
+          "warn",
+          `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+        );
         await page.bringToFront().catch(() => {});
         const p = page;
         const r = await waitForHuman(
@@ -339,7 +347,10 @@ export class BrowserRenderer implements BrowserTier {
           this.settings.handoffTimeoutMs,
         );
         if (r.passed) {
-          await Promise.race([p.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {}), new Promise((res) => setTimeout(res, 4000))]);
+          await Promise.race([
+            p.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {}),
+            new Promise((res) => setTimeout(res, 4000)),
+          ]);
           html = await p.content();
           status = 200;
           handedOff = true;
@@ -350,7 +361,10 @@ export class BrowserRenderer implements BrowserTier {
       }
       const finalUrl = page.url();
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
-      if (!this.settings.allowPrivate && (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))) {
+      if (
+        !this.settings.allowPrivate &&
+        (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))
+      ) {
         throw new BlockedURL(`browser navigation ended at a private address (${finalUrl})`);
       }
       this.audit.record({
@@ -359,7 +373,14 @@ export class BrowserRenderer implements BrowserTier {
         bytes: html.length,
         provider: useProfile ? "browser (profile)" : "browser",
         ms: Date.now() - started,
-        note: [salvaged ? "navigation timeout; harvested rendered content" : "", handedOff ? "challenge handed to the person" : "", usedSession ? "sent the person's session cookies" : ""].filter(Boolean).join("; ") || undefined,
+        note:
+          [
+            salvaged ? "navigation timeout; harvested rendered content" : "",
+            handedOff ? "challenge handed to the person" : "",
+            usedSession ? "sent the person's session cookies" : "",
+          ]
+            .filter(Boolean)
+            .join("; ") || undefined,
       });
       return { html, finalUrl, status: status || 200, salvaged, usedSession, handedOff };
     } finally {

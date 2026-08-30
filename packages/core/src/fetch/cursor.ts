@@ -14,7 +14,10 @@ export interface ParsedCursor {
 
 export function viewId(mode: string, query?: string): string {
   if (mode === "read" || mode === "raw") return mode;
-  const h = createHash("sha1").update(`${mode}:${(query ?? "").trim().toLowerCase()}`).digest("hex").slice(0, 6);
+  const h = createHash("sha1")
+    .update(`${mode}:${(query ?? "").trim().toLowerCase()}`)
+    .digest("hex")
+    .slice(0, 6);
   return `${mode}:${h}`;
 }
 
@@ -34,7 +37,10 @@ export function parseCursor(raw: string | number | undefined): ParsedCursor {
 export function resolveCursor(raw: string | number | undefined, view: string): { offset: number; note?: string } {
   const c = parseCursor(raw);
   if (c.view && c.view !== view) {
-    return { offset: 0, note: `Cursor "${raw}" was for a different view (${c.view}); starting from the beginning of this one.` };
+    return {
+      offset: 0,
+      note: `Cursor "${raw}" was for a different view (${c.view}); starting from the beginning of this one.`,
+    };
   }
   return { offset: c.offset };
 }

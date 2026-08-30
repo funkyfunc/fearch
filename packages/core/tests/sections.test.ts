@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cleanTitle, findSection, focusSections, joinSections, renderOutline, splitSections } from "../src/fetch/sections.js";
+import {
+  cleanTitle,
+  findSection,
+  focusSections,
+  joinSections,
+  renderOutline,
+  splitSections,
+} from "../src/fetch/sections.js";
 
 const DOC = `Preamble text about the library.
 
@@ -36,9 +43,18 @@ Deploy with docker.
 describe("sections", () => {
   it("splits fence-aware with exact offsets", () => {
     const secs = splitSections(DOC);
-    expect(secs.map((s) => s.title)).toEqual(["(intro)", "Guide", "Installation", "Configuration", "Retries", "Timeouts", "Deployment"]);
+    expect(secs.map((s) => s.title)).toEqual([
+      "(intro)",
+      "Guide",
+      "Installation",
+      "Configuration",
+      "Retries",
+      "Timeouts",
+      "Deployment",
+    ]);
     expect(secs.map((s) => s.level)).toEqual([0, 1, 2, 2, 3, 3, 2]);
-    for (const s of secs) expect(DOC.slice(s.start, s.end).replace(/^\n+|\n+$/g, "")).toBe(s.text.replace(/^\n+|\n+$/g, ""));
+    for (const s of secs)
+      expect(DOC.slice(s.start, s.end).replace(/^\n+|\n+$/g, "")).toBe(s.text.replace(/^\n+|\n+$/g, ""));
   });
 
   it("finds sections fuzzily and returns subtrees", () => {
@@ -65,7 +81,8 @@ describe("sections", () => {
     expect(picked).not.toContain("References");
 
     // dotted identifiers match their parts
-    const dotted = "# API\n\n## Timeouts\n\nUse asyncio.timeout(10) to bound a wait.\n\n## Sleeping\n\nasyncio.sleep(1) pauses.\n";
+    const dotted =
+      "# API\n\n## Timeouts\n\nUse asyncio.timeout(10) to bound a wait.\n\n## Sleeping\n\nasyncio.sleep(1) pauses.\n";
     const s3 = splitSections(dotted);
     expect(focusSections(s3, "set a timeout", 120).map((s) => s.title)).toEqual(["Timeouts"]);
   });

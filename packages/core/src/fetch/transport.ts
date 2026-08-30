@@ -4,31 +4,46 @@
  * corporate proxy via HTTPS_PROXY/NO_PROXY. No impersonation of any kind.
  */
 
-import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher, type RequestInit as UndiciRequestInit, type Response as UndiciResponse } from "undici";
+import {
+  EnvHttpProxyAgent,
+  fetch as undiciFetch,
+  type Dispatcher,
+  type RequestInit as UndiciRequestInit,
+  type Response as UndiciResponse,
+} from "undici";
 import type { Audit } from "../audit.js";
 import type { Settings } from "../config.js";
 import { assertPublicUrl, BlockedURL } from "./guard.js";
 import type { ContentKind, Fetched } from "./types.js";
 
-export const ACCEPT_HEADER = "text/markdown, text/x-markdown;q=0.95, text/plain;q=0.9, text/html;q=0.8, application/xhtml+xml;q=0.7, application/pdf;q=0.5, */*;q=0.1";
+export const ACCEPT_HEADER =
+  "text/markdown, text/x-markdown;q=0.95, text/plain;q=0.9, text/html;q=0.8, application/xhtml+xml;q=0.7, application/pdf;q=0.5, */*;q=0.1";
 
-/** Turn a fetch failure into a sentence a person can act on; TLS-interception failures name the fix. */
-export function isTlsError(e: unknown): boolean {
-  const c = (e as { cause?: { code?: string; message?: string } })?.cause;
-  return /CERT|certificate|self.signed|unable to verify|UNABLE_TO_VERIFY|LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER|SELF_SIGNED|DEPTH_ZERO|ERR_TLS/i.test(`${(e as Error)?.message ?? ""} ${c?.code ?? ""} ${c?.message ?? ""}`);
+const TLS_ERROR_RE = /CERT|certificate|self.signed|unable to verify|LEAF_SIGNATURE|SELF_SIGNED|DEPTH_ZERO|ERR_TLS/i;
+
+/** The message and the `cause` (undici wraps the socket error there) as one searchable string. */
+function errorText(e: unknown): { message: string; cause: string } {
+  const err = e as { message?: string; cause?: { code?: string; message?: string } } | undefined;
+  return { message: err?.message ?? String(e), cause: err?.cause?.code ?? err?.cause?.message ?? "" };
 }
 
+export function isTlsError(e: unknown): boolean {
+  const { message, cause } = errorText(e);
+  return TLS_ERROR_RE.test(`${message} ${cause}`);
+}
+
+/** Turn a fetch failure into a sentence a person can act on; TLS-interception failures name the fix. */
 export function describeNetworkError(e: unknown): string {
-  const msg = (e as Error)?.message ?? String(e);
-  const cause = ((e as { cause?: { code?: string; message?: string } })?.cause?.code ?? (e as { cause?: { message?: string } })?.cause?.message ?? "");
-  const all = `${msg} ${cause}`;
-  if (/CERT|certificate|self.signed|unable to verify|UNABLE_TO_VERIFY|LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER|SELF_SIGNED|DEPTH_ZERO|ERR_TLS/i.test(all)) {
-    return `TLS certificate not trusted (${cause || msg.split("\n")[0]}) — behind a TLS-intercepting proxy, set NODE_EXTRA_CA_CERTS to the proxy's CA bundle`;
+  const { message, cause } = errorText(e);
+  const firstLine = (cause || message).split("\n")[0];
+  if (isTlsError(e)) {
+    return `TLS certificate not trusted (${firstLine}) — behind a TLS-intercepting proxy, set NODE_EXTRA_CA_CERTS to the proxy's CA bundle`;
   }
+  const all = `${message} ${cause}`;
   if (/ENOTFOUND|EAI_AGAIN/i.test(all)) return "DNS lookup failed";
   if (/ECONNREFUSED/i.test(all)) return "connection refused";
   if (/ETIMEDOUT|timeout/i.test(all)) return "connection timed out";
-  return `network error: ${(cause || msg).split("\n")[0].slice(0, 120)}`;
+  return `network error: ${firstLine.slice(0, 120)}`;
 }
 
 export class FetchError extends Error {
@@ -50,7 +65,7 @@ export interface GetOptions {
   beforeCrossHostRedirect?: (nextUrl: string) => Promise<void>;
 }
 
-export interface Response extends Fetched {
+export interface HttpResponse extends Fetched {
   notModified: boolean;
   redirects: string[];
 }
@@ -62,7 +77,8 @@ export function classify(contentType: string, body: Uint8Array, url: string): Co
   if (ct === "application/pdf" || (!ct && url.toLowerCase().endsWith(".pdf")) || head.startsWith("%PDF-")) return "pdf";
   if (ct === "application/json") return "json";
   if (ct.startsWith("text/plain")) return /^#{1,6} |^```|^\* |^- /m.test(head) ? "markdown" : "text";
-  if (ct === "text/html" || ct === "application/xhtml+xml" || /<html|<!doctype/i.test(head.slice(0, 2000))) return "html";
+  if (ct === "text/html" || ct === "application/xhtml+xml" || /<html|<!doctype/i.test(head.slice(0, 2000)))
+    return "html";
   if (ct.startsWith("text/")) return "text";
   return "html";
 }
@@ -81,7 +97,7 @@ export class Transport {
     private readonly audit: Audit,
   ) {}
 
-  async get(url: string, opts: GetOptions = {}): Promise<Response> {
+  async get(url: string, opts: GetOptions = {}): Promise<HttpResponse> {
     const started = Date.now();
     const maxBytes = opts.maxBytes ?? this.settings.maxBytes;
     const headers: Record<string, string> = {
@@ -109,18 +125,38 @@ export class Transport {
         };
         res = await undiciFetch(current, init);
       } catch (e) {
-        const msg = (e as Error).name === "TimeoutError" ? `timed out after ${this.settings.timeoutMs / 1000}s` : describeNetworkError(e);
+        const msg =
+          (e as Error).name === "TimeoutError"
+            ? `timed out after ${this.settings.timeoutMs / 1000}s`
+            : describeNetworkError(e);
         // We upgrade http→https optimistically; if https cannot connect at all, try plain http once.
         // Never on a certificate error: the host does speak TLS, and silently downgrading to http
         // would hide a TLS-interception problem (and send the request in the clear).
-        if (current.startsWith("https://") && hop === 0 && !httpRetried && (e as Error).name !== "TimeoutError" && !isTlsError(e)) {
+        if (
+          current.startsWith("https://") &&
+          hop === 0 &&
+          !httpRetried &&
+          (e as Error).name !== "TimeoutError" &&
+          !isTlsError(e)
+        ) {
           httpRetried = true;
-          this.audit.record({ url: current, status: "error", note: `${msg}; retrying over http`, provider: opts.source });
+          this.audit.record({
+            url: current,
+            status: "error",
+            note: `${msg}; retrying over http`,
+            provider: opts.source,
+          });
           current = "http://" + current.slice("https://".length);
           hop--;
           continue;
         }
-        this.audit.record({ url: current, status: "error", note: msg, ms: Date.now() - started, provider: opts.source });
+        this.audit.record({
+          url: current,
+          status: "error",
+          note: msg,
+          ms: Date.now() - started,
+          provider: opts.source,
+        });
         throw new FetchError(`Connection failed for ${current}: ${msg}`);
       }
 
@@ -128,12 +164,16 @@ export class Transport {
         const loc = res.headers.get("location");
         await res.body?.cancel().catch(() => {});
         if (!loc) throw new FetchError(`Redirect from ${current} without a Location header.`);
-        if (hop >= this.settings.maxRedirects) throw new FetchError(`Too many redirects (>${this.settings.maxRedirects}) from ${url}.`);
+        if (hop >= this.settings.maxRedirects)
+          throw new FetchError(`Too many redirects (>${this.settings.maxRedirects}) from ${url}.`);
         let next: string;
         try {
           // The server chose the redirect scheme; don't re-upgrade it (an http target after an https
           // page is the server's decision, and upgrading would break plain-http hosts).
-          next = await assertPublicUrl(new URL(loc, current).toString(), { allowPrivate: opts.allowPrivate ?? this.settings.allowPrivate, keepScheme: true });
+          next = await assertPublicUrl(new URL(loc, current).toString(), {
+            allowPrivate: opts.allowPrivate ?? this.settings.allowPrivate,
+            keepScheme: true,
+          });
         } catch (e) {
           if (e instanceof BlockedURL) throw new FetchError(`Redirect target refused: ${e.message}`);
           throw e;
@@ -153,17 +193,42 @@ export class Transport {
 
       if (res.status === 304) {
         await res.body?.cancel().catch(() => {});
-        this.audit.record({ url: current, status: 304, cache: "revalidated", ms: Date.now() - started, provider: opts.source });
-        return { url, finalUrl: current, kind: "text", body: "", source: opts.source ?? "direct", status: 304, contentType, headers: hdrs, notModified: true, redirects };
+        this.audit.record({
+          url: current,
+          status: 304,
+          cache: "revalidated",
+          ms: Date.now() - started,
+          provider: opts.source,
+        });
+        return {
+          url,
+          finalUrl: current,
+          kind: "text",
+          body: "",
+          source: opts.source ?? "direct",
+          status: 304,
+          contentType,
+          headers: hdrs,
+          notModified: true,
+          redirects,
+        };
       }
 
       const declared = Number(hdrs["content-length"]);
       if (Number.isFinite(declared) && declared > maxBytes) {
         await res.body?.cancel().catch(() => {});
-        throw new FetchError(`Response too large (${Math.round(declared / 1024 / 1024)} MB > ${Math.round(maxBytes / 1024 / 1024)} MB cap).`);
+        throw new FetchError(
+          `Response too large (${Math.round(declared / 1024 / 1024)} MB > ${Math.round(maxBytes / 1024 / 1024)} MB cap).`,
+        );
       }
       const body = await readCapped(res, maxBytes);
-      this.audit.record({ url: current, status: res.status, bytes: body.length, ms: Date.now() - started, provider: opts.source });
+      this.audit.record({
+        url: current,
+        status: res.status,
+        bytes: body.length,
+        ms: Date.now() - started,
+        provider: opts.source,
+      });
       return {
         url,
         finalUrl: current,

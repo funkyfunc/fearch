@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { cleanMarkdownSource, detectShell, htmlToMarkdown, splitFrontmatter } from "../src/fetch/extract.js";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/html");
-const fixtures = readdirSync(FIXTURES).filter((f) => f.endsWith(".html")).sort();
+const fixtures = readdirSync(FIXTURES)
+  .filter((f) => f.endsWith(".html"))
+  .sort();
 
 const SYNTHETIC = `<html><head><title>Retries — Lib Docs</title></head><body>
 <header><nav><a href=/a>A</a><a href=/b>B</a><a href=/c>C</a></nav></header>
@@ -33,7 +35,7 @@ function fenceCount(md: string): number {
 
 describe("extract", () => {
   it("extracts the main container and keeps code/tables, drops chrome", () => {
-    const ex = htmlToMarkdown(SYNTHETIC, "https://example.com/docs");
+    const ex = htmlToMarkdown(SYNTHETIC);
     const md = ex.markdown;
     expect(ex.method).toBe("main");
     expect(ex.title).toBe("Retries — Lib Docs");
@@ -43,7 +45,8 @@ describe("extract", () => {
     expect(md).toContain("```python\nclient = Client(retries=3)");
     expect(md).toContain("```\ncurl -m 5 https://x\n```");
     expect(md).toMatch(/\| Option \| Default \|/);
-    for (const noise of ["Sidebar item", "Accept cookies", "Comment spam", "Footer text", "x.png"]) expect(md).not.toContain(noise);
+    for (const noise of ["Sidebar item", "Accept cookies", "Comment spam", "Footer text", "x.png"])
+      expect(md).not.toContain(noise);
   });
 
   it("unwraps layout tables and keeps discussion threads", () => {
@@ -69,7 +72,8 @@ describe("extract", () => {
   });
 
   it("cleans markdown sources without eating code lines", () => {
-    const src = '```python theme={"a":1}\nx = 1\n```\n\n<VersionBadge version="2" />\n## Heading {/*anchor*/}\n\nIf text\n';
+    const src =
+      '```python theme={"a":1}\nx = 1\n```\n\n<VersionBadge version="2" />\n## Heading {/*anchor*/}\n\nIf text\n';
     const out = cleanMarkdownSource(src);
     expect(out.startsWith("```python\nx = 1\n```")).toBe(true);
     expect(out).not.toContain("VersionBadge");
@@ -89,7 +93,7 @@ describe("extract", () => {
 
   it.each(fixtures)("%s keeps ≥80%% of code blocks and drops chrome", (name) => {
     const html = readFileSync(join(FIXTURES, name), "utf8");
-    const ex = htmlToMarkdown(html, "https://example.com/" + name);
+    const ex = htmlToMarkdown(html);
     const md = ex.markdown;
     const preTotal = (html.match(/<pre/g) ?? []).length;
     expect(md.length).toBeGreaterThan(1500);

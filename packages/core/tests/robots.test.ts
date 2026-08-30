@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
 import { RobotsChecker } from "../src/fetch/robots.js";
 
-function checker(body: string | number, opts: { ignore?: boolean; calls?: string[]; policy?: "default" | "strict" | "minimal" | "off" } = {}) {
+function checker(
+  body: string | number,
+  opts: { calls?: string[]; policy?: "default" | "strict" | "minimal" | "off" } = {},
+) {
   const fetcher = async (url: string) => {
     opts.calls?.push(url);
     if (typeof body === "number") return { status: body, body: "" };
     return { status: 200, body };
   };
-  return new RobotsChecker(new Cache(null), fetcher, opts.ignore, opts.policy);
+  return new RobotsChecker(new Cache(null), fetcher, opts.policy);
 }
 
 describe("robots", () => {
@@ -29,7 +32,8 @@ describe("robots", () => {
 
   it("honours user-initiated agent opt-outs but not training-crawler opt-outs (default policy)", async () => {
     // Substack-style: training crawlers blocked, agents not mentioned → we may read.
-    const training = "User-agent: GPTBot\nDisallow: /\n\nUser-agent: ClaudeBot\nDisallow: /\n\nUser-agent: CCBot\nDisallow: /\n\nUser-agent: Google-Extended\nDisallow: /\n\nUser-agent: *\nAllow: /\n";
+    const training =
+      "User-agent: GPTBot\nDisallow: /\n\nUser-agent: ClaudeBot\nDisallow: /\n\nUser-agent: CCBot\nDisallow: /\n\nUser-agent: Google-Extended\nDisallow: /\n\nUser-agent: *\nAllow: /\n";
     expect((await checker(training).check("https://example.com/article")).allowed).toBe(true);
     // Figma-style: the user-initiated agent token itself is blocked → we stop.
     const agent = "User-agent: Claude-User\nDisallow: /\n\nUser-agent: *\nAllow: /\n";
@@ -60,7 +64,7 @@ describe("robots", () => {
   it("exempts documented API hosts and honours the ignore switch", async () => {
     const c = checker("User-agent: *\nDisallow: /\n");
     expect((await c.check("https://api.github.com/repos/o/r")).status).toBe("api");
-    const ignoring = checker("User-agent: *\nDisallow: /\n", { ignore: true });
+    const ignoring = checker("User-agent: *\nDisallow: /\n", { policy: "off" });
     expect((await ignoring.check("https://example.com/")).status).toBe("ignored");
   });
 });

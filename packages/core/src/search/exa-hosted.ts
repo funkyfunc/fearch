@@ -8,7 +8,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import type { Settings } from "../config.js";
-import { dedupe, filterDomains, isoDate, SearchError, type SearchProvider, type SearchQuery, type SearchResult } from "./provider.js";
+import {
+  dedupe,
+  filterDomains,
+  isoDate,
+  SearchError,
+  type SearchProvider,
+  type SearchQuery,
+  type SearchResult,
+} from "./provider.js";
 
 interface ExaItem {
   title?: string;
@@ -30,7 +38,11 @@ export function parseExaToolText(text: string, provider: string): SearchResult[]
       .map((i) => ({
         title: (i.title ?? "").trim(),
         url: String(i.url),
-        snippet: (i.highlights?.join(" ") ?? i.snippet ?? i.text ?? "").replace(/¶/g, "").replace(/\s+/g, " ").trim().slice(0, 500),
+        snippet: (i.highlights?.join(" ") ?? i.snippet ?? i.text ?? "")
+          .replace(/¶/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 500),
         provider,
         date: isoDate(i.publishedDate),
       }));
@@ -42,7 +54,12 @@ export function parseExaToolText(text: string, provider: string): SearchResult[]
   for (const b of blocks) {
     const url = /(?:^|\n)\s*(?:URL|Link)\s*:\s*(\S+)/i.exec(b)?.[1] ?? /https?:\/\/\S+/.exec(b)?.[0];
     if (!url) continue;
-    const title = /(?:^|\n)\s*(?:Title)\s*:\s*(.+)/i.exec(b)?.[1]?.trim() ?? b.split("\n")[0].replace(/^[#*\s-]+/, "").trim();
+    const title =
+      /(?:^|\n)\s*(?:Title)\s*:\s*(.+)/i.exec(b)?.[1]?.trim() ??
+      b
+        .split("\n")[0]
+        .replace(/^[#*\s-]+/, "")
+        .trim();
     const date = isoDate(/(?:^|\n)\s*(?:Published|Date)\s*(?:Date)?\s*:\s*(\S+)/i.exec(b)?.[1]);
     const snippet = b
       .split("\n")
@@ -69,7 +86,8 @@ export class ExaHostedProvider implements SearchProvider {
 
   constructor(private readonly settings: Settings) {
     const env = process.env;
-    this.dispatcher = env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy ? new EnvHttpProxyAgent() : undefined;
+    this.dispatcher =
+      env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy ? new EnvHttpProxyAgent() : undefined;
   }
 
   available(): boolean {
@@ -85,7 +103,11 @@ export class ExaHostedProvider implements SearchProvider {
       const dispatcher = this.dispatcher;
       const transport = new StreamableHTTPClientTransport(new URL(this.settings.exaHostedUrl), {
         requestInit: { headers },
-        fetch: (url, init) => undiciFetch(url as string, { ...(init as object), dispatcher } as never) as unknown as Promise<globalThis.Response>,
+        fetch: (url, init) =>
+          undiciFetch(
+            url as string,
+            { ...(init as object), dispatcher } as never,
+          ) as unknown as Promise<globalThis.Response>,
       });
       await client.connect(transport);
       this.client = client;
@@ -108,16 +130,21 @@ export class ExaHostedProvider implements SearchProvider {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
     let res: Awaited<ReturnType<Client["callTool"]>>;
     try {
-      res = await client.callTool({ name: "web_search_exa", arguments: { query, numResults: Math.min(q.maxResults * 2, 20) } });
+      res = await client.callTool({
+        name: "web_search_exa",
+        arguments: { query, numResults: Math.min(q.maxResults * 2, 20) },
+      });
     } catch (e) {
       const msg = (e as Error).message;
       this.client = null; // reconnect next time
-      if (/429|rate/i.test(msg)) throw new SearchError("exa-hosted: rate-limited (keyless casual-use tier); waiting a few minutes lifts it.");
+      if (/429|rate/i.test(msg))
+        throw new SearchError("exa-hosted: rate-limited (keyless casual-use tier); waiting a few minutes lifts it.");
       throw new SearchError(`exa-hosted: ${msg}`);
     }
     if (res.isError) {
       const msg = (res.content as Array<{ type: string; text?: string }>).map((c) => c.text ?? "").join(" ");
-      if (/rate limit/i.test(msg)) throw new SearchError("exa-hosted: rate-limited (keyless casual-use tier); waiting a few minutes lifts it.");
+      if (/rate limit/i.test(msg))
+        throw new SearchError("exa-hosted: rate-limited (keyless casual-use tier); waiting a few minutes lifts it.");
       throw new SearchError(`exa-hosted: ${msg.slice(0, 300)}`);
     }
     const text = (res.content as Array<{ type: string; text?: string }>)

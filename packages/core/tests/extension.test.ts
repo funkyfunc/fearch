@@ -9,7 +9,16 @@ import { settingsFromEnv } from "../src/config.js";
 import { EXTENSION_ID, ExtensionBridge, ExtensionRenderer } from "../src/fetch/extension.js";
 import { BrowserUnavailable, type BrowserTier } from "../src/fetch/browser.js";
 
-const settings = (env: Record<string, string> = {}) => settingsFromEnv({ FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error", FEARCH_ALLOW_PRIVATE: "1", FEARCH_BROWSER: "extension", FEARCH_EXTENSION_CONNECT_MS: "300", ...env });
+const settings = (env: Record<string, string> = {}) =>
+  settingsFromEnv({
+    FEARCH_NO_CACHE: "1",
+    FEARCH_AUDIT_LOG: "off",
+    FEARCH_LOG_LEVEL: "error",
+    FEARCH_ALLOW_PRIVATE: "1",
+    FEARCH_BROWSER: "extension",
+    FEARCH_EXTENSION_CONNECT_MS: "300",
+    ...env,
+  });
 const audit = () => new Audit({ auditLog: "off", logLevel: "error" });
 const ORIGIN = { origin: `chrome-extension://${EXTENSION_ID}`, "content-type": "application/json" };
 // Use a port range that cannot collide with a running fearch server.
@@ -23,19 +32,37 @@ describe("extension bridge (fake extension client)", () => {
     expect(bridge.connected()).toBe(false);
     // a web page / random client is refused
     expect((await fetch(`http://127.0.0.1:${port}/fearch/next`, { method: "POST", body: "{}" })).status).toBe(403);
-    expect((await fetch(`http://127.0.0.1:${port}/fearch/next`, { method: "POST", body: "{}", headers: { origin: "https://evil.example" } })).status).toBe(403);
+    expect(
+      (
+        await fetch(`http://127.0.0.1:${port}/fearch/next`, {
+          method: "POST",
+          body: "{}",
+          headers: { origin: "https://evil.example" },
+        })
+      ).status,
+    ).toBe(403);
     // the extension polls; a queued job is delivered; its result resolves the request
     const pending = bridge.request({ op: "ping" });
-    const poll = await fetch(`http://127.0.0.1:${port}/fearch/next`, { method: "POST", headers: ORIGIN, body: JSON.stringify({ version: "9.9.9", incognitoAllowed: true }) });
+    const poll = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
+      method: "POST",
+      headers: ORIGIN,
+      body: JSON.stringify({ version: "9.9.9", incognitoAllowed: true }),
+    });
     expect(poll.status).toBe(200);
     const job = (await poll.json()) as { id: string; op: string };
     expect(job.op).toBe("ping");
     expect(bridge.connected()).toBe(true);
     expect(bridge.extensionInfo()).toEqual({ version: "9.9.9", incognitoAllowed: true });
-    await fetch(`http://127.0.0.1:${port}/fearch/result`, { method: "POST", headers: ORIGIN, body: JSON.stringify({ id: job.id, ok: true, version: "9.9.9" }) });
+    await fetch(`http://127.0.0.1:${port}/fearch/result`, {
+      method: "POST",
+      headers: ORIGIN,
+      body: JSON.stringify({ id: job.id, ok: true, version: "9.9.9" }),
+    });
     expect((await pending).ok).toBe(true);
     // status and setup pages are readable without an origin (a person's browser tab)
-    expect(((await (await fetch(`http://127.0.0.1:${port}/fearch/status`)).json()) as { connected: boolean }).connected).toBe(true);
+    expect(
+      ((await (await fetch(`http://127.0.0.1:${port}/fearch/status`)).json()) as { connected: boolean }).connected,
+    ).toBe(true);
     expect(await (await fetch(`http://127.0.0.1:${port}/setup`)).text()).toContain(EXTENSION_ID);
     await bridge.close();
   });
@@ -43,7 +70,24 @@ describe("extension bridge (fake extension client)", () => {
   it("falls back to another tier when no extension is connected, and says why when there is none", async () => {
     const bridge = new ExtensionBridge(audit(), EXTENSION_ID, TEST_PORTS);
     const calls: string[] = [];
-    const fallback = { enabled: () => true, headed: false, browserUserAgent: "x", browserChannel: "chromium", async render(u: string) { calls.push(u); return { html: "<main>fallback</main>", finalUrl: u, status: 200, salvaged: false, usedSession: false, handedOff: false }; }, async close() {} } as BrowserTier;
+    const fallback = {
+      enabled: () => true,
+      headed: false,
+      browserUserAgent: "x",
+      browserChannel: "chromium",
+      async render(u: string) {
+        calls.push(u);
+        return {
+          html: "<main>fallback</main>",
+          finalUrl: u,
+          status: 200,
+          salvaged: false,
+          usedSession: false,
+          handedOff: false,
+        };
+      },
+      async close() {},
+    } as BrowserTier;
     const r = new ExtensionRenderer(settings(), audit(), bridge, fallback);
     const out = await r.render("http://127.0.0.1:1/x");
     expect(out.html).toContain("fallback");
@@ -64,7 +108,9 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
   beforeAll(async () => {
     site = createServer((req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(`<html><head><title>Ext test</title></head><body><main><h1>Hello</h1><p>${"Rendered in the user's browser. ".repeat(10)}</p><script>document.querySelector('h1').textContent += ' (JS ran)'</script></main></body></html>`);
+      res.end(
+        `<html><head><title>Ext test</title></head><body><main><h1>Hello</h1><p>${"Rendered in the user's browser. ".repeat(10)}</p><script>document.querySelector('h1').textContent += ' (JS ran)'</script></main></body></html>`,
+      );
     });
     await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
     base = `http://127.0.0.1:${(site.address() as { port: number }).port}`;
@@ -74,7 +120,11 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
       await bridge.start();
       const { chromium } = await import("playwright");
       const ext = new URL("../extension/", import.meta.url).pathname;
-      ctx = await chromium.launchPersistentContext("", { headless: true, channel: "chromium", args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
+      ctx = await chromium.launchPersistentContext("", {
+        headless: true,
+        channel: "chromium",
+        args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
+      });
       available = await bridge.waitForConnection(20_000);
     } catch {
       available = false;
@@ -97,6 +147,10 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
     // only the profile's initial tab and the bridge's blank window tab remain
     expect(ctx!.pages().every((p) => !p.url().startsWith(base))).toBe(true);
     // private addresses are refused before a tab is opened
-    await expect(new ExtensionRenderer(settings({ FEARCH_ALLOW_PRIVATE: "" }), audit(), bridge).render("http://169.254.169.254/latest/")).rejects.toThrow();
+    await expect(
+      new ExtensionRenderer(settings({ FEARCH_ALLOW_PRIVATE: "" }), audit(), bridge).render(
+        "http://169.254.169.254/latest/",
+      ),
+    ).rejects.toThrow();
   }, 60_000);
 });

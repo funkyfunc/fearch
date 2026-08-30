@@ -36,9 +36,25 @@ describe("resolver", () => {
     const http = fakeHttp({
       "https://raw.githubusercontent.com/o/r/main/src/app.py": "x = 1",
       "https://api.github.com/repos/o/r/readme": "# R",
-      "https://api.github.com/repos/o/r/issues/7/comments": [{ user: { login: "u2" }, created_at: "2026-01-02T", body: "me too" }],
-      "https://api.github.com/repos/o/r/issues/7": { title: "Bug", state: "open", user: { login: "u1" }, created_at: "2026-01-01T", comments: 1, body: "It broke" },
-      "https://api.github.com/repos/o/r": { full_name: "o/r", description: "d", stargazers_count: 5, language: "Go", default_branch: "main", pushed_at: "2026-01-01T" },
+      "https://api.github.com/repos/o/r/issues/7/comments": [
+        { user: { login: "u2" }, created_at: "2026-01-02T", body: "me too" },
+      ],
+      "https://api.github.com/repos/o/r/issues/7": {
+        title: "Bug",
+        state: "open",
+        user: { login: "u1" },
+        created_at: "2026-01-01T",
+        comments: 1,
+        body: "It broke",
+      },
+      "https://api.github.com/repos/o/r": {
+        full_name: "o/r",
+        description: "d",
+        stargazers_count: 5,
+        language: "Go",
+        default_branch: "main",
+        pushed_at: "2026-01-01T",
+      },
     });
     let f = await resolveFastPath("https://github.com/o/r/blob/main/src/app.py", http);
     expect(f?.source).toBe("github-raw");
@@ -55,10 +71,38 @@ describe("resolver", () => {
 
   it("pypi, npm, stackoverflow", async () => {
     const http = fakeHttp({
-      "https://pypi.org/pypi/pkg/json": { info: { name: "pkg", version: "1.0", summary: "S", description: "# Readme", project_urls: { Home: "h" } } },
-      "https://registry.npmjs.org/left-pad": { name: "left-pad", "dist-tags": { latest: "1.3.0" }, description: "pad", readme: "# LP" },
-      "https://api.stackexchange.com/2.3/questions/1/answers": { items: [{ is_accepted: true, score: 9, answer_id: 77, owner: { display_name: "Ann" }, body: "<p>Use <code>x</code></p>" }] },
-      "https://api.stackexchange.com/2.3/questions/1": { items: [{ title: "How?", score: 3, answer_count: 1, tags: ["python"], owner: { display_name: "Bob" }, body: "<p>Q body</p>" }] },
+      "https://pypi.org/pypi/pkg/json": {
+        info: { name: "pkg", version: "1.0", summary: "S", description: "# Readme", project_urls: { Home: "h" } },
+      },
+      "https://registry.npmjs.org/left-pad": {
+        name: "left-pad",
+        "dist-tags": { latest: "1.3.0" },
+        description: "pad",
+        readme: "# LP",
+      },
+      "https://api.stackexchange.com/2.3/questions/1/answers": {
+        items: [
+          {
+            is_accepted: true,
+            score: 9,
+            answer_id: 77,
+            owner: { display_name: "Ann" },
+            body: "<p>Use <code>x</code></p>",
+          },
+        ],
+      },
+      "https://api.stackexchange.com/2.3/questions/1": {
+        items: [
+          {
+            title: "How?",
+            score: 3,
+            answer_count: 1,
+            tags: ["python"],
+            owner: { display_name: "Bob" },
+            body: "<p>Q body</p>",
+          },
+        ],
+      },
     });
     let f = await resolveFastPath("https://pypi.org/project/pkg/", http);
     expect(f?.source).toBe("pypi");
@@ -80,8 +124,16 @@ describe("resolver", () => {
         { name: "webfetch.ts", type: "file", size: 1200 },
         { name: "helpers", type: "dir" },
       ],
-      "https://api.github.com/repos/o/r/releases/tags/v2.0.0": { name: "v2.0.0", tag_name: "v2.0.0", published_at: "2026-08-01T", body: "Notes here" },
-      "https://api.github.com/repos/o/r/releases": [{ name: "v2.0.0", tag_name: "v2.0.0", published_at: "2026-08-01T", body: "Notes" }, { tag_name: "v1.9.0", published_at: "2026-06-01T", body: "", prerelease: true }],
+      "https://api.github.com/repos/o/r/releases/tags/v2.0.0": {
+        name: "v2.0.0",
+        tag_name: "v2.0.0",
+        published_at: "2026-08-01T",
+        body: "Notes here",
+      },
+      "https://api.github.com/repos/o/r/releases": [
+        { name: "v2.0.0", tag_name: "v2.0.0", published_at: "2026-08-01T", body: "Notes" },
+        { tag_name: "v1.9.0", published_at: "2026-06-01T", body: "", prerelease: true },
+      ],
     });
     const tree = await resolveFastPath("https://github.com/o/r/tree/dev/src/tool", http);
     expect(tree?.source).toBe("github-tree");

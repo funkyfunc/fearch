@@ -15,10 +15,12 @@
     "test": "vitest run",
     "test:live": "FEARCH_LIVE=1 vitest run packages/core/tests/live",
     "eval": "tsx evals/run.mts",
-    "lint": "eslint packages --ext .ts"
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },

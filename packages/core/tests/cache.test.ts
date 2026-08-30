@@ -4,7 +4,17 @@ import { Cache } from "../src/cache.js";
 describe("cache", () => {
   it("stores and reads pages, searches, robots", () => {
     const c = new Cache(null);
-    c.setPage({ url: "https://a.test/", finalUrl: "https://a.test/", title: "T", source: "direct", markdown: "# T\n", etag: '"e"', lastModified: null, licence: "X-Robots-Tag: noai", updated: { date: "2026-01-01", source: "Last-Modified", ageDays: 10, stale: false } });
+    c.setPage({
+      url: "https://a.test/",
+      finalUrl: "https://a.test/",
+      title: "T",
+      source: "direct",
+      markdown: "# T\n",
+      etag: '"e"',
+      lastModified: null,
+      licence: "X-Robots-Tag: noai",
+      updated: { date: "2026-01-01", source: "Last-Modified", ageDays: 10, stale: false },
+    });
     const p = c.getPage("https://a.test/");
     expect(p?.title).toBe("T");
     expect(p?.etag).toBe('"e"');

@@ -23,7 +23,10 @@ export interface HttpInit {
 }
 
 export interface HttpLike {
-  (url: string, init?: HttpInit): Promise<{
+  (
+    url: string,
+    init?: HttpInit,
+  ): Promise<{
     status: number;
     headers: Record<string, string>;
     text(): Promise<string>;

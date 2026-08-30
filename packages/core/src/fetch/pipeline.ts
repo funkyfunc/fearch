@@ -1,30 +1,43 @@
 /**
- * Fetch orchestration:
- * validate+SSRF → allow/deny → cache (conditional GET) → robots.txt → politeness → fast paths →
- * honest GET → diagnose → extract. A refusal is final and comes back as a Diagnosis.
+ * Fetch orchestration. One read of a URL walks these steps in order:
+ *
+ *   guard (SSRF, allow/deny) → cache → fast path (documented APIs) → robots.txt → budget →
+ *   obtain the page (honest GET, or one self-identified browser attempt) → signals, freshness, llms.txt →
+ *   extract → cache.
+ *
+ * A refusal anywhere is final and surfaces as a `DiagnosedError` carrying a `Diagnosis`.
  */
 
 import type { Audit } from "../audit.js";
-import type { Cache } from "../cache.js";
+import type { Cache, CachedPage } from "../cache.js";
 import { domainMatches, type Settings } from "../config.js";
 import { BudgetExceeded, type Politeness } from "../politeness.js";
-import type { BrowserTier } from "./browser.js";
-import { BrowserUnavailable } from "./browser.js";
-import { BROWSER_RETRY_KINDS, diagnose, diagnoseBudget, diagnoseContentSignal, diagnoseRobots, finalizeAfterBrowser, type Diagnosis } from "./diagnose.js";
+import { BrowserUnavailable, type BrowserTier } from "./browser.js";
+import {
+  BROWSER_RETRY_KINDS,
+  diagnose,
+  diagnoseBudget,
+  diagnoseContentSignal,
+  diagnoseRobots,
+  finalizeAfterBrowser,
+  type Diagnosis,
+} from "./diagnose.js";
 import { cleanMarkdownSource, detectShell, htmlToMarkdown, pdfToMarkdown, splitFrontmatter } from "./extract.js";
 import { freshness, type Freshness } from "./freshness.js";
 import { assertPublicUrl, BlockedURL } from "./guard.js";
-export { BlockedURL };
 import { isApiUrl, llmsTxt, resolveFastPath, rewriteUrl } from "./resolver.js";
-import type { RobotsChecker } from "./robots.js";
+import type { RobotsChecker, RobotsDecision } from "./robots.js";
 import { knownLicence, licenceSignals, parseContentSignal } from "./signals.js";
 import { FetchError, type Transport } from "./transport.js";
 import { fetchedText, type Fetched, type HttpLike } from "./types.js";
+
+export { BlockedURL };
 
 export interface PageDoc {
   url: string;
   finalUrl: string;
   title: string;
+  /** Where the content came from: `direct (html/main)`, `browser`, `github-readme`, `cache ← …`. */
   source: string;
   markdown: string;
   note: string;
@@ -49,7 +62,18 @@ export interface FetchOptions {
   via?: "archive";
 }
 
+const PAGE_FRESH_MS = 24 * 3600_000;
+const LLMS_TXT_LINK_RE = /<([^>]+)>;[^,]*rel="?llms-txt"?/i;
+
+/** A page as the pipeline holds it between obtaining it and finishing the document. */
+interface Page {
+  fetched: Fetched;
+  robots: string;
+  signals: string[];
+}
+
 export class Fetcher {
+  /** URLs the live site reported gone (404/410) this session; the only ones `via: "archive"` may read. */
   private readonly gone = new Set<string>();
 
   constructor(
@@ -78,169 +102,165 @@ export class Fetcher {
         this.settings.hostGapsMs[u.hostname.toLowerCase()],
       );
       const text = fetchedText(r);
-      return { status: r.status, headers: r.headers, text: async () => text, json: async () => JSON.parse(text) as unknown };
+      return {
+        status: r.status,
+        headers: r.headers,
+        text: async () => text,
+        json: async () => JSON.parse(text) as unknown,
+      };
     };
   }
+
+  async fetch(rawUrl: string, opts: FetchOptions = {}): Promise<PageDoc> {
+    const url = rewriteUrl(await assertPublicUrl(rawUrl, { allowPrivate: this.settings.allowPrivate }));
+    this.checkLists(url);
+    if (opts.via === "archive") return this.fromArchive(url);
+    if (opts.raw) return this.fetchRaw(url);
+
+    const cached = this.cache.getPage(url, true);
+    if (cached && this.isFresh(cached)) {
+      this.audit.record({ url, cache: "hit" });
+      return this.fromCache(url, cached, "cache", "cached");
+    }
+
+    // Fast paths talk only to documented public APIs, under those APIs' terms; the HTML page's
+    // robots.txt rules do not apply to them.
+    const fast = await resolveFastPath(url, this.http("api"));
+    if (fast) return this.finish(url, { fetched: fast, robots: "api terms", signals: [] });
+
+    const decision = await this.checkRobots(url);
+    this.charge(url);
+    const page = await this.obtain(url, cached, decision);
+    if (page === "not-modified") {
+      this.cache.touchPage(url);
+      return this.fromCache(url, cached!, "cache (revalidated)", robotsLabel(decision));
+    }
+    return this.finish(url, page);
+  }
+
+  // ---- steps -----------------------------------------------------------------------------------
 
   private checkLists(url: string): void {
     const host = new URL(url).hostname;
     if (this.settings.denyDomains.length && domainMatches(host, this.settings.denyDomains)) {
-      throw new BlockedURL(`'${host}' is on FEARCH_DENY_DOMAINS.`);
+      throw new BlockedURL(`'${host}' is on the deny list (--deny-domains).`);
     }
     if (this.settings.allowDomains.length && !domainMatches(host, this.settings.allowDomains) && !isApiUrl(url)) {
-      throw new BlockedURL(`'${host}' is not on FEARCH_ALLOW_DOMAINS.`);
+      throw new BlockedURL(`'${host}' is not on the allow list (--allow-domains).`);
     }
   }
 
-  private toDoc(url: string, f: Fetched, extra: Partial<PageDoc> = {}): Promise<PageDoc> | PageDoc {
-    const base = { url, finalUrl: f.finalUrl, note: "", robots: extra.robots ?? "", licence: extra.licence ?? [], cached: false };
-    if (f.kind === "pdf") {
-      const data = typeof f.body === "string" ? new TextEncoder().encode(f.body) : f.body;
-      return pdfToMarkdown(data).then((ex) => ({ ...base, title: ex.title, source: `${f.source} (pdf)`, markdown: ex.markdown }));
-    }
-    if (f.kind === "markdown" || f.kind === "text" || f.kind === "json") {
-      const { meta, body } = splitFrontmatter(fetchedText(f));
-      const text = f.kind === "markdown" ? cleanMarkdownSource(body) : body;
-      let title = meta.title ?? "";
-      if (!title) {
-        for (const line of text.split("\n").slice(0, 5)) {
-          if (line.startsWith("# ")) {
-            title = line.slice(2).trim();
-            break;
-          }
-        }
-      }
-      const source = f.source === "direct" ? `direct (${f.kind})` : f.source;
-      return { ...base, title, source, markdown: text.endsWith("\n") ? text : text + "\n" };
-    }
-    const ex = htmlToMarkdown(fetchedText(f), f.finalUrl);
-    const source = f.source === "direct" ? `direct (html/${ex.method})` : f.source;
-    return { ...base, title: ex.title, source, markdown: ex.markdown };
+  /** A cached page is served as-is for a day when the origin gave us no validators to revalidate with. */
+  private isFresh(cached: CachedPage): boolean {
+    return Date.now() - cached.fetchedAt < PAGE_FRESH_MS && !cached.etag && !cached.lastModified;
   }
 
-  async fetch(rawUrl: string, opts: FetchOptions = {}): Promise<PageDoc> {
-    let url = await assertPublicUrl(rawUrl, { allowPrivate: this.settings.allowPrivate });
-    url = rewriteUrl(url);
-    this.checkLists(url);
-    const host = new URL(url).host;
-
-    if (opts.via === "archive") return this.fromArchive(url);
-
-    // Cache (with validators for a conditional request).
-    const cached = opts.raw ? null : this.cache.getPage(url, true);
-    if (cached && !opts.raw && Date.now() - cached.fetchedAt < 24 * 3600_000 && !cached.etag && !cached.lastModified) {
-      this.audit.record({ url, cache: "hit" });
-      return { url, finalUrl: cached.finalUrl, title: cached.title, source: `cache ← ${cached.source}`, markdown: cached.markdown, note: "", robots: "cached", licence: cached.licence ? cached.licence.split(" | ") : [], cached: true, updated: cached.updated ?? undefined };
-    }
-
-    // Fast paths first: they talk only to documented public APIs (api.github.com, registry.npmjs.org…)
-    // under those APIs' terms, so the HTML page's robots.txt rules do not apply to them.
-    if (!opts.raw) {
-      const fast = await resolveFastPath(url, this.http("api"));
-      if (fast) {
-        const doc = await this.toDoc(url, fast, { robots: "api terms" });
-        this.cache.setPage({ url, finalUrl: doc.finalUrl, title: doc.title, source: doc.source, markdown: doc.markdown, etag: null, lastModified: null, licence: null, updated: null });
-        return doc;
-      }
-    }
-
-    // robots.txt before anything touches the host's pages.
-    let robotsLine = "";
+  private async checkRobots(url: string): Promise<RobotsDecision> {
     const decision = await this.robots.check(url);
-    if (!decision.allowed) {
-      this.audit.record({ url, robots: decision.status === "unavailable" ? "unavailable" : "disallowed", note: decision.reason });
-      if (decision.contentSignal) throw new DiagnosedError(url, diagnoseContentSignal("robots.txt", decision.contentSignal));
-      throw new DiagnosedError(url, diagnoseRobots(decision.reason ?? "disallowed"));
-    }
-    robotsLine = decision.status === "api" ? "api terms" : decision.status === "ignored" ? "off (FEARCH_ROBOTS_POLICY=off)" : "allowed";
+    if (decision.allowed) return decision;
+    this.audit.record({
+      url,
+      robots: decision.status === "unavailable" ? "unavailable" : "disallowed",
+      note: decision.reason,
+    });
+    if (decision.contentSignal)
+      throw new DiagnosedError(url, diagnoseContentSignal("robots.txt", decision.contentSignal));
+    throw new DiagnosedError(url, diagnoseRobots(decision.reason ?? "disallowed"));
+  }
 
+  private charge(url: string, units = 1): void {
     try {
-      this.politeness.charge();
+      for (let i = 0; i < units; i++) this.politeness.charge();
     } catch (e) {
       if (e instanceof BudgetExceeded) throw new DiagnosedError(url, diagnoseBudget(e.message));
       throw e;
     }
+  }
 
-    // Honest GET (conditional when we hold validators).
-    const conditional = cached && !opts.raw ? { etag: cached.etag, lastModified: cached.lastModified } : undefined;
+  /**
+   * Get the page from the network: the honest GET first, then — if the plain client got a JS shell or
+   * was refused — one self-identified browser attempt. Hosts known to need the browser skip the GET.
+   */
+  private async obtain(
+    url: string,
+    cached: CachedPage | null,
+    decision: RobotsDecision,
+  ): Promise<Page | "not-modified"> {
+    const host = new URL(url).host;
+    const robots = robotsLabel(decision);
+    const browserOn = this.browser?.enabled() ?? false;
+
+    if (!cached && browserOn && this.cache.needsBrowser(host)) {
+      const known: Diagnosis = {
+        kind: "js_required",
+        retryable: false,
+        message: "host known to need a browser",
+        nextAction: "",
+      };
+      const fetched = await this.renderWithBrowser(
+        url,
+        host,
+        known,
+        decision.crawlDelayMs,
+        "skipped (host known to need a browser)",
+      );
+      return { fetched, robots, signals: [] };
+    }
+
     // A redirect to another host is a request to that host: check its robots.txt before following.
     const beforeCrossHostRedirect = async (next: string) => {
       const d = await this.robots.check(next);
-      if (!d.allowed) throw new DiagnosedError(next, diagnoseRobots(`${d.reason ?? "disallowed"} — after redirect from ${url}`));
+      if (!d.allowed)
+        throw new DiagnosedError(next, diagnoseRobots(`${d.reason ?? "disallowed"} — after redirect from ${url}`));
     };
+    const conditional = cached ? { etag: cached.etag, lastModified: cached.lastModified } : undefined;
+    const r = await this.politeness.run(
+      host,
+      () => this.transport.get(url, { conditional, source: "direct", beforeCrossHostRedirect }),
+      decision.crawlDelayMs,
+    );
+    if (r.notModified && cached) return "not-modified";
 
-    // Host known (last 24h) to need a browser: skip the plain attempt that would just fail.
-    if (!opts.raw && !cached && this.browser?.enabled() && this.cache.needsBrowser(host)) {
-      const fetched = await this.renderWithBrowser(url, host, { kind: "js_required", retryable: false, message: "host known to need a browser", nextAction: "" }, decision.crawlDelayMs, "skipped (host known to need a browser)");
-      const html = fetchedText(fetched);
-      const signals = licenceSignals(fetched.headers, html);
-      const updated = freshness(fetched.headers, html);
-      const doc = await this.toDoc(url, fetched, { robots: robotsLine, licence: signals });
-      doc.updated = updated.date ? updated : undefined;
-      if (!doc.markdown.trim()) throw new FetchError(`Rendered ${url} but extracted no readable content.`);
-      this.cache.setPage({ url, finalUrl: doc.finalUrl, title: doc.title, source: doc.source, markdown: doc.markdown, etag: null, lastModified: null, licence: signals.length ? signals.join(" | ") : null, updated: doc.updated ?? null });
-      return doc;
-    }
-
-    const r = await this.politeness.run(host, () => this.transport.get(url, { conditional, source: "direct", beforeCrossHostRedirect }), decision.crawlDelayMs);
-
-    if (r.notModified && cached) {
-      this.cache.touchPage(url);
-      return { url, finalUrl: cached.finalUrl, title: cached.title, source: `cache (revalidated) ← ${cached.source}`, markdown: cached.markdown, note: "", robots: robotsLine, licence: cached.licence ? cached.licence.split(" | ") : [], cached: true, updated: cached.updated ?? undefined };
-    }
-
-    if (opts.raw) {
-      return { url, finalUrl: r.finalUrl, title: "", source: `raw (${r.kind}, HTTP ${r.status})`, markdown: fetchedText(r), note: "", robots: robotsLine, licence: licenceSignals(r.headers), cached: false };
-    }
-
-    let html = r.kind === "html" ? fetchedText(r) : undefined;
-    const shell = html ? detectShell(html) : false;
-    const dx = diagnose(r, { isShell: shell });
     let fetched: Fetched = r;
+    const dx = diagnose(r, { isShell: r.kind === "html" && detectShell(fetchedText(r)) });
     if (dx) {
       if (dx.kind === "not_found") this.gone.add(url);
-      if (!BROWSER_RETRY_KINDS.has(dx.kind) || !this.browser?.enabled()) throw new DiagnosedError(url, dx);
-      // One honest browser attempt: the plain client was refused or got a JS shell.
+      if (!BROWSER_RETRY_KINDS.has(dx.kind) || !browserOn) throw new DiagnosedError(url, dx);
       fetched = await this.renderWithBrowser(url, host, dx, decision.crawlDelayMs);
-      html = fetchedText(fetched);
-      // Remember that this host needs a browser, so the next read skips the plain attempt (still
-      // the same identity and rules — just the right client first).
+      // Remember, so the next read of this host starts with the right client (same identity, same rules).
       this.cache.setNeedsBrowser(host);
     }
 
-    // Content-Signal response header: ai-input=no → do not hand the page to the model (unless policy is minimal).
+    // Content-Signal response header: ai-input=no means "don't feed my pages into an AI model".
     const cs = parseContentSignal(fetched.headers["content-signal"]);
     if (cs?.aiInput === false && this.settings.robotsPolicy !== "minimal" && this.settings.robotsPolicy !== "off") {
-      this.audit.record({ url, status: fetched.status, note: `Content-Signal ai-input=no (${cs.raw}); content withheld` });
+      this.audit.record({
+        url,
+        status: fetched.status,
+        note: `Content-Signal ai-input=no (${cs.raw}); content withheld`,
+      });
       throw new DiagnosedError(url, diagnoseContentSignal("HTTP header", cs.raw));
     }
+    return { fetched, robots, signals: licenceSignals(fetched.headers, fetchedText(fetched)) };
+  }
 
-    const signals = licenceSignals(fetched.headers, html);
+  /** Extract, annotate (licence, freshness, llms.txt), cache, and return the document. */
+  private async finish(url: string, page: Page): Promise<PageDoc> {
+    const { fetched, robots } = page;
+    const signals = [...page.signals];
     const lic = knownLicence(new URL(fetched.finalUrl).hostname);
     if (lic) signals.push(lic);
-    const linkHdr = fetched.headers["link"] ?? "";
-    const llmsLink = /<([^>]+)>;[^,]*rel="?llms-txt"?/i.exec(linkHdr)?.[1] ?? fetched.headers["x-llms-txt"];
-    const updated = freshness(fetched.headers, html);
-    let doc = await this.toDoc(url, fetched, { robots: robotsLine, licence: signals });
-    doc.updated = updated.date ? updated : undefined;
-    if (llmsLink) doc.note = `Note: this site advertises an agent index at ${new URL(llmsLink, fetched.finalUrl).toString()}.`;
 
-    // Root pages of docs sites: llms.txt is usually a far better index than the HTML home.
-    const depth = new URL(url).pathname.split("/").filter(Boolean).length;
-    if (depth <= 1) {
-      const llms = await llmsTxt(url, this.http("llms.txt")).catch(() => null);
-      if (llms) {
-        const origin = new URL(url).origin;
-        if (depth === 0 || doc.markdown.trim().length < 500) {
-          doc = { ...doc, title: doc.title || "llms.txt", source: "llms.txt", markdown: llms.endsWith("\n") ? llms : llms + "\n" };
-        } else {
-          doc.note = `Note: this site publishes ${origin}/llms.txt (an agent-friendly index of its docs).`;
-        }
-      }
-    }
+    let doc = await this.toDocument(url, fetched, robots, signals);
+    const updated = freshness(fetched.headers, fetched.kind === "html" ? fetchedText(fetched) : undefined);
+    if (updated.date) doc.updated = updated;
 
-    if (!doc.markdown.trim()) throw new FetchError(`Fetched ${url} but extracted no readable content (source: ${doc.source}).`);
+    const llmsLink = LLMS_TXT_LINK_RE.exec(fetched.headers["link"] ?? "")?.[1] ?? fetched.headers["x-llms-txt"];
+    if (llmsLink) doc.note = `Note: this site advertises an agent index at ${new URL(llmsLink, fetched.finalUrl)}.`;
+    doc = await this.preferLlmsTxt(url, doc);
 
+    if (!doc.markdown.trim())
+      throw new FetchError(`Fetched ${url} but extracted no readable content (source: ${doc.source}).`);
     this.cache.setPage({
       url,
       finalUrl: doc.finalUrl,
@@ -255,45 +275,136 @@ export class Fetcher {
     return doc;
   }
 
+  /** On a docs site's root pages, /llms.txt is usually a far better index than the HTML home. */
+  private async preferLlmsTxt(url: string, doc: PageDoc): Promise<PageDoc> {
+    const depth = new URL(url).pathname.split("/").filter(Boolean).length;
+    if (depth > 1) return doc;
+    const llms = await llmsTxt(url, this.http("llms.txt")).catch(() => null);
+    if (!llms) return doc;
+    if (depth === 0 || doc.markdown.trim().length < 500) {
+      return { ...doc, title: doc.title || "llms.txt", source: "llms.txt", markdown: withTrailingNewline(llms) };
+    }
+    return {
+      ...doc,
+      note: `Note: this site publishes ${new URL(url).origin}/llms.txt (an agent-friendly index of its docs).`,
+    };
+  }
+
+  private async fetchRaw(url: string): Promise<PageDoc> {
+    const decision = await this.checkRobots(url);
+    this.charge(url);
+    const r = await this.politeness.run(
+      new URL(url).host,
+      () => this.transport.get(url, { source: "direct" }),
+      decision.crawlDelayMs,
+    );
+    return this.document(url, r.finalUrl, {
+      title: "",
+      source: `raw (${r.kind}, HTTP ${r.status})`,
+      markdown: fetchedText(r),
+      robots: robotsLabel(decision),
+      licence: licenceSignals(r.headers),
+    });
+  }
+
+  // ---- documents -------------------------------------------------------------------------------
+
+  private document(
+    url: string,
+    finalUrl: string,
+    d: Pick<PageDoc, "title" | "source" | "markdown" | "robots" | "licence"> & Partial<PageDoc>,
+  ): PageDoc {
+    return { url, finalUrl, note: "", cached: false, ...d };
+  }
+
+  private fromCache(url: string, cached: CachedPage, sourcePrefix: string, robots: string): PageDoc {
+    return this.document(url, cached.finalUrl, {
+      title: cached.title,
+      source: `${sourcePrefix} ← ${cached.source}`,
+      markdown: cached.markdown,
+      robots,
+      licence: cached.licence ? cached.licence.split(" | ") : [],
+      cached: true,
+      updated: cached.updated ?? undefined,
+    });
+  }
+
+  /** Turn fetched bytes of any supported kind into a document with markdown content. */
+  private async toDocument(url: string, f: Fetched, robots: string, licence: string[]): Promise<PageDoc> {
+    const doc = (title: string, source: string, markdown: string) =>
+      this.document(url, f.finalUrl, { title, source, markdown, robots, licence });
+    if (f.kind === "pdf") {
+      const data = typeof f.body === "string" ? new TextEncoder().encode(f.body) : f.body;
+      const ex = await pdfToMarkdown(data);
+      return doc(ex.title, `${f.source} (pdf)`, ex.markdown);
+    }
+    if (f.kind === "html") {
+      const ex = htmlToMarkdown(fetchedText(f));
+      return doc(ex.title, f.source === "direct" ? `direct (html/${ex.method})` : f.source, ex.markdown);
+    }
+    // markdown, text, json
+    const { meta, body } = splitFrontmatter(fetchedText(f));
+    const text = f.kind === "markdown" ? cleanMarkdownSource(body) : body;
+    return doc(
+      meta.title ?? firstHeading(text),
+      f.source === "direct" ? `direct (${f.kind})` : f.source,
+      withTrailingNewline(text),
+    );
+  }
+
+  // ---- the browser tier ------------------------------------------------------------------------
+
   /**
-   * The browser tier. Same robots decision, same host queue (browser fetches cost two budget units).
+   * One browser attempt, under the same robots decision and host queue, costing two budget units.
    * If the rendered page is itself a challenge/login/paywall/shell, the refusal is final.
    */
-  private async renderWithBrowser(url: string, host: string, plain: Diagnosis, crawlDelayMs?: number, directLabel?: string): Promise<Fetched> {
+  private async renderWithBrowser(
+    url: string,
+    host: string,
+    plain: Diagnosis,
+    crawlDelayMs?: number,
+    directLabel?: string,
+  ): Promise<Fetched> {
     const attempts = [`direct: ${directLabel ?? plain.kind}`];
-    try {
-      this.politeness.charge();
-      this.politeness.charge();
-    } catch (e) {
-      if (e instanceof BudgetExceeded) throw new DiagnosedError(url, diagnoseBudget(e.message));
-      throw e;
-    }
+    this.charge(url, 2);
     let rendered;
     try {
-      rendered = await this.politeness.run(host, () => this.browser!.render(url, { session: this.settings.browserSession, handoff: true }), crawlDelayMs);
+      rendered = await this.politeness.run(
+        host,
+        () => this.browser!.render(url, { session: this.settings.browserSession, handoff: true }),
+        crawlDelayMs,
+      );
     } catch (e) {
-      if (e instanceof BrowserUnavailable) {
-        this.audit.log("warn", `browser tier unavailable: ${e.message}`);
-        throw new DiagnosedError(url, { ...plain, attempts: [...attempts, `browser: unavailable (${e.message})`] });
-      }
       if (e instanceof BlockedURL) throw e;
-      throw new DiagnosedError(url, { ...plain, attempts: [...attempts, `browser: error (${(e as Error).message.split("\n")[0]})`] });
+      if (e instanceof BrowserUnavailable) this.audit.log("warn", `browser tier unavailable: ${e.message}`);
+      const why =
+        e instanceof BrowserUnavailable
+          ? `unavailable (${e.message})`
+          : `error (${(e as Error).message.split("\n")[0]})`;
+      throw new DiagnosedError(url, { ...plain, attempts: [...attempts, `browser: ${why}`] });
     }
-    const f: Fetched = {
+    const provenance = [
+      rendered.salvaged ? "browser (partial render)" : "browser",
+      rendered.label,
+      rendered.handedOff && "challenge passed by you",
+      rendered.usedSession && "your session",
+    ];
+    const fetched: Fetched = {
       url,
       finalUrl: rendered.finalUrl,
       kind: "html",
       body: rendered.html,
-      source: [rendered.salvaged ? "browser (partial render)" : "browser", rendered.label ?? "", rendered.handedOff ? "challenge passed by you" : "", rendered.usedSession ? "your session" : ""].filter(Boolean).join(", "),
+      source: provenance.filter(Boolean).join(", "),
       status: rendered.status,
       contentType: "text/html",
       headers: {},
     };
-    const shell = detectShell(rendered.html);
-    const dx = diagnose(f, { isShell: shell });
+    const dx = diagnose(fetched, { isShell: detectShell(rendered.html) });
     if (dx) throw new DiagnosedError(url, finalizeAfterBrowser(dx, [...attempts, `browser: ${dx.kind}`]));
-    return f;
+    return fetched;
   }
+
+  // ---- the archive -----------------------------------------------------------------------------
 
   /** Wayback Machine, only for pages the live site reports gone. Never a bypass for blocks. */
   private async fromArchive(url: string): Promise<PageDoc> {
@@ -301,23 +412,41 @@ export class Fetcher {
       // Verify the live page is actually gone first; a blocked page stays blocked.
       try {
         const live = await this.fetch(url);
-        return { ...live, note: (live.note ? live.note + " " : "") + "The live page is available; archive not used." };
+        return { ...live, note: `${live.note} The live page is available; archive not used.`.trim() };
       } catch (e) {
         if (!(e instanceof DiagnosedError) || e.diagnosis.kind !== "not_found") throw e;
       }
     }
-    const avail = await this.http("archive")(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`, { headers: { accept: "application/json" } });
+    const avail = await this.http("archive")(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`, {
+      headers: { accept: "application/json" },
+    });
     if (avail.status !== 200) throw new FetchError(`Wayback availability API returned HTTP ${avail.status}.`);
     const data = (await avail.json()) as { archived_snapshots?: { closest?: { url: string; timestamp: string } } };
     const snap = data.archived_snapshots?.closest;
     if (!snap) throw new FetchError("No archived snapshot exists for this URL.");
+
     const rawUrl = snap.url.replace(`/web/${snap.timestamp}/`, `/web/${snap.timestamp}id_/`);
-    const decision = await this.robots.check(rawUrl);
-    if (!decision.allowed) throw new DiagnosedError(rawUrl, diagnoseRobots(decision.reason ?? "disallowed"));
-    this.politeness.charge();
-    const r = await this.politeness.run("web.archive.org", () => this.transport.get(rawUrl, { source: `archive (${snap.timestamp.slice(0, 8)})` }));
+    await this.checkRobots(rawUrl);
+    this.charge(url);
+    const r = await this.politeness.run("web.archive.org", () =>
+      this.transport.get(rawUrl, { source: `archive (${snap.timestamp.slice(0, 8)})` }),
+    );
     if (r.status !== 200) throw new FetchError(`Archive snapshot returned HTTP ${r.status}.`);
-    const doc = await this.toDoc(url, { ...r, url, finalUrl: url }, { robots: "allowed (web.archive.org)" });
-    return { ...doc, note: `Archived copy from ${snap.timestamp.slice(0, 4)}-${snap.timestamp.slice(4, 6)}-${snap.timestamp.slice(6, 8)}; the live page reported 404/410.` };
+    const doc = await this.toDocument(url, { ...r, url, finalUrl: url }, "allowed (web.archive.org)", []);
+    const when = `${snap.timestamp.slice(0, 4)}-${snap.timestamp.slice(4, 6)}-${snap.timestamp.slice(6, 8)}`;
+    return { ...doc, note: `Archived copy from ${when}; the live page reported 404/410.` };
   }
+}
+
+function robotsLabel(d: RobotsDecision): string {
+  return d.status === "api" ? "api terms" : d.status === "ignored" ? "off (--robots off)" : "allowed";
+}
+
+function firstHeading(text: string): string {
+  const line = text.split("\n", 5).find((l) => l.startsWith("# "));
+  return line ? line.slice(2).trim() : "";
+}
+
+function withTrailingNewline(s: string): string {
+  return s.endsWith("\n") ? s : s + "\n";
 }

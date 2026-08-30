@@ -47,7 +47,10 @@ export function freshness(headers: Record<string, string>, html?: string, now = 
           // ignore malformed JSON-LD
         }
       });
-      candidates.push(["meta date", parse($('meta[name="date"], meta[name="last-modified"], meta[name="dcterms.modified"]').attr("content"))]);
+      candidates.push([
+        "meta date",
+        parse($('meta[name="date"], meta[name="last-modified"], meta[name="dcterms.modified"]').attr("content")),
+      ]);
       const t = $("time[datetime]").first().attr("datetime");
       candidates.push(["<time>", parse(t)]);
     } catch {
@@ -64,6 +67,7 @@ export function freshness(headers: Record<string, string>, html?: string, now = 
 export function describeAge(f: Freshness): string {
   if (!f.date) return "";
   const d = f.ageDays ?? 0;
-  const rel = d < 1 ? "today" : d < 30 ? `${d}d ago` : d < 365 ? `${Math.round(d / 30)}mo ago` : `${(d / 365).toFixed(1)}y ago`;
+  const rel =
+    d < 1 ? "today" : d < 30 ? `${d}d ago` : d < 365 ? `${Math.round(d / 30)}mo ago` : `${(d / 365).toFixed(1)}y ago`;
   return `updated ${f.date} (${rel})${f.stale ? " ⚠ may be stale" : ""}`;
 }

@@ -120,11 +120,16 @@ export class ExtensionBridge {
           });
         });
         if (ok) {
-          this.audit.log("info", `extension bridge listening on 127.0.0.1:${this.port} (waiting for the fearch bridge extension in your Chrome)`);
+          this.audit.log(
+            "info",
+            `extension bridge listening on 127.0.0.1:${this.port} (waiting for the fearch bridge extension in your Chrome)`,
+          );
           return this.port;
         }
       }
-      throw new BrowserUnavailable(`extension bridge: ports ${this.ports[0]}-${this.ports[this.ports.length - 1]} are all in use`);
+      throw new BrowserUnavailable(
+        `extension bridge: ports ${this.ports[0]}-${this.ports[this.ports.length - 1]} are all in use`,
+      );
     })();
     try {
       return await this.starting;
@@ -145,7 +150,12 @@ export class ExtensionBridge {
     };
     try {
       if (url.pathname === "/fearch/status" && req.method === "GET") {
-        return json(200, { connected: this.connected(), extension: this.info, port: this.port, extensionId: this.extensionId });
+        return json(200, {
+          connected: this.connected(),
+          extension: this.info,
+          port: this.port,
+          extensionId: this.extensionId,
+        });
       }
       if (url.pathname === "/setup" && req.method === "GET") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -154,11 +164,13 @@ export class ExtensionBridge {
       }
       if (!url.pathname.startsWith("/fearch/")) return json(404, { error: "not found" });
       if (req.method !== "POST") return json(405, { error: "POST only" });
-      if (!this.fromExtension(req)) return json(403, { error: "requests are accepted only from the fearch bridge extension" });
+      if (!this.fromExtension(req))
+        return json(403, { error: "requests are accepted only from the fearch bridge extension" });
       const body = (await readJson(req)) as Record<string, unknown>;
       if (url.pathname === "/fearch/next") {
         this.lastPoll = Date.now();
-        if (typeof body.version === "string") this.info = { version: body.version, incognitoAllowed: !!body.incognitoAllowed };
+        if (typeof body.version === "string")
+          this.info = { version: body.version, incognitoAllowed: !!body.incognitoAllowed };
         const job = await this.nextJob();
         if (!job) {
           res.writeHead(204, { "cache-control": "no-store" });
@@ -270,10 +282,14 @@ export class ExtensionRenderer implements BrowserTier {
       throw new BlockedURL(`refusing to open a private address in the browser (${target})`);
     }
     if (!(await this.bridge.waitForConnection(this.settings.extensionConnectMs))) {
-      const hint = "the fearch bridge extension is not connected — run `fearch extension install` (or open chrome://extensions and check it is enabled)";
+      const hint =
+        "the fearch bridge extension is not connected — run `fearch extension install` (or open chrome://extensions and check it is enabled)";
       if (this.fallback) {
         if (!this.warnedFallback) {
-          this.audit.log("warn", `${hint}; using the ${this.fallback.headed ? "headed" : "headless"} browser tier instead`);
+          this.audit.log(
+            "warn",
+            `${hint}; using the ${this.fallback.headed ? "headed" : "headless"} browser tier instead`,
+          );
           this.warnedFallback = true;
         }
         return this.fallback.render(url, opts);
@@ -282,8 +298,18 @@ export class ExtensionRenderer implements BrowserTier {
     }
     this.warnedFallback = false;
     const started = Date.now();
-    const opened = await this.bridge.request({ op: "open", url: target, incognito: this.settings.incognito, settleSelector: opts.settleSelector, timeoutMs: this.settings.browserTimeoutMs }, this.settings.browserTimeoutMs + 15_000);
-    if (!opened.ok || opened.tabId === undefined) throw new BrowserUnavailable(`extension: ${opened.error ?? "could not open the page"}`);
+    const opened = await this.bridge.request(
+      {
+        op: "open",
+        url: target,
+        incognito: this.settings.incognito,
+        settleSelector: opts.settleSelector,
+        timeoutMs: this.settings.browserTimeoutMs,
+      },
+      this.settings.browserTimeoutMs + 15_000,
+    );
+    if (!opened.ok || opened.tabId === undefined)
+      throw new BrowserUnavailable(`extension: ${opened.error ?? "could not open the page"}`);
     const tabId = opened.tabId;
     let html = opened.html ?? "";
     let finalUrl = opened.url ?? target;
@@ -291,7 +317,10 @@ export class ExtensionRenderer implements BrowserTier {
     try {
       const isChallenge = opts.isChallenge ?? isChallengePage;
       if (this.settings.handoff && opts.handoff !== false && isChallenge(html, 200, finalUrl)) {
-        this.audit.log("warn", `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`);
+        this.audit.log(
+          "warn",
+          `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+        );
         await this.bridge.request({ op: "activate", tabId });
         const r = await waitForHuman(
           async () => {
@@ -309,11 +338,29 @@ export class ExtensionRenderer implements BrowserTier {
         } else this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
       }
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
-      if (!this.settings.allowPrivate && (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))) {
+      if (
+        !this.settings.allowPrivate &&
+        (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))
+      ) {
         throw new BlockedURL(`browser navigation ended at a private address (${finalUrl})`);
       }
-      this.audit.record({ url: target, status: 200, bytes: html.length, provider: this.settings.incognito ? "extension (incognito)" : "extension", ms: Date.now() - started, note: handedOff ? "challenge handed to the person" : undefined });
-      return { html, finalUrl, status: 200, salvaged: false, usedSession: false, handedOff, label: this.settings.incognito ? "your Chrome, incognito" : "your Chrome" };
+      this.audit.record({
+        url: target,
+        status: 200,
+        bytes: html.length,
+        provider: this.settings.incognito ? "extension (incognito)" : "extension",
+        ms: Date.now() - started,
+        note: handedOff ? "challenge handed to the person" : undefined,
+      });
+      return {
+        html,
+        finalUrl,
+        status: 200,
+        salvaged: false,
+        usedSession: false,
+        handedOff,
+        label: this.settings.incognito ? "your Chrome, incognito" : "your Chrome",
+      };
     } finally {
       // Awaited (bounded) so a tab never outlives the request that opened it.
       await this.bridge.request({ op: "close", tabId }, 5_000);

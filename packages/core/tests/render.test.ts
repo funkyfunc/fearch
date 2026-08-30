@@ -32,7 +32,15 @@ describe("render", () => {
 
   it("renders the page layout with header lines", () => {
     const w = applyBudget("body text\n\nmore", 0, 12);
-    const out = renderPage({ title: "T", url: "https://e.com", source: "direct", window: w, facts: ["robots: allowed"], outline: "Sections not shown: A · B", nextCursor: "12@read" });
+    const out = renderPage({
+      title: "T",
+      url: "https://e.com",
+      source: "direct",
+      window: w,
+      facts: ["robots: allowed"],
+      outline: "Sections not shown: A · B",
+      nextCursor: "12@read",
+    });
     expect(out.startsWith("# T\nURL: https://e.com\nsource: direct · robots: allowed · chars 0–")).toBe(true);
     expect(out).toContain("Untrusted page content");
     expect(out).toContain("Sections not shown: A · B");

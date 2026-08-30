@@ -5,10 +5,15 @@ describe("politeness", () => {
   it("serializes per host and enforces the gap, independently across hosts", async () => {
     let clock = 0;
     const waits: number[] = [];
-    const p = new Politeness(1000, { count: 100, windowMs: 60_000 }, () => clock, async (ms) => {
-      waits.push(ms);
-      clock += ms;
-    });
+    const p = new Politeness(
+      1000,
+      { count: 100, windowMs: 60_000 },
+      () => clock,
+      async (ms) => {
+        waits.push(ms);
+        clock += ms;
+      },
+    );
     const order: string[] = [];
     await Promise.all([
       p.run("a.test", async () => {
@@ -32,10 +37,15 @@ describe("politeness", () => {
   it("honours a larger crawl-delay", async () => {
     let clock = 0;
     const waits: number[] = [];
-    const p = new Politeness(1000, { count: 100, windowMs: 60_000 }, () => clock, async (ms) => {
-      waits.push(ms);
-      clock += ms;
-    });
+    const p = new Politeness(
+      1000,
+      { count: 100, windowMs: 60_000 },
+      () => clock,
+      async (ms) => {
+        waits.push(ms);
+        clock += ms;
+      },
+    );
     await p.run("a.test", async () => {}, 5000);
     await p.run("a.test", async () => {}, 5000);
     expect(waits).toEqual([5000]);

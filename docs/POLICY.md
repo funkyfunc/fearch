@@ -48,7 +48,7 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 - Requests to documented public APIs (`api.github.com`, `raw.githubusercontent.com`, `pypi.org`,
   `registry.npmjs.org`, `api.stackexchange.com`, `crates.io`, MDN's and Wikipedia's search endpoints)
   are made under those services' API terms; robots.txt governs page crawling, not API clients. The
-  exact list is `API_HOSTS` in `packages/core/src/fetch/resolver.ts`, and such requests are marked
+  exact list is `API_ENDPOINTS` in `packages/core/src/fetch/resolver.ts`, and such requests are marked
   `Robots: api terms` in the output.
 
 ## The browser tier

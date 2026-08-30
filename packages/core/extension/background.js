@@ -48,7 +48,10 @@ function waitLoaded(tabId, timeoutMs) {
       if (id === tabId && info.status === "complete") finish();
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.get(tabId).then((t) => t.status === "complete" && finish()).catch(finish);
+    chrome.tabs
+      .get(tabId)
+      .then((t) => t.status === "complete" && finish())
+      .catch(finish);
     setTimeout(finish, timeoutMs);
   });
 }
@@ -66,7 +69,11 @@ async function settle(tabId, selector, ms) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     try {
-      const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: (s) => !!document.querySelector(s), args: [selector] });
+      const [r] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (s) => !!document.querySelector(s),
+        args: [selector],
+      });
       if (r.result) return;
     } catch {}
     await sleep(250);
@@ -80,7 +87,8 @@ async function handle(job) {
     case "open": {
       const u = new URL(job.url);
       if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("only http(s) URLs");
-      if (job.incognito && !(await hello()).incognitoAllowed) throw new Error("incognito not allowed: enable “Allow in Incognito” for fearch bridge at chrome://extensions");
+      if (job.incognito && !(await hello()).incognitoAllowed)
+        throw new Error("incognito not allowed: enable “Allow in Incognito” for fearch bridge at chrome://extensions");
       const windowId = await ensureWindow(!!job.incognito);
       const tab = await chrome.tabs.create({ windowId, url: job.url, active: false });
       ownedTabs.add(tab.id);
@@ -117,7 +125,11 @@ async function loop(port) {
     for (;;) {
       let job;
       try {
-        const r = await fetch(`http://127.0.0.1:${port}/fearch/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(await hello()) });
+        const r = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(await hello()),
+        });
         if (r.status === 204) {
           state.servers[port] = { connected: true, at: Date.now() };
           continue;
@@ -138,7 +150,11 @@ async function loop(port) {
         state.lastError = result.error;
       }
       try {
-        await fetch(`http://127.0.0.1:${port}/fearch/result`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: job.id, ...result }) });
+        await fetch(`http://127.0.0.1:${port}/fearch/result`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: job.id, ...result }),
+        });
       } catch {}
     }
   } finally {

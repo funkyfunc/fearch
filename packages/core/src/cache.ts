@@ -54,7 +54,9 @@ export class Cache {
     const version = (this.db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
     if (version !== SCHEMA_VERSION) {
       // Any older layout (including the v1 Python server's) is simply dropped — it's a cache.
-      this.db.exec("DROP TABLE IF EXISTS pages; DROP TABLE IF EXISTS searches; DROP TABLE IF EXISTS robots; DROP TABLE IF EXISTS hosts; DROP TABLE IF EXISTS engine_state;");
+      this.db.exec(
+        "DROP TABLE IF EXISTS pages; DROP TABLE IF EXISTS searches; DROP TABLE IF EXISTS robots; DROP TABLE IF EXISTS hosts; DROP TABLE IF EXISTS engine_state;",
+      );
       this.db.exec(SCHEMA);
       this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else {
@@ -64,7 +66,9 @@ export class Cache {
 
   getPage(url: string, allowStale = false): CachedPage | null {
     const row = this.db
-      .prepare("SELECT url, final_url, title, source, markdown, etag, last_modified, licence, updated, fetched_at FROM pages WHERE url = ?")
+      .prepare(
+        "SELECT url, final_url, title, source, markdown, etag, last_modified, licence, updated, fetched_at FROM pages WHERE url = ?",
+      )
       .get(url) as Record<string, string | number | null> | undefined;
     if (!row) return null;
     const fetchedAt = Number(row.fetched_at);
@@ -94,7 +98,18 @@ export class Cache {
   setPage(p: Omit<CachedPage, "fetchedAt">): void {
     this.db
       .prepare("INSERT OR REPLACE INTO pages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(p.url, p.finalUrl, p.title, p.source, p.markdown, p.etag, p.lastModified, p.licence, p.updated ? JSON.stringify(p.updated) : null, Date.now());
+      .run(
+        p.url,
+        p.finalUrl,
+        p.title,
+        p.source,
+        p.markdown,
+        p.etag,
+        p.lastModified,
+        p.licence,
+        p.updated ? JSON.stringify(p.updated) : null,
+        Date.now(),
+      );
   }
 
   touchPage(url: string): void {
@@ -103,8 +118,7 @@ export class Cache {
 
   getSearch<T>(key: string): T | null {
     const row = this.db.prepare("SELECT results, fetched_at FROM searches WHERE key = ?").get(key) as
-      | { results: string; fetched_at: number }
-      | undefined;
+      { results: string; fetched_at: number } | undefined;
     if (!row || Date.now() - Number(row.fetched_at) > SEARCH_TTL_MS) return null;
     return JSON.parse(row.results) as T;
   }
@@ -115,8 +129,7 @@ export class Cache {
 
   getRobots(host: string): CachedRobots | null {
     const row = this.db.prepare("SELECT host, status, body, fetched_at FROM robots WHERE host = ?").get(host) as
-      | { host: string; status: number; body: string; fetched_at: number }
-      | undefined;
+      { host: string; status: number; body: string; fetched_at: number } | undefined;
     if (!row || Date.now() - Number(row.fetched_at) > ROBOTS_TTL_MS) return null;
     return { host: row.host, status: Number(row.status), body: row.body, fetchedAt: Number(row.fetched_at) };
   }
@@ -127,7 +140,8 @@ export class Cache {
 
   /** Hosts where the plain client recently failed and the browser succeeded: go straight to the browser. */
   needsBrowser(host: string): boolean {
-    const row = this.db.prepare("SELECT needs_browser_until FROM hosts WHERE host = ?").get(host) as { needs_browser_until: number } | undefined;
+    const row = this.db.prepare("SELECT needs_browser_until FROM hosts WHERE host = ?").get(host) as
+      { needs_browser_until: number } | undefined;
     return !!row && Number(row.needs_browser_until) > Date.now();
   }
 

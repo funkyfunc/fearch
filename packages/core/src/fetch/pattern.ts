@@ -11,7 +11,12 @@ export interface PatternMatch {
   matches: number;
 }
 
-export function findPattern(md: string, pattern: string, contextChars = 200, maxWindows = 20): { windows: PatternMatch[]; total: number } {
+export function findPattern(
+  md: string,
+  pattern: string,
+  contextChars = 200,
+  maxWindows = 20,
+): { windows: PatternMatch[]; total: number } {
   let re: RegExp;
   try {
     re = new RegExp(pattern, "gi");
@@ -46,13 +51,20 @@ export function findPattern(md: string, pattern: string, contextChars = 200, max
   return { windows: windows.slice(0, maxWindows), total: hits.length };
 }
 
-export function renderPattern(pattern: string, res: { windows: PatternMatch[]; total: number }, docLength: number): string {
+export function renderPattern(
+  pattern: string,
+  res: { windows: PatternMatch[]; total: number },
+  docLength: number,
+): string {
   if (!res.total) return `Pattern /${pattern}/i: no matches in ${docLength} chars.`;
   const shown = res.windows.reduce((a, w) => a + w.matches, 0);
-  const lines = [`Pattern /${pattern}/i: ${res.total} match${res.total === 1 ? "" : "es"} in ${docLength} chars; showing ${res.windows.length} window${res.windows.length === 1 ? "" : "s"} (${shown} matches).`, ""];
+  const lines = [
+    `Pattern /${pattern}/i: ${res.total} match${res.total === 1 ? "" : "es"} in ${docLength} chars; showing ${res.windows.length} window${res.windows.length === 1 ? "" : "s"} (${shown} matches).`,
+    "",
+  ];
   for (const w of res.windows) {
     lines.push(`[Position: ${w.start}-${w.end}]`, w.text, "");
   }
-  lines.push("Use fetch with start_index=<position> to read more around a match.");
+  lines.push("To read around a match, fetch with mode=read and cursor=<position>.");
   return lines.join("\n");
 }

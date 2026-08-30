@@ -23,14 +23,12 @@ export interface Settings {
   perHostDelayMs: number;
   sessionBudget: { count: number; windowMs: number };
   allowPrivate: boolean;
-  /** True when robots.txt is not consulted at all (`--robots off`). */
-  ignoreRobots: boolean;
   /**
    * Which robots.txt groups apply. `default`/`strict`/`minimal` are the crawler posture (see
    * fetch/robots.ts). `off` is the user-agent posture: like a browser, robots.txt is not consulted;
    * pace limits and refusals still apply. Stamped on every result header.
    */
-  robotsPolicy: "default" | "strict" | "minimal" | "off";
+  robotsPolicy: (typeof ROBOTS_POLICIES)[number];
   allowDomains: string[];
   denyDomains: string[];
   cacheDir: string;
@@ -47,7 +45,7 @@ export interface Settings {
    * extension — no automation signals at all (falls back to headless if the extension isn't there).
    * `off`: no browser tier.
    */
-  browser: "headless" | "headed" | "extension" | "off";
+  browser: (typeof BROWSER_MODES)[number];
   /** Extension only: open pages in an incognito window (no cookies from the person's profile). */
   incognito: boolean;
   /** Extension only: how long to wait for the extension to show up before falling back (ms). */
@@ -55,9 +53,8 @@ export interface Settings {
   /**
    * How the browser tier identifies itself. `header` (default): stock Chrome User-Agent plus `From:`
    * (RFC 9110 §10.1.2, the header defined for robots to name their controller) and `X-Agent:` on every
-   * request. `ua`: additionally append the product token to the User-Agent — more conspicuous, but
-   * `none`: plain Chrome, no identifying headers (user-agent posture). `navigator.webdriver` is never
-   * touched. (Appending the token to the UA itself was measured to trip bot-checks and was dropped.)
+   * request. `none`: plain Chrome, no identifying headers (user-agent posture). `navigator.webdriver` is
+   * never touched. (Appending the token to the UA itself was measured to trip bot-checks and was dropped.)
    */
   browserIdentity: "header" | "none";
   /**
@@ -83,7 +80,7 @@ export interface Settings {
   browserTimeoutMs: number;
   browserMaxConcurrent: number;
   /** all: third-party services + first-party APIs; first-party: only the sites' own APIs; off: no search tool activity. */
-  searchMode: "all" | "first-party" | "off";
+  searchMode: (typeof SEARCH_MODES)[number];
   /** Minimum gap between requests to specific hosts (ms), e.g. arXiv asks for 3 s. */
   hostGapsMs: Record<string, number>;
   /** Exa's keyless hosted search, as the fallback after the engines. Empty = off (the default: queries stay off third-party services). */
@@ -123,14 +120,21 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
 };
 
 export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
+export const ROBOTS_POLICIES = ["default", "strict", "minimal", "off"] as const;
+export const BROWSER_MODES = ["headless", "headed", "extension", "off"] as const;
+export const SEARCH_MODES = ["all", "first-party", "off"] as const;
 
 export function settingsFromEnv(env: Env = process.env): Settings {
   const cacheDir = env.FEARCH_CACHE_DIR?.trim() || join(homedir(), ".cache", "fearch");
-  const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ["default", "strict", "minimal", "off"] as const, "default");
-  const browserRaw = env.FEARCH_BROWSER?.trim().toLowerCase();
-  const browser: Settings["browser"] = browserRaw === "off" ? "off" : browserRaw === "headed" ? "headed" : browserRaw === "extension" ? "extension" : "headless";
+  const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ROBOTS_POLICIES, "default");
+  const browser = pick(env.FEARCH_BROWSER, BROWSER_MODES, "headless");
   // Handoff needs a person-visible browser. In the extension it is the person's own Chrome, so it defaults on.
-  const handoff = browser === "headed" ? envBool(env, "FEARCH_HANDOFF") : browser === "extension" ? envBool(env, "FEARCH_HANDOFF", true) : false;
+  const handoff =
+    browser === "headed"
+      ? envBool(env, "FEARCH_HANDOFF")
+      : browser === "extension"
+        ? envBool(env, "FEARCH_HANDOFF", true)
+        : false;
   const infoUrl = env.FEARCH_UA_INFO_URL?.trim() || pkg.homepage || "https://github.com/funkyfunc/fearch";
   const contact = env.FEARCH_UA_CONTACT?.trim() || "";
   return {
@@ -144,9 +148,11 @@ export function settingsFromEnv(env: Env = process.env): Settings {
     maxBytes: envInt(env, "FEARCH_MAX_BYTES", 10 * 1024 * 1024),
     maxRedirects: 6,
     perHostDelayMs: envInt(env, "FEARCH_PER_HOST_DELAY_MS", 1_000),
-    sessionBudget: { count: envInt(env, "FEARCH_BUDGET_COUNT", 60), windowMs: envInt(env, "FEARCH_BUDGET_WINDOW_MS", 10 * 60_000) },
+    sessionBudget: {
+      count: envInt(env, "FEARCH_BUDGET_COUNT", 60),
+      windowMs: envInt(env, "FEARCH_BUDGET_WINDOW_MS", 10 * 60_000),
+    },
     allowPrivate: envBool(env, "FEARCH_ALLOW_PRIVATE"),
-    ignoreRobots: robotsPolicy === "off",
     robotsPolicy,
     allowDomains: envList(env, "FEARCH_ALLOW_DOMAINS"),
     denyDomains: envList(env, "FEARCH_DENY_DOMAINS"),
@@ -164,12 +170,22 @@ export function settingsFromEnv(env: Env = process.env): Settings {
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
     // Derived default: DuckDuckGo (the robots-permitted engine); with robots off *and* a person to pass
     // Google's check, Google first. Bing is opt-in (it has served decoy results to automated browsers).
-    engines: (env.FEARCH_ENGINES === undefined ? (robotsPolicy === "off" && handoff ? ["google", "duckduckgo"] : ["duckduckgo"]) : envList(env, "FEARCH_ENGINES")).filter((e) => (KNOWN_ENGINES as readonly string[]).includes(e)),
+    engines: (env.FEARCH_ENGINES === undefined
+      ? robotsPolicy === "off" && handoff
+        ? ["google", "duckduckgo"]
+        : ["duckduckgo"]
+      : envList(env, "FEARCH_ENGINES")
+    ).filter((e) => (KNOWN_ENGINES as readonly string[]).includes(e)),
     browserStatePath: join(cacheDir, "browser-state.json"),
     browserTimeoutMs: envInt(env, "FEARCH_BROWSER_TIMEOUT_MS", 20_000),
     browserMaxConcurrent: envInt(env, "FEARCH_BROWSER_MAX_CONCURRENT", 2),
-    searchMode: (["first-party", "off"].includes(env.FEARCH_SEARCH_MODE?.trim().toLowerCase() ?? "") ? (env.FEARCH_SEARCH_MODE!.trim().toLowerCase() as "first-party" | "off") : "all"),
-    hostGapsMs: { "export.arxiv.org": 3000, "arxiv.org": 3000, "api.semanticscholar.org": 3000, "api2.marginalia-search.com": 4000 },
+    searchMode: pick(env.FEARCH_SEARCH_MODE, SEARCH_MODES, "all"),
+    hostGapsMs: {
+      "export.arxiv.org": 3000,
+      "arxiv.org": 3000,
+      "api.semanticscholar.org": 3000,
+      "api2.marginalia-search.com": 4000,
+    },
     // Off unless asked for (--exa): a third-party service that logs queries is not a sensible corporate default.
     exaHostedUrl: envBool(env, "FEARCH_EXA") ? env.FEARCH_EXA_HOSTED_URL?.trim() || "https://mcp.exa.ai/mcp" : "",
   };
@@ -214,7 +230,10 @@ export const SERVER_FLAGS: Record<string, { env: string; boolean?: boolean }> = 
   "search-mode": { env: "FEARCH_SEARCH_MODE" },
 };
 
-export function settingsFromArgs(argv: string[], env: Env = process.env): { settings: Settings; rest: string[]; overrides: Record<string, string> } {
+export function settingsFromArgs(
+  argv: string[],
+  env: Env = process.env,
+): { settings: Settings; rest: string[]; overrides: Record<string, string> } {
   const overrides: Record<string, string> = {};
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -233,6 +252,6 @@ export function settingsFromArgs(argv: string[], env: Env = process.env): { sett
       overrides[spec.env] = v;
     }
   }
-  if (overrides.FEARCH_HANDOFF && ["1", "true", "yes", "on"].includes(overrides.FEARCH_HANDOFF.toLowerCase()) && !overrides.FEARCH_BROWSER) overrides.FEARCH_BROWSER = "headed";
+  if (envBool(overrides, "FEARCH_HANDOFF") && !overrides.FEARCH_BROWSER) overrides.FEARCH_BROWSER = "headed";
   return { settings: settingsFromEnv({ ...env, ...overrides }), rest, overrides };
 }

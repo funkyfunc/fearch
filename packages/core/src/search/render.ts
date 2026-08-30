@@ -9,17 +9,27 @@ export function renderResults(query: string, o: SearchOutcome): string {
   if (disclosures.length) lines.push(`Provider: ${disclosures.join("; ")}`);
   const engines = o.providers.filter((p) => p.posture === "browser").map((p) => p.name);
   if (engines.length) {
-    lines.push(`Note: result pages of ${engines.join(", ")} were opened in the browser tier (one page per search, no stealth); see the Provider line for robots and logging facts.`);
+    lines.push(
+      `Note: result pages of ${engines.join(", ")} were opened in the browser tier (one page per search, no stealth); see the Provider line for robots and logging facts.`,
+    );
   }
   if (o.fellBackToFederation) {
-    lines.push("Note: no general-web provider answered; these come from keyless first-party APIs (Stack Overflow, MDN, Hacker News, Wikipedia, GitHub). Try a more specific `kind`, or ask the user for a URL. Optional keys (TAVILY_API_KEY, EXA_API_KEY) add broader web search.");
+    lines.push(
+      "Note: no general-web provider answered; these come from keyless first-party APIs (Stack Overflow, MDN, Hacker News, Wikipedia, GitHub). Try a more specific `kind`, or ask the user for a URL.",
+    );
   }
   for (const n of [...new Set(o.notes ?? [])]) lines.push(`Note: ${n}`);
   lines.push("");
   o.results.forEach((r, i) => {
     lines.push(`${i + 1}. **${r.title || r.url}** — ${r.url}${r.date ? ` · ${r.date}` : ""}`);
     if (r.snippet) lines.push(`   ${r.snippet}`);
-    if (r.excerpt) lines.push(r.excerpt.split("\n").map((l) => (l.trim() ? `   > ${l}` : "   >")).join("\n"));
+    if (r.excerpt)
+      lines.push(
+        r.excerpt
+          .split("\n")
+          .map((l) => (l.trim() ? `   > ${l}` : "   >"))
+          .join("\n"),
+      );
     lines.push("");
   });
   lines.push("Use `fetch(url=...)` to read a result; `mode=focus, query=...` returns only the relevant sections.");

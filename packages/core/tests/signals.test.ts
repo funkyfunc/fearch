@@ -19,7 +19,7 @@ describe("content signals and licences", () => {
     const strict = await new RobotsChecker(new Cache(null), fetcher).check("https://example.com/page");
     expect(strict.allowed).toBe(false);
     expect(strict.contentSignal).toContain("ai-input=no");
-    const minimal = await new RobotsChecker(new Cache(null), fetcher, false, "minimal").check("https://example.com/page");
+    const minimal = await new RobotsChecker(new Cache(null), fetcher, "minimal").check("https://example.com/page");
     expect(minimal.allowed).toBe(true);
   });
 

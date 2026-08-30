@@ -1,13 +1,13 @@
 /**
  * Search-engine result pages opened in the browser tier.
  *
- * Eligibility is where the dials meet: an engine is only used if it is listed in FEARCH_ENGINES
+ * Eligibility is where the dials meet: an engine is only used if it is listed in --engines
  * *and* either its robots.txt permits its result pages (DuckDuckGo lite does: `/lite/`, `/html/`) or
  * robots.txt is off (the user-agent posture — Google and Bing both `Disallow: /search`). Whatever the
  * dial, robots.txt is consulted through the same RobotsChecker before the browser opens anything.
  *
  * One page per search call, ≥3 s between requests to an engine. A challenge page is the engine's "no":
- * in headless mode the provider stops and cools down; in headed mode with FEARCH_HANDOFF=1 the tab
+ * in headless mode the provider stops and cools down; in headed mode with --handoff the tab
  * is handed to the person, who may pass it themselves — the tool never does.
  */
 
@@ -18,7 +18,14 @@ import type { Settings } from "../config.js";
 import type { BrowserTier } from "../fetch/browser.js";
 import type { RobotsChecker } from "../fetch/robots.js";
 import type { Politeness } from "../politeness.js";
-import { dedupe, filterDomains, SearchError, type SearchProvider, type SearchQuery, type SearchResult } from "./provider.js";
+import {
+  dedupe,
+  filterDomains,
+  SearchError,
+  type SearchProvider,
+  type SearchQuery,
+  type SearchResult,
+} from "./provider.js";
 
 export interface EngineSpec {
   name: string;
@@ -78,8 +85,10 @@ export function parseLite(html: string, provider: string): SearchResult[] {
  * "challenge"; a false positive would hand a good page to the person and wait). Rule: a definitive
  * status, or a challenge marker *and* no parsed results.
  */
-export function isBotCheck(status: number, html: string): boolean {
-  return status === 202 || (!/class="result-link"/.test(html) && /anomaly|challenge|captcha|unusual traffic/i.test(html));
+export function ddgChallenge(status: number, html: string): boolean {
+  return (
+    status === 202 || (!/class="result-link"/.test(html) && /anomaly|challenge|captcha|unusual traffic/i.test(html))
+  );
 }
 
 const bingChallenge = (status: number, html: string): boolean =>
@@ -141,7 +150,12 @@ function unwrapGoogle(href: string): string {
   }
 }
 
-const GOOGLE_OWN = [/(^|\.)google\.[a-z.]+$/, /(^|\.)googleusercontent\.com$/, /(^|\.)gstatic\.com$/, /(^|\.)youtube\.com$/];
+const GOOGLE_OWN = [
+  /(^|\.)google\.[a-z.]+$/,
+  /(^|\.)googleusercontent\.com$/,
+  /(^|\.)gstatic\.com$/,
+  /(^|\.)youtube\.com$/,
+];
 
 /** Google's display URL ("https://host › a › b") back to a URL; lossy for query strings, used only as a fallback. */
 function fromCite(text: string): string {
@@ -149,7 +163,15 @@ function fromCite(text: string): string {
   if (!t) return "";
   const m = /^(https?:\/\/[^\s›]+)((?:\s*›\s*[^\s›]+)*)/.exec(t);
   if (!m) return "";
-  return m[1] + m[2].split("›").map((s) => s.trim()).filter(Boolean).map((s) => "/" + s.replace(/\.\.\.$/, "")).join("");
+  return (
+    m[1] +
+    m[2]
+      .split("›")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => "/" + s.replace(/\.\.\.$/, ""))
+      .join("")
+  );
 }
 
 /**
@@ -171,13 +193,18 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
   };
   // Embedded per-result JSON: url, title, snippet.
   const embedded: { url: string; title: string; snippet: string }[] = [];
-  for (const m of html.matchAll(/\["(https?:\/\/[^"\\]+)","((?:[^"\\]|\\.)*)","((?:[^"\\]|\\.)*)",\d+,"[a-z]{2}","[A-Z]{2}"/g)) {
+  for (const m of html.matchAll(
+    /\["(https?:\/\/[^"\\]+)","((?:[^"\\]|\\.)*)","((?:[^"\\]|\\.)*)",\d+,"[a-z]{2}","[A-Z]{2}"/g,
+  )) {
     embedded.push({ url: m[1], title: unescapeJson(m[2]), snippet: unescapeJson(m[3]) });
   }
   const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
   const byTitle = (title: string) => {
     const t = norm(title).replace(/\s*(\.\.\.|…)$/, "");
-    return embedded.find((e) => norm(e.title) === t) ?? embedded.find((e) => norm(e.title).startsWith(t) || t.startsWith(norm(e.title)));
+    return (
+      embedded.find((e) => norm(e.title) === t) ??
+      embedded.find((e) => norm(e.title).startsWith(t) || t.startsWith(norm(e.title)))
+    );
   };
 
   $("h3").each((_, h) => {
@@ -186,9 +213,16 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
     const block = $(h).closest("div[data-snf], div.yuRUbf, div.g, div[data-hveid]");
     const hrefUrl = unwrapGoogle(a.attr("href") ?? "");
     const hit = byTitle(title);
-    const url = /^https?:/.test(hrefUrl) && !/\/goto\?/.test(hrefUrl) ? hrefUrl : (hit?.url ?? fromCite(block.find("cite").first().text() || $(h).parent().parent().find("cite").first().text()));
+    const url =
+      /^https?:/.test(hrefUrl) && !/\/goto\?/.test(hrefUrl)
+        ? hrefUrl
+        : (hit?.url ??
+          fromCite(block.find("cite").first().text() || $(h).parent().parent().find("cite").first().text()));
     const snippetSel = "div[data-sncf], .VwiC3b, [data-content-feature]";
-    const domSnippet = block.find(snippetSel).first().text() || block.next().find(snippetSel).first().text() || block.next().filter(snippetSel).text();
+    const domSnippet =
+      block.find(snippetSel).first().text() ||
+      block.next().find(snippetSel).first().text() ||
+      block.next().filter(snippetSel).text();
     add(url, title, hit?.snippet || domSnippet || "");
   });
   // Nothing in the DOM at all (unexpected layout): fall back to the embedded JSON alone, in page order.
@@ -215,7 +249,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     privacy: "DDG does not log searches",
     url: (q) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=us-en`,
     parse: parseLite,
-    isChallenge: isBotCheck,
+    isChallenge: ddgChallenge,
     resultsSelector: "a.result-link",
   },
   bing: {
@@ -259,12 +293,19 @@ export class EngineProvider implements SearchProvider {
   }
 
   get disclosure(): string {
-    const how = this.browser.browserChannel === "extension" ? "your own Chrome (fearch bridge extension)" : this.browser.headed ? "the visible browser window" : "the self-identified headless browser";
-    const robots = this.spec.robotsPermitted ? "robots.txt allows this page" : "robots.txt disallows result pages; opened because robots is off";
+    const how =
+      this.browser.browserChannel === "extension"
+        ? "your own Chrome (fearch bridge extension)"
+        : this.browser.headed
+          ? "the visible browser window"
+          : "the self-identified headless browser";
+    const robots = this.spec.robotsPermitted
+      ? "robots.txt allows this page"
+      : "robots.txt disallows result pages; opened because robots is off";
     return `${this.spec.label} via ${how} (${robots}; ${this.spec.privacy})`;
   }
 
-  /** Listed in FEARCH_ENGINES, browser on, and robots-eligible. */
+  /** Listed in --engines, browser on, and robots-eligible. */
   available(): boolean {
     return this.browser.enabled() && this.settings.engines.includes(this.name) && this.eligible();
   }
@@ -277,7 +318,8 @@ export class EngineProvider implements SearchProvider {
   ineligibleReason(): string | null {
     if (!this.settings.engines.includes(this.name)) return null;
     if (!this.browser.enabled()) return "browser tier is off";
-    if (!this.eligible()) return `${this.spec.host} disallows result pages in robots.txt; eligible only with --robots off`;
+    if (!this.eligible())
+      return `${this.spec.host} disallows result pages in robots.txt; eligible only with --robots off`;
     return null;
   }
 
@@ -285,10 +327,23 @@ export class EngineProvider implements SearchProvider {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
     const url = this.spec.url(query);
     const decision = await this.robots.check(url);
-    if (!decision.allowed) throw new SearchError(`${this.name}: robots.txt disallows ${url.split("?")[0]} (${decision.reason ?? "disallowed"})`);
+    if (!decision.allowed)
+      throw new SearchError(
+        `${this.name}: robots.txt disallows ${url.split("?")[0]} (${decision.reason ?? "disallowed"})`,
+      );
     let rendered;
     try {
-      rendered = await this.politeness.run(this.spec.host, () => this.browser.render(url, { session: true, handoff: true, isChallenge: (h, s, u) => this.spec.isChallenge(s, h, u), settleSelector: this.spec.resultsSelector }), Math.max(this.gapMs, decision.crawlDelayMs ?? 0));
+      rendered = await this.politeness.run(
+        this.spec.host,
+        () =>
+          this.browser.render(url, {
+            session: true,
+            handoff: true,
+            isChallenge: (h, s, u) => this.spec.isChallenge(s, h, u),
+            settleSelector: this.spec.resultsSelector,
+          }),
+        Math.max(this.gapMs, decision.crawlDelayMs ?? 0),
+      );
     } catch (e) {
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
@@ -299,12 +354,16 @@ export class EngineProvider implements SearchProvider {
           ? "it was shown in the browser window but not passed in time"
           : "start with --handoff to be handed the page and pass it yourself"
         : "with --handoff you could pass it yourself";
-      throw new SearchError(`${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`);
+      throw new SearchError(
+        `${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`,
+      );
     }
     const results = filterDomains(dedupe(this.spec.parse(rendered.html, this.name)), q);
     if (!results.length) {
       const dump = this.dumpUnparsed(rendered.html);
-      throw new SearchError(`${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : ""})`);
+      throw new SearchError(
+        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : ""})`,
+      );
     }
     return results.slice(0, q.maxResults);
   }
@@ -314,7 +373,9 @@ export class EngineProvider implements SearchProvider {
     try {
       const dir = join(this.settings.cacheDir, "debug");
       mkdirSync(dir, { recursive: true });
-      const old = readdirSync(dir).filter((f) => f.startsWith(`${this.name}-`)).sort();
+      const old = readdirSync(dir)
+        .filter((f) => f.startsWith(`${this.name}-`))
+        .sort();
       for (const f of old.slice(0, Math.max(0, old.length - 2))) rmSync(join(dir, f), { force: true });
       const path = join(dir, `${this.name}-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
       writeFileSync(path, html);
@@ -325,8 +386,13 @@ export class EngineProvider implements SearchProvider {
   }
 }
 
-/** All known engines, in FEARCH_ENGINES order first, then the rest (unlisted ones are never available). */
-export function engineProviders(settings: Settings, browser: BrowserTier, robots: RobotsChecker, politeness: Politeness): EngineProvider[] {
+/** All known engines, in --engines order first, then the rest (unlisted ones are never available). */
+export function engineProviders(
+  settings: Settings,
+  browser: BrowserTier,
+  robots: RobotsChecker,
+  politeness: Politeness,
+): EngineProvider[] {
   const order = [...settings.engines, ...Object.keys(ENGINE_SPECS).filter((n) => !settings.engines.includes(n))];
   return order.map((n) => new EngineProvider(ENGINE_SPECS[n], settings, browser, robots, politeness));
 }

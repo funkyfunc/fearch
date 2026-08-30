@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { diagnose, renderDiagnosis } from "../src/fetch/diagnose.js";
 import type { Fetched } from "../src/fetch/types.js";
 
-const f = (status: number, body = "", headers: Record<string, string> = {}, kind: Fetched["kind"] = "html"): Fetched => ({
+const f = (
+  status: number,
+  body = "",
+  headers: Record<string, string> = {},
+  kind: Fetched["kind"] = "html",
+): Fetched => ({
   url: "https://x.test/",
   finalUrl: "https://x.test/",
   kind,

@@ -9,9 +9,17 @@ import type { Audit } from "../audit.js";
 import type { Cache } from "../cache.js";
 import type { Settings } from "../config.js";
 import type { HttpLike } from "../fetch/types.js";
+import type { EngineProvider } from "./engines.js";
 import { ExaHostedProvider } from "./exa-hosted.js";
 import { federationProviders } from "./federation.js";
-import { dedupe, SearchError, type SearchKind, type SearchProvider, type SearchQuery, type SearchResult } from "./provider.js";
+import {
+  dedupe,
+  SearchError,
+  type SearchKind,
+  type SearchProvider,
+  type SearchQuery,
+  type SearchResult,
+} from "./provider.js";
 
 export interface SearchOutcome {
   results: SearchResult[];
@@ -43,7 +51,7 @@ export class SearchRegistry {
     private readonly audit: Audit,
     http: HttpLike,
     /** Search-engine result-page providers (browser tier), in preference order; only available ones are used. */
-    private readonly engines: SearchProvider[] = [],
+    private readonly engines: EngineProvider[] = [],
   ) {
     const hosted = new ExaHostedProvider(settings);
     // "first-party" mode: no third-party search services at all (queries stay with the sites they concern).
@@ -56,17 +64,18 @@ export class SearchRegistry {
   }
 
   describe(): string {
-    if (this.settings.searchMode === "off") return "search disabled (FEARCH_SEARCH_MODE=off)";
+    if (this.settings.searchMode === "off") return "search disabled (--search-mode off)";
     const names = this.web.map((p) => p.name);
     const off = this.unusedEngines().map((x) => `${x.name} (${x.why})`);
     return `mode=${this.settings.searchMode}; web: ${names.join(" → ") || "(none)"}; federation: ${this.federation.map((p) => p.name).join(", ")}${off.length ? `; engines listed but not used: ${off.join("; ")}` : ""}`;
   }
 
-  /** Engines the operator listed in FEARCH_ENGINES that the other dials make ineligible. */
+  /** Engines the operator listed in --engines that the other dials make ineligible. */
   private unusedEngines(): { name: string; why: string }[] {
-    return this.engines
-      .map((p) => ({ name: p.name, why: (p as { ineligibleReason?: () => string | null }).ineligibleReason?.() ?? null }))
-      .filter((x): x is { name: string; why: string } => !!x.why);
+    return this.engines.flatMap((p) => {
+      const why = p.ineligibleReason();
+      return why ? [{ name: p.name, why }] : [];
+    });
   }
 
   private forKind(kind: SearchKind): SearchProvider[] {
@@ -79,16 +88,25 @@ export class SearchRegistry {
    * for `kind: packages`).
    */
   private webFallback(query: string): SearchProvider[] {
-    const technical = /[A-Z][a-z]+[A-Z]|[a-z]+\.[a-z]+\(|[_:/()<>{}=]|\b(npm|pip|cargo|api|error|exception|config|install|version|function|class|async)\b/i.test(query) || query.split(/\s+/).length > 5;
-    const order = technical ? ["stackexchange", "mdn", "hackernews", "github"] : ["stackexchange", "mdn", "wikipedia", "hackernews", "marginalia", "github"];
+    const technical =
+      /[A-Z][a-z]+[A-Z]|[a-z]+\.[a-z]+\(|[_:/()<>{}=]|\b(npm|pip|cargo|api|error|exception|config|install|version|function|class|async)\b/i.test(
+        query,
+      ) || query.split(/\s+/).length > 5;
+    const order = technical
+      ? ["stackexchange", "mdn", "hackernews", "github"]
+      : ["stackexchange", "mdn", "wikipedia", "hackernews", "marginalia", "github"];
     return order.map((n) => this.federation.find((p) => p.name === n)).filter((p): p is SearchProvider => !!p);
   }
 
   async search(q: SearchQuery): Promise<SearchOutcome> {
     if (this.settings.searchMode === "off") {
-      throw new SearchError("Search is disabled on this server (FEARCH_SEARCH_MODE=off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.");
+      throw new SearchError(
+        "Search is disabled on this server (--search-mode off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
+      );
     }
-    const key = createHash("sha1").update(JSON.stringify({ ...q, v: 2 })).digest("hex");
+    const key = createHash("sha1")
+      .update(JSON.stringify({ ...q, v: 2 }))
+      .digest("hex");
     const cached = this.cache.getSearch<{ results: SearchResult[]; providers: string[] }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
@@ -122,7 +140,11 @@ export class SearchRegistry {
         this.audit.record({ url: `search:${q.query}`, provider: p.name, status: "error", note: msg });
         if (/rate.?limit|HTTP 429|too many requests/i.test(msg)) {
           const why =
-            p.name === "exa-hosted" ? "rate-limited on Exa's keyless tier" : p.posture === "browser" ? `${p.name} showed its bot-check page` : "rate-limited";
+            p.name === "exa-hosted"
+              ? "rate-limited on Exa's keyless tier"
+              : p.posture === "browser"
+                ? `${p.name} showed its bot-check page`
+                : "rate-limited";
           this.cooldown.set(p.name, { until: now + RATE_LIMIT_COOLDOWN_MS, why });
           notes.push(`${p.name}: ${why}`);
         }
@@ -149,7 +171,7 @@ export class SearchRegistry {
       await runPeers(this.forKind(q.kind));
     } else {
       const chain = [...this.web];
-      for (const u of this.unusedEngines()) notes.push(`${u.name}: listed in FEARCH_ENGINES but not used — ${u.why}`);
+      for (const u of this.unusedEngines()) notes.push(`${u.name}: listed in --engines but not used — ${u.why}`);
       await runChain(chain);
       if (!results.length) {
         fellBack = true;
@@ -157,7 +179,10 @@ export class SearchRegistry {
       }
     }
 
-    if (!results.length) throw new SearchError(`No results from any provider (${[...errors, ...notes].join("; ") || "no providers configured"}).`);
+    if (!results.length)
+      throw new SearchError(
+        `No results from any provider (${[...errors, ...notes].join("; ") || "no providers configured"}).`,
+      );
     results = results.slice(0, q.maxResults);
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than

@@ -49,7 +49,10 @@ export class Politeness {
     const prev = this.queues.get(host) ?? Promise.resolve();
     let release!: () => void;
     const mine = new Promise<void>((r) => (release = r));
-    this.queues.set(host, prev.then(() => mine));
+    this.queues.set(
+      host,
+      prev.then(() => mine),
+    );
     await prev;
     try {
       const since = this.now() - (this.lastDone.get(host) ?? -Infinity);

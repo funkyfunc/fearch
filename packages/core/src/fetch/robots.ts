@@ -17,7 +17,7 @@ interface Robot {
 const robotsParser = robotsParserImport as unknown as (url: string, contents: string) => Robot;
 import { PRODUCT } from "../config.js";
 import { isApiUrl } from "./resolver.js";
-import { describeNetworkError } from "./transport.js";
+import { describeNetworkError, FetchError } from "./transport.js";
 
 /**
  * Which robots.txt user-agent groups we honour besides `*` and our own token.
@@ -65,7 +65,6 @@ export class RobotsChecker {
   constructor(
     private readonly cache: Cache,
     private readonly fetchRobots: RobotsFetcher,
-    private readonly ignore = false,
     private readonly policy: RobotsPolicy = "default",
   ) {}
 
@@ -73,7 +72,7 @@ export class RobotsChecker {
     const u = new URL(url);
     const host = u.host.toLowerCase();
     if (isApiUrl(url)) return { allowed: true, status: "api" };
-    if (this.ignore || this.policy === "off") return { allowed: true, status: "ignored", reason: "FEARCH_ROBOTS_POLICY=off" };
+    if (this.policy === "off") return { allowed: true, status: "ignored", reason: "--robots off" };
 
     let entry = this.cache.getRobots(host);
     if (!entry) {
@@ -87,19 +86,29 @@ export class RobotsChecker {
         // status 0 = could not fetch; keep the reason in `body` so the diagnosis can say why
         // (a TLS-interception failure looks like "disallowed" otherwise and sends people the wrong way).
         status = 0;
-        body = (e as Error)?.name === "FetchError" ? (e as Error).message.replace(/^Connection failed for \S+: /, "") : describeNetworkError(e);
+        body =
+          e instanceof FetchError ? e.message.replace(/^Connection failed for \S+: /, "") : describeNetworkError(e);
       }
       this.cache.setRobots(host, status, body);
       entry = { host, status, body, fetchedAt: Date.now() };
     }
 
-    if (entry.status === 404 || entry.status === 410) return { allowed: true, status: "allowed", reason: "no robots.txt" };
+    if (entry.status === 404 || entry.status === 410)
+      return { allowed: true, status: "allowed", reason: "no robots.txt" };
     if (entry.status === 401 || entry.status === 403) {
-      return { allowed: false, status: "disallowed", reason: `robots.txt returned HTTP ${entry.status} (treated as disallow, RFC 9309 §2.3.1.3)` };
+      return {
+        allowed: false,
+        status: "disallowed",
+        reason: `robots.txt returned HTTP ${entry.status} (treated as disallow, RFC 9309 §2.3.1.3)`,
+      };
     }
     if (entry.status === 0 || entry.status >= 500) {
       const why = entry.status ? `HTTP ${entry.status}` : entry.body || "network error";
-      return { allowed: false, status: "unavailable", reason: `robots.txt unavailable (${why}); treated as disallow per RFC 9309` };
+      return {
+        allowed: false,
+        status: "unavailable",
+        reason: `robots.txt unavailable (${why}); treated as disallow per RFC 9309`,
+      };
     }
     if (entry.status !== 200) return { allowed: true, status: "allowed", reason: `robots.txt HTTP ${entry.status}` };
 
@@ -107,7 +116,11 @@ export class RobotsChecker {
     try {
       robots = robotsParser(`${u.protocol}//${u.host}/robots.txt`, entry.body);
     } catch (e) {
-      return { allowed: false, status: "disallowed", reason: `robots.txt could not be parsed (${(e as Error).message})` };
+      return {
+        allowed: false,
+        status: "disallowed",
+        reason: `robots.txt could not be parsed (${(e as Error).message})`,
+      };
     }
 
     for (const token of tokensFor(this.policy)) {
@@ -125,7 +138,13 @@ export class RobotsChecker {
     // Content Signals in robots.txt: `ai-input=no` says "don't feed my pages into an AI model" —
     // exactly what a coding assistant does with a fetched page. Honoured unless policy is minimal.
     const cs = this.policy === "minimal" ? null : robotsContentSignalNoAiInput(entry.body);
-    if (cs) return { allowed: false, status: "disallowed", reason: `Content-Signal ai-input=no in robots.txt (${cs})`, contentSignal: cs };
+    if (cs)
+      return {
+        allowed: false,
+        status: "disallowed",
+        reason: `Content-Signal ai-input=no in robots.txt (${cs})`,
+        contentSignal: cs,
+      };
     return { allowed: true, status: "allowed", crawlDelayMs: delay ? Math.min(delay, 30) * 1000 : undefined };
   }
 }

@@ -18,12 +18,16 @@ const FENCE_RE = /^\s*(`{3,}|~{3,})/;
 const MD_LINK_RE = /\[([^\]]*)\]\([^)]*\)/g;
 const MD_INLINE_RE = /[*_`]+/g;
 const TOKEN_RE = /[a-z0-9_]+(?:[.-][a-z0-9_]+)*/g;
-const REFERENCE_TITLE_RE = /^(references?|external links?|see also|notes|footnotes|bibliography|citations?|further reading|sources|navigation|table of contents|contents)$/i;
+const REFERENCE_TITLE_RE =
+  /^(references?|external links?|see also|notes|footnotes|bibliography|citations?|further reading|sources|navigation|table of contents|contents)$/i;
 
 /** Heading text without link/emphasis markup, for outlines and matching. */
 export function cleanTitle(raw: string): string {
   const t = raw.replace(MD_LINK_RE, "$1").replace(MD_INLINE_RE, "");
-  return t.replace(/\s+/g, " ").trim().replace(/^[\s¶#]+|[\s¶#]+$/g, "");
+  return t
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[\s¶#]+|[\s¶#]+$/g, "");
 }
 
 /** Split markdown into heading-delimited sections; fenced code is never split. */
@@ -73,7 +77,8 @@ export function splitSections(md: string): Section[] {
     pos += line.length + 1;
   }
   flush(md.length);
-  if (!sections.length) sections.push({ level: 0, title: "(intro)", path: ["(intro)"], text: md, start: 0, end: md.length, index: 0 });
+  if (!sections.length)
+    sections.push({ level: 0, title: "(intro)", path: ["(intro)"], text: md, start: 0, end: md.length, index: 0 });
   return sections;
 }
 
@@ -135,7 +140,49 @@ export function tokenize(text: string): string[] {
   return out;
 }
 
-const STOPWORDS = new Set(["a", "an", "the", "is", "are", "was", "were", "be", "what", "which", "who", "how", "do", "does", "did", "i", "my", "me", "you", "we", "it", "its", "of", "to", "in", "on", "for", "with", "and", "or", "not", "can", "should", "when", "where", "why", "this", "that", "there", "use", "using"]);
+const STOPWORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "what",
+  "which",
+  "who",
+  "how",
+  "do",
+  "does",
+  "did",
+  "i",
+  "my",
+  "me",
+  "you",
+  "we",
+  "it",
+  "its",
+  "of",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "and",
+  "or",
+  "not",
+  "can",
+  "should",
+  "when",
+  "where",
+  "why",
+  "this",
+  "that",
+  "there",
+  "use",
+  "using",
+]);
 
 /** Query tokens without stop-words (falls back to all tokens if nothing else is left). */
 export function queryTokens(query: string): string[] {
@@ -241,5 +288,10 @@ export function renderOutline(sections: Section[], shown: Set<number>, limit = 4
 }
 
 export function joinSections(chosen: Section[]): string {
-  return chosen.map((s) => s.text).join("\n\n").trim() + "\n";
+  return (
+    chosen
+      .map((s) => s.text)
+      .join("\n\n")
+      .trim() + "\n"
+  );
 }
