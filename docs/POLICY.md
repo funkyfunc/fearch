@@ -126,7 +126,7 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 
 - Page fetches go directly from this machine to the target host (through `HTTPS_PROXY` if the
   environment sets one). No reader proxies, no archive fallbacks unless the model explicitly asks for
-  `via: "archive"` on a page the target reported gone (404/410).
+  `archive: true` on a page the target reported gone (404/410).
 - Search queries go to the configured search provider only. With no configuration they go to
   DuckDuckGo lite via the self-identified browser (below; DuckDuckGo states it does not log searches),
   then to the first-party APIs. Exa's publicly offered keyless MCP endpoint (`https://mcp.exa.ai/mcp`,

@@ -1,7 +1,7 @@
 {
   "name": "fearch",
   "version": "2.0.0",
-  "description": "Respectful, corporate-safe web search and page-reading MCP server for coding agents",
+  "description": "Respectful web search and page reading for coding agents: an MCP server and CLI that identify themselves honestly, honour robots.txt, and treat a refusal as final.",
   "license": "MIT",
   "homepage": "https://github.com/funkyfunc/fearch#bot-info",
   "type": "module",
@@ -40,5 +40,22 @@
   "devDependencies": {
     "@types/turndown": "^5.0.6",
     "tsx": "^4.23.12"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/funkyfunc/fearch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/funkyfunc/fearch/issues"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "web-search",
+    "web-fetch",
+    "html-to-markdown",
+    "robots-txt",
+    "coding-agents",
+    "cli"
+  ]
 }
