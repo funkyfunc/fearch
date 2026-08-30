@@ -153,8 +153,9 @@ Chrome and the handoff (on by default here) waits for you. One-time setup:
 npx fearch extension install
 ```
 
-That copies the extension to `~/fearch-extension` (a visible folder — file dialogs hide dot-folders),
-puts the path on your clipboard, opens `chrome://extensions`, and waits for the extension to connect.
+That prints the extension's folder (`packages/core/extension` in a clone or a normal install; only an
+`npx` run copies it out of npm's cache to `~/fearch-extension`), puts the path on your clipboard, opens
+`chrome://extensions`, and waits for the extension to connect.
 In Chrome: turn on **Developer mode**, click **Load unpacked**, paste the path (Cmd+Shift+G on macOS
 opens the dialog's path box), choose the folder. (Chrome offers no way to install an unpacked extension from
 outside; a Web Store listing will make this one click.) `fearch extension status` checks it later;

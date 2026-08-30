@@ -229,9 +229,14 @@ async function doctor(state: AppState): Promise<number> {
 export function bundledExtensionDir(): string {
   return fileURLToPath(new URL("../extension/", import.meta.url));
 }
-/** A visible folder on purpose: Chrome's "Load unpacked" dialog cannot show dot-directories. */
+/**
+ * The folder Chrome should load. From a clone or a normal install that is the bundled folder itself —
+ * nothing is copied. Only when the package lives in npm's ephemeral npx cache is it copied to a stable,
+ * visible folder (file dialogs cannot show dot-directories).
+ */
 export function installedExtensionDir(): string {
-  return join(homedir(), "fearch-extension");
+  const bundled = bundledExtensionDir();
+  return /[\\/](_npx|\.npm|npm-cache)[\\/]/.test(bundled) ? join(homedir(), "fearch-extension") : bundled;
 }
 
 function copyToClipboard(text: string): boolean {
@@ -266,11 +271,13 @@ async function extensionCommand(state: AppState, sub: string, flags: Record<stri
   }
   const bridge = state.browser instanceof ExtensionRenderer ? state.browser.bridge : new ExtensionBridge(state.audit);
   if (sub === "install") {
-    mkdirSync(dir, { recursive: true });
-    cpSync(bundledExtensionDir(), dir, { recursive: true });
+    if (dir !== bundledExtensionDir()) {
+      mkdirSync(dir, { recursive: true });
+      cpSync(bundledExtensionDir(), dir, { recursive: true });
+    }
     const copied = copyToClipboard(dir);
     const port = await bridge.start();
-    out(`fearch bridge extension copied to:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
+    out(`fearch bridge extension folder:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
     out("In Chrome (opening chrome://extensions for you):");
     out("  1. turn on “Developer mode” (top right)");
     out("  2. click “Load unpacked”, press Cmd+Shift+G (macOS) or type in the path box, paste the folder above, and choose it");
