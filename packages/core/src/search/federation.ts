@@ -14,6 +14,7 @@ import {
   SearchError,
   type SearchKind,
   type SearchProvider,
+  type SearchResponse,
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
@@ -42,10 +43,10 @@ abstract class FirstPartyProvider implements SearchProvider {
     return true;
   }
 
-  async search(q: SearchQuery): Promise<SearchResult[]> {
+  async search(q: SearchQuery): Promise<SearchResponse> {
     const raw = await this.results(q);
     if (!raw.length) throw new SearchError(`${this.name}: no results`);
-    return filterDomains(dedupe(raw), q).slice(0, q.maxResults);
+    return { results: filterDomains(dedupe(raw), q).slice(0, q.maxResults) };
   }
 
   protected abstract results(q: SearchQuery): Promise<SearchResult[]>;

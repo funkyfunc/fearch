@@ -95,10 +95,10 @@ describe("federation providers", () => {
         items: [{ title: "Bug", state: "open", html_url: "https://github.com/o/r/issues/1", body: "b" }],
       },
     });
-    const code = await new GitHubProvider(http).search({ query: "q", maxResults: 5, kind: "code" });
+    const code = (await new GitHubProvider(http).search({ query: "q", maxResults: 5, kind: "code" })).results;
     expect(code.map((x) => x.url)).toEqual(["https://github.com/o/r", "https://github.com/o/r/issues/1"]);
     expect(code[0].date).toBe("2026-01-01");
-    const web = await new GitHubProvider(http).search({ query: "q", maxResults: 5 });
+    const web = (await new GitHubProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(web.map((x) => x.url)).toEqual(["https://github.com/o/r"]);
   });
   it("stackexchange and mdn", async () => {
@@ -119,13 +119,13 @@ describe("federation providers", () => {
         documents: [{ title: "Array.prototype.map()", mdn_url: "/en-US/docs/x", summary: "s" }],
       },
     });
-    const so = await new StackExchangeProvider(http).search({ query: "q", maxResults: 5 });
+    const so = (await new StackExchangeProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(so[0]).toMatchObject({
       title: "How & why? (score 3, answered)",
       url: "https://stackoverflow.com/questions/42",
       snippet: "x y",
     });
-    const mdn = await new MdnProvider(http).search({ query: "q", maxResults: 5 });
+    const mdn = (await new MdnProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(mdn[0].url).toBe("https://developer.mozilla.org/en-US/docs/x");
   });
 });
@@ -163,24 +163,24 @@ describe("new keyless providers", () => {
         license: "CC-BY-NC-SA",
       },
     });
-    const hn = await new HackerNewsProvider(http).search({ query: "q", maxResults: 5 });
+    const hn = (await new HackerNewsProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(hn[0]).toMatchObject({
       title: "Show HN: Thing (42 points, 7 comments)",
       url: "https://thing.test/",
       date: "2026-05-01",
     });
     expect(hn[1].url).toBe("https://news.ycombinator.com/item?id=124");
-    const oa = await new OpenAlexProvider(http).search({ query: "q", maxResults: 5 });
+    const oa = (await new OpenAlexProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(oa[0]).toMatchObject({ title: "Paper A", url: "https://journal.test/a", date: "2025-03-04" });
     expect(oa[0].snippet).toContain("JOSS");
-    const mg = await new MarginaliaProvider(http).search({ query: "q", maxResults: 5 });
+    const mg = (await new MarginaliaProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(mg[0].url).toBe("https://blog.test/post");
   });
 
   it("arxiv parses Atom", async () => {
     const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2511.16397v2</id><title>AICC: Parse HTML\n Finer</title><summary> An abstract. </summary><published>2025-11-20T00:00:00Z</published></entry></feed>`;
     const http: HttpLike = async () => ({ status: 200, headers: {}, text: async () => atom, json: async () => ({}) });
-    const out = await new ArxivProvider(http).search({ query: "q", maxResults: 5 });
+    const out = (await new ArxivProvider(http).search({ query: "q", maxResults: 5 })).results;
     expect(out[0]).toMatchObject({
       title: "AICC: Parse HTML Finer",
       url: "https://arxiv.org/abs/2511.16397v2",
@@ -227,7 +227,7 @@ describe("registry", () => {
     async search() {
       this.calls++;
       if (error) throw new SearchError(error);
-      return results;
+      return { results };
     },
   });
 

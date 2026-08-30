@@ -57,6 +57,9 @@ export interface RenderOptions {
   isChallenge?: (html: string, status: number, url: string) => boolean;
   /** Wait (bounded) for this selector before judging the page, so a half-rendered page isn't mistaken for a challenge. */
   settleSelector?: string;
+  /** Keep re-reading (bounded by settleUntilMs) until this returns true — for content that streams in after load. */
+  settleUntil?: (html: string) => boolean;
+  settleUntilMs?: number;
 }
 
 export class BrowserUnavailable extends Error {
@@ -330,6 +333,13 @@ export class BrowserRenderer implements BrowserTier {
       ]);
       if (opts.settleSelector) await page.waitForSelector(opts.settleSelector, { timeout: 5000 }).catch(() => {});
       let html = await page.content();
+      if (opts.settleUntil) {
+        const deadline = Date.now() + (opts.settleUntilMs ?? 2500);
+        while (!opts.settleUntil(html) && Date.now() < deadline) {
+          await new Promise((res) => setTimeout(res, 400));
+          html = await page.content();
+        }
+      }
       let handedOff = false;
       const isChallenge = opts.isChallenge ?? isChallengePage;
       if (this.headed && this.settings.handoff && opts.handoff !== false && isChallenge(html, status, page.url())) {

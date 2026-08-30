@@ -12,6 +12,7 @@
  */
 
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Settings } from "../config.js";
@@ -22,7 +23,9 @@ import {
   dedupe,
   filterDomains,
   SearchError,
+  type EngineSummary,
   type SearchProvider,
+  type SearchResponse,
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
@@ -40,6 +43,8 @@ export interface EngineSpec {
   isChallenge(status: number, html: string, url?: string): boolean;
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
+  /** Extract the engine's own generated answer box, if the page carries one. */
+  overview?(html: string): Omit<EngineSummary, "provider"> | null;
 }
 
 const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
@@ -238,6 +243,52 @@ function unescapeJson(s: string): string {
   }
 }
 
+/**
+ * Google's AI Overview / AI Mode reply, when the results page carries one. The markup is volatile and
+ * A/B-tested, so the anchor is the stable container id (`#m-x-content`) with a text-marker fallback;
+ * hidden elements are dropped first — every overview region carries "not available" fallback spans
+ * with display:none, which must not be mistaken for content (or vice versa).
+ */
+export function parseGoogleOverview(html: string): Omit<EngineSummary, "provider"> | null {
+  const $ = cheerio.load(html);
+  let region: cheerio.Cheerio<AnyNode> = $("#m-x-content").first();
+  if (!region.length) {
+    const marker = $("div, span, h1, h2").filter(
+      (_, e) => $(e).children().length === 0 && /^AI (Overview|Mode)/.test($(e).text().trim()),
+    );
+    if (!marker.length) return null;
+    region = marker.first().closest("div[id], div[jscontroller]");
+  }
+  if (!region.length) return null;
+  region
+    .find("style, script, svg, noscript, [aria-hidden=true], [style*='display:none'], [style*='display: none']")
+    .remove();
+
+  const sources: EngineSummary["sources"] = [];
+  const seen = new Set<string>();
+  const ownHosts = GOOGLE_OWN.filter((re) => !re.source.includes("youtube"));
+  region.find("a[href^='http']").each((_, a) => {
+    const url = unwrapGoogle($(a).attr("href") ?? "");
+    if (!/^https?:/.test(url) || skipHost(url, ...ownHosts) || seen.has(url)) return;
+    seen.add(url);
+    sources.push({ title: $(a).text().replace(/\s+/g, " ").trim() || new URL(url).hostname, url });
+  });
+
+  // cheerio's .text() joins adjacent elements without whitespace ("apiA REST"); prepending a space
+  // to every tag before extracting keeps element boundaries as word boundaries.
+  const spaced = cheerio
+    .load(`<x>${(region.html() ?? "").replace(/</g, " <")}</x>`)("x")
+    .text();
+  const text = spaced
+    .replace(/\s+/g, " ")
+    .replace(/^(\s*AI (Overview\b|Mode reply for [^A-Z]*))+\s*/, "")
+    .replace(/Shared?\s*\d+\s*files?\s*$/, "")
+    .replace(/Show (more|all)\s*$/i, "")
+    .trim();
+  if (text.length < 80 || /^(An AI Overview is not available|Can't generate)/.test(text)) return null;
+  return { text: text.slice(0, 2500), sources: sources.slice(0, 10) };
+}
+
 // ---------------------------------------------------------------- specs
 
 export const ENGINE_SPECS: Record<string, EngineSpec> = {
@@ -273,6 +324,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     parse: parseGoogle,
     isChallenge: googleChallenge,
     resultsSelector: "a h3",
+    overview: parseGoogleOverview,
   },
 };
 
@@ -323,7 +375,7 @@ export class EngineProvider implements SearchProvider {
     return null;
   }
 
-  async search(q: SearchQuery): Promise<SearchResult[]> {
+  async search(q: SearchQuery): Promise<SearchResponse> {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
     const url = this.spec.url(query);
     const decision = await this.robots.check(url);
@@ -341,6 +393,12 @@ export class EngineProvider implements SearchProvider {
             handoff: true,
             isChallenge: (h, s, u) => this.spec.isChallenge(s, h, u),
             settleSelector: this.spec.resultsSelector,
+            // Generated answer boxes stream in after the results; wait briefly for one that is coming,
+            // never for one that isn't (no marker on the page).
+            settleUntil: this.spec.overview
+              ? (html) => !/AI Overview/.test(html) || this.spec.overview!(html) !== null
+              : undefined,
+            settleUntilMs: 2500,
           }),
         Math.max(this.gapMs, decision.crawlDelayMs ?? 0),
       );
@@ -365,7 +423,11 @@ export class EngineProvider implements SearchProvider {
         `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : ""})`,
       );
     }
-    return results.slice(0, q.maxResults);
+    const overview = this.spec.overview?.(rendered.html);
+    return {
+      results: results.slice(0, q.maxResults),
+      summary: overview ? { ...overview, provider: this.name } : undefined,
+    };
   }
 
   /** Keep the last few pages that produced no results, so a markup change can be diagnosed from disk. */

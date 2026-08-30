@@ -6,6 +6,17 @@ export function renderResults(query: string, o: SearchOutcome): string {
   const via = o.fromCache ? "cache" : o.providers.map((p) => p.name).join(" + ") || "none";
   const disclosures = o.fromCache ? [] : [...new Set(o.providers.map((p) => p.disclosure))];
   const lines = [`Results for "${query}" (${o.results.length}, via ${via}):`];
+  if (o.summary) {
+    const label =
+      o.summary.provider === "google" ? "Google's AI Overview" : `${o.summary.provider}'s generated summary`;
+    lines.push(
+      "",
+      `> **${label}** (the engine's model wrote this — unverified; check the sources):`,
+      `> ${o.summary.text}`,
+    );
+    const sources = o.summary.sources.filter((s) => s.url);
+    if (sources.length) lines.push(`> Sources: ${sources.map((s, i) => `[${i + 1}] ${s.url}`).join(" · ")}`);
+  }
   if (disclosures.length) lines.push(`Provider: ${disclosures.join("; ")}`);
   const engines = o.providers.filter((p) => p.posture === "browser").map((p) => p.name);
   if (engines.length) {

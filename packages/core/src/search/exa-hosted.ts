@@ -14,6 +14,7 @@ import {
   isoDate,
   SearchError,
   type SearchProvider,
+  type SearchResponse,
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
@@ -120,7 +121,7 @@ export class ExaHostedProvider implements SearchProvider {
     }
   }
 
-  async search(q: SearchQuery): Promise<SearchResult[]> {
+  async search(q: SearchQuery): Promise<SearchResponse> {
     let client: Client;
     try {
       client = await this.connect();
@@ -153,7 +154,7 @@ export class ExaHostedProvider implements SearchProvider {
       .join("\n\n");
     const results = filterDomains(dedupe(parseExaToolText(text, this.name)), q);
     if (!results.length) throw new SearchError("exa-hosted: no results");
-    return results.slice(0, q.maxResults);
+    return { results: results.slice(0, q.maxResults) };
   }
 
   async close(): Promise<void> {

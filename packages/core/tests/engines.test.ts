@@ -1,4 +1,5 @@
 /** Engine result pages via the browser tier: parsers, robots-gated eligibility, the human handoff. */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
 import { settingsFromArgs, settingsFromEnv, type Settings } from "../src/config.js";
@@ -12,10 +13,12 @@ import {
   ddgChallenge,
   parseBing,
   parseGoogle,
+  parseGoogleOverview,
   parseLite,
   unwrapBing,
 } from "../src/search/engines.js";
 import { SearchError } from "../src/search/provider.js";
+import { renderResults } from "../src/search/render.js";
 import { SearchRegistry } from "../src/search/registry.js";
 import { Audit } from "../src/audit.js";
 
@@ -246,7 +249,7 @@ describe("engine eligibility — the dials play together", () => {
       seen.push(u);
       return { html: LITE, status: 200 };
     });
-    const out = await p.search({ query: "turndown gfm", maxResults: 5 });
+    const { results: out } = await p.search({ query: "turndown gfm", maxResults: 5 });
     expect(out.length).toBe(2);
     expect(seen[0]).toContain("lite.duckduckgo.com/lite/?q=turndown%20gfm");
     // Google under the default policy: the live robots.txt says no (belt and braces on top of eligibility).
@@ -254,7 +257,7 @@ describe("engine eligibility — the dials play together", () => {
       provider("google", async () => ({ html: GOOGLE, status: 200 })).search({ query: "x", maxResults: 5 }),
     ).rejects.toThrow(/robots\.txt disallows/);
     // …and under robots=off it is opened and parsed.
-    const g = await provider("google", async () => ({ html: GOOGLE, status: 200 }), {
+    const { results: g } = await provider("google", async () => ({ html: GOOGLE, status: 200 }), {
       FEARCH_ROBOTS_POLICY: "off",
     }).search({ query: "x", maxResults: 5 });
     expect(g[0].url).toContain("npmjs.com");
@@ -367,5 +370,57 @@ describe("config dials", () => {
       settingsFromArgs(["--exa"], { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" }).settings
         .exaHostedUrl,
     ).toBe("https://mcp.exa.ai/mcp");
+  });
+});
+
+describe("google AI overview", () => {
+  const fixture = readFileSync(new URL("../../../tests/fixtures/google-ai-overview.html", import.meta.url), "utf8");
+  it("extracts the labelled summary and its sources from a real page region", () => {
+    const ov = parseGoogleOverview(fixture);
+    expect(ov).not.toBeNull();
+    expect(ov!.text).toMatch(/^A REST API/);
+    expect(ov!.text).not.toContain("not available");
+    expect(ov!.text.length).toBeLessThanOrEqual(2500);
+    expect(ov!.sources.map((s) => s.url)).toContain("https://www.youtube.com/watch?v=-mN3VyJuCjM");
+  });
+  it("returns null for stubs and pages without an overview", () => {
+    expect(parseGoogleOverview(GOOGLE_2026)).toBeNull();
+    // the hidden "not available" fallback spans alone are not a summary
+    const stub = `<div id="search"><div id="m-x-content"><span style="display:none"><span>An AI Overview is not available for this search</span></span><div>AI Overview</div></div></div>`;
+    expect(parseGoogleOverview(stub)).toBeNull();
+  });
+  it("flows from the engine through the registry into the rendered output, labelled and cached", async () => {
+    const page = `<html><body><div id="search">${fixture}<div class="yuRUbf"><a class="zReHs" href="https://example.com/rest"><h3>REST</h3><cite>https://example.com › rest</cite></a></div></div></body></html>`;
+    const s = settings({ FEARCH_ENGINES: "google", FEARCH_ROBOTS_POLICY: "off" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }), "off");
+    const engines = engineProviders(
+      s,
+      fakeBrowser(async () => ({ html: page, status: 200 })),
+      robots,
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+    );
+    const cache = new Cache(null);
+    const reg = new SearchRegistry(
+      s,
+      cache,
+      new Audit(s),
+      {
+        get: async () => {
+          throw new Error("no");
+        },
+      } as never,
+      engines,
+    );
+    const out = await reg.search({ query: "what is a rest api", maxResults: 3 });
+    expect(out.summary?.provider).toBe("google");
+    expect(out.summary?.text).toMatch(/^A REST API/);
+    const rendered = renderResults("what is a rest api", out);
+    expect(rendered).toContain("Google's AI Overview");
+    expect(rendered).toContain("unverified");
+    expect(rendered).toContain("Sources: [1] https://www.youtube.com/watch");
+    // cached outcomes keep the summary
+    const again = await reg.search({ query: "what is a rest api", maxResults: 3 });
+    expect(again.fromCache).toBe(true);
+    expect(again.summary?.text).toMatch(/^A REST API/);
   });
 });

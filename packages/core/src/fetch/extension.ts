@@ -315,6 +315,17 @@ export class ExtensionRenderer implements BrowserTier {
     let finalUrl = opened.url ?? target;
     let handedOff = false;
     try {
+      if (opts.settleUntil) {
+        const deadline = Date.now() + (opts.settleUntilMs ?? 2500);
+        while (!opts.settleUntil(html) && Date.now() < deadline) {
+          await new Promise((res) => setTimeout(res, 400));
+          const again = await this.bridge.request({ op: "read", tabId }, 10_000);
+          if (again.ok && again.html) {
+            html = again.html;
+            finalUrl = again.url ?? finalUrl;
+          }
+        }
+      }
       const isChallenge = opts.isChallenge ?? isChallengePage;
       if (this.settings.handoff && opts.handoff !== false && isChallenge(html, 200, finalUrl)) {
         this.audit.log(

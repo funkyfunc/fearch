@@ -15,6 +15,7 @@ import { federationProviders } from "./federation.js";
 import {
   dedupe,
   SearchError,
+  type EngineSummary,
   type SearchKind,
   type SearchProvider,
   type SearchQuery,
@@ -25,6 +26,8 @@ export interface SearchOutcome {
   results: SearchResult[];
   providers: SearchProvider[];
   fromCache: boolean;
+  /** The engine's own generated answer box, when the page carried one. Labelled, never merged into results. */
+  summary?: EngineSummary;
   fellBackToFederation: boolean;
   /** Human-readable notes about what happened (rate limits, cooldowns), shown to the model. */
   notes: string[];
@@ -107,17 +110,25 @@ export class SearchRegistry {
     const key = createHash("sha1")
       .update(JSON.stringify({ ...q, v: 2 }))
       .digest("hex");
-    const cached = this.cache.getSearch<{ results: SearchResult[]; providers: string[] }>(key);
+    const cached = this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
       const providers = [...this.web, ...this.federation].filter((p) => cached.providers.includes(p.name));
-      return { results: cached.results, providers, fromCache: true, fellBackToFederation: false, notes: [] };
+      return {
+        results: cached.results,
+        providers,
+        fromCache: true,
+        fellBackToFederation: false,
+        notes: [],
+        summary: cached.summary,
+      };
     }
 
     const errors: string[] = [];
     const notes: string[] = [];
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
+    let summary: EngineSummary | undefined;
     let fellBack = false;
     /** A provider ahead of the first one that answered failed or was skipped (chain searches only). */
     let preferredFailed = false;
@@ -132,8 +143,14 @@ export class SearchRegistry {
       try {
         const r = await p.search(q);
         used.push(p);
-        this.audit.record({ url: `search:${q.query}`, provider: p.name, status: "ok", note: `${r.length} results` });
-        return r;
+        summary ??= r.summary;
+        this.audit.record({
+          url: `search:${q.query}`,
+          provider: p.name,
+          status: "ok",
+          note: `${r.results.length} results`,
+        });
+        return r.results;
       } catch (e) {
         const msg = (e as Error).message;
         errors.push(msg);
@@ -187,7 +204,8 @@ export class SearchRegistry {
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than
     // 15 minutes of the fallback's answer.
-    if (!preferredFailed && !fellBack) this.cache.setSearch(key, { results, providers: used.map((p) => p.name) });
-    return { results, providers: used, fromCache: false, fellBackToFederation: fellBack, notes };
+    if (!preferredFailed && !fellBack)
+      this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
+    return { results, providers: used, fromCache: false, fellBackToFederation: fellBack, notes, summary };
   }
 }

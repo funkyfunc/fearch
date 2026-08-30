@@ -32,6 +32,21 @@ export function isoDate(v: unknown): string | undefined {
   return d.getFullYear() > 1995 ? d.toISOString().slice(0, 10) : undefined;
 }
 
+/**
+ * An answer box the engine itself generated (Google's AI Overview). It is that engine's model's
+ * claim, not a fact: always shown labelled, with the sources it cited, never merged into results.
+ */
+export interface EngineSummary {
+  text: string;
+  sources: Array<{ title: string; url: string }>;
+  provider: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  summary?: EngineSummary;
+}
+
 export interface SearchProvider {
   /** Short id shown in output, e.g. "exa-hosted", "github". */
   name: string;
@@ -42,7 +57,7 @@ export interface SearchProvider {
   /** Posture per docs/SPECTRUM.md: official API, or a result page opened in the browser tier. */
   posture: "official" | "browser";
   available(): boolean;
-  search(q: SearchQuery): Promise<SearchResult[]>;
+  search(q: SearchQuery): Promise<SearchResponse>;
 }
 
 export class SearchError extends Error {

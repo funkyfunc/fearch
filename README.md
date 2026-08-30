@@ -7,7 +7,9 @@ refusal as final, and searches only where it is permitted. Free: no keys, no acc
 Two tools, both returning compact markdown:
 
 - **`search`** — general web via DuckDuckGo lite, opened in a real browser (the one engine whose
-  robots.txt permits it), falling back to first-party APIs; or those APIs directly by `kind`: GitHub
+  robots.txt permits it), falling back to first-party APIs. When a search goes through Google (the
+  user-agent posture) and the page carries an **AI Overview**, it is included — clearly labelled as
+  Google's generated, unverified summary, with the sources it cited — never blended into the results; or those APIs directly by `kind`: GitHub
   (`code`), Stack Overflow (`qa`), npm + crates.io (`packages`), MDN + Wikipedia (`docs`), arXiv +
   OpenAlex (`papers`), Hacker News (`community`). `fetch_top=N` inlines query-focused excerpts of the
   top results so one call replaces search-then-fetch. Every result names the provider it came from.
