@@ -229,8 +229,9 @@ async function doctor(state: AppState): Promise<number> {
 export function bundledExtensionDir(): string {
   return fileURLToPath(new URL("../extension/", import.meta.url));
 }
+/** A visible folder on purpose: Chrome's "Load unpacked" dialog cannot show dot-directories. */
 export function installedExtensionDir(): string {
-  return join(homedir(), ".fearch", "extension");
+  return join(homedir(), "fearch-extension");
 }
 
 function copyToClipboard(text: string): boolean {
@@ -272,7 +273,7 @@ async function extensionCommand(state: AppState, sub: string, flags: Record<stri
     out(`fearch bridge extension copied to:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
     out("In Chrome (opening chrome://extensions for you):");
     out("  1. turn on “Developer mode” (top right)");
-    out("  2. click “Load unpacked” and paste the folder above");
+    out("  2. click “Load unpacked”, press Cmd+Shift+G (macOS) or type in the path box, paste the folder above, and choose it");
     out("  3. optional: in the extension's details, enable “Allow in Incognito” for --incognito");
     out(`\nExpected extension ID: ${EXTENSION_ID}.  Status page: http://127.0.0.1:${port}/setup`);
     openExtensionsPage();
