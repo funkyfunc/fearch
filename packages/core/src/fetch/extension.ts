@@ -5,14 +5,20 @@
  * URL in a background tab, read it, close it) plus "activate" for the human handoff.
  *
  * Transport: the server listens on 127.0.0.1 on a small fixed port range; the extension long-polls
- * `/fearch/next` for jobs and posts `/fearch/result`. No dependencies, no tokens: requests are accepted
- * only from the extension's own origin (its ID is fixed by the `key` in its manifest), which is what
- * stops a web page from driving the bridge. A process on the machine could spoof the header — but such
- * a process could also just run Chrome; the bridge adds no capability it doesn't already have.
+ * `/fearch/next` for jobs and posts `/fearch/result`. Both sides are paired through a shared secret
+ * written by `fearch extension install` (into `<cacheDir>/extension-token` for the server and
+ * `token.json` in the extension folder). The token never crosses the wire: the extension proves it
+ * holds it with a SHA-256 over a fresh nonce on every poll, and the server proves it back on every
+ * job before the extension will execute anything. Without that, any local process could bind the
+ * well-known port first and drive the person's logged-in Chrome — the pairing closes exactly that.
+ * The Origin check (the extension ID is fixed by the `key` in its manifest) additionally stops web
+ * pages from talking to the bridge at all.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Audit } from "../audit.js";
 import type { Settings } from "../config.js";
 import { BrowserUnavailable, waitForHuman, type BrowserTier, type Rendered, type RenderOptions } from "./browser.js";
@@ -24,6 +30,25 @@ export const EXTENSION_ID = "gabikoejpalecfplpddejellljanhjeo";
 export const EXTENSION_PORTS = [47365, 47366, 47367, 47368, 47369];
 const POLL_HOLD_MS = 25_000;
 const CONNECTED_WINDOW_MS = 40_000;
+
+export function extensionTokenPath(cacheDir: string): string {
+  return join(cacheDir, "extension-token");
+}
+
+/** The pairing secret shared with the extension. Created on first use, private to this user. */
+export function loadOrCreateExtensionToken(cacheDir: string): string {
+  const path = extensionTokenPath(cacheDir);
+  try {
+    const t = readFileSync(path, "utf8").trim();
+    if (t) return t;
+  } catch {
+    // fall through to create
+  }
+  const token = randomBytes(32).toString("hex");
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(path, token + "\n", { mode: 0o600 });
+  return token;
+}
 
 interface Job {
   id: string;
@@ -82,14 +107,23 @@ export class ExtensionBridge {
   private waiters: Array<(job: Job | null) => void> = [];
   private pending = new Map<string, { resolve: (r: JobResult) => void; timer: NodeJS.Timeout }>();
   private lastPoll = 0;
+  private lastUnpairedPoll = 0;
   private info: ExtensionInfo | null = null;
   private starting: Promise<number> | null = null;
 
   constructor(
     private readonly audit: Audit,
+    private readonly token: string,
     private readonly extensionId = process.env.FEARCH_EXTENSION_ID || EXTENSION_ID,
     private readonly ports = EXTENSION_PORTS,
   ) {}
+
+  /** Both sides derive proofs from the shared token; the token itself never crosses the wire. */
+  private proof(kind: "poll" | "job" | "result", ...parts: string[]): string {
+    return createHash("sha256")
+      .update(`${this.token}:${kind}:${parts.join(":")}`)
+      .digest("hex");
+  }
 
   get listeningPort(): number {
     return this.port;
@@ -155,6 +189,8 @@ export class ExtensionBridge {
           extension: this.info,
           port: this.port,
           extensionId: this.extensionId,
+          // An extension is polling but failing the pairing check — almost always a stale token.json.
+          unpairedExtensionSeen: Date.now() - this.lastUnpairedPoll < CONNECTED_WINDOW_MS,
         });
       }
       if (url.pathname === "/setup" && req.method === "GET") {
@@ -168,6 +204,14 @@ export class ExtensionBridge {
         return json(403, { error: "requests are accepted only from the fearch bridge extension" });
       const body = (await readJson(req)) as Record<string, unknown>;
       if (url.pathname === "/fearch/next") {
+        const nonce = typeof body.nonce === "string" ? body.nonce : "";
+        if (!nonce || body.auth !== this.proof("poll", nonce)) {
+          this.lastUnpairedPoll = Date.now();
+          return json(403, {
+            error:
+              "not paired with this fearch server — run `fearch extension install` to write the pairing token, then reload the extension at chrome://extensions",
+          });
+        }
         this.lastPoll = Date.now();
         if (typeof body.version === "string")
           this.info = { version: body.version, incognitoAllowed: !!body.incognitoAllowed };
@@ -177,10 +221,13 @@ export class ExtensionBridge {
           res.end();
           return;
         }
-        return json(200, job);
+        // The proof lets the extension verify this server holds the token before executing the job.
+        return json(200, { ...job, proof: this.proof("job", nonce, job.id) });
       }
       if (url.pathname === "/fearch/result") {
-        const r = body as unknown as JobResult;
+        const r = body as unknown as JobResult & { auth?: string };
+        if (typeof r.id !== "string" || r.auth !== this.proof("result", r.id))
+          return json(403, { error: "not paired" });
         const p = this.pending.get(r.id);
         if (p) {
           clearTimeout(p.timer);
@@ -288,7 +335,9 @@ export class ExtensionRenderer implements BrowserTier {
         if (!this.warnedFallback) {
           this.audit.log(
             "warn",
-            `${hint}; using the ${this.fallback.headed ? "headed" : "headless"} browser tier instead`,
+            `${hint}; using the ${this.fallback.headed ? "headed" : "headless"} browser tier instead${
+              this.fallback.headed ? "" : " — challenges cannot be handed to you until the extension connects"
+            }`,
           );
           this.warnedFallback = true;
         }
@@ -368,7 +417,8 @@ export class ExtensionRenderer implements BrowserTier {
         finalUrl,
         status: 200,
         salvaged: false,
-        usedSession: false,
+        // A non-incognito tab is the person's own profile — their logins ride along, so say so.
+        usedSession: !this.settings.incognito,
         handedOff,
         label: this.settings.incognito ? "your Chrome, incognito" : "your Chrome",
       };
@@ -391,8 +441,8 @@ function setupPage(extensionId: string): string {
 <ol><li>Open <code>chrome://extensions</code> (Chrome won't let this page link there).</li>
 <li>Turn on <b>Developer mode</b> (top right).</li>
 <li>Click <b>Load unpacked</b> and choose the folder <code>fearch extension install</code> printed (it is on your clipboard).</li>
-<li>Optional: open the extension's details and enable <b>Allow in Incognito</b> for <code>--incognito</code>.</li></ol>
+<li>Optional: open the extension's details and enable <b>Allow in Incognito</b> for <code>FEARCH_INCOGNITO=1</code>.</li></ol>
 <p>Expected extension ID: <code>${extensionId}</code></p>
-<script>setInterval(()=>fetch('/fearch/status').then(r=>r.json()).then(s=>{const e=document.getElementById('s');if(s.connected){e.className='ok';e.textContent='✔ connected (extension '+(s.extension&&s.extension.version)+')'}}),1500)</script>
+<script>setInterval(()=>fetch('/fearch/status').then(r=>r.json()).then(s=>{const e=document.getElementById('s');if(s.connected){e.className='ok';e.textContent='✔ connected (extension '+(s.extension&&s.extension.version)+')'}else if(s.unpairedExtensionSeen){e.textContent='✘ extension found but not paired — run \`fearch extension install\` again, then reload the extension'}}),1500)</script>
 </body></html>`;
 }

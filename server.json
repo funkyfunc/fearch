@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.funkyfunc/fearch",
-  "description": "Respectful, corporate-safe, free web search and page reading for coding agents: honest identity, robots.txt, a self-identified browser tier, refusals as structured diagnoses, keyless official search.",
+  "description": "Respectful, corporate-safe, free web search and page reading for coding agents: honest identity, robots.txt, a human-in-the-loop browser tier, refusals as structured diagnoses, keyless official search.",
   "repository": {
     "url": "https://github.com/funkyfunc/fearch",
     "source": "github"
@@ -16,32 +16,20 @@
       "packageArguments": [
         {
           "type": "named",
-          "name": "--robots",
-          "description": "default | strict | minimal | off — robots.txt groups that apply, or not consulted at all.",
-          "isRequired": false
-        },
-        {
-          "type": "named",
           "name": "--browser",
-          "description": "headless | headed | off — bundled headless Chromium, your installed Chrome in a window, or no browser tier.",
+          "description": "headless | headed | extension | off — bundled headless Chromium (default), your installed Chrome in a visible window, your own Chrome via the bridge extension, or no browser tier. With a visible browser a person is present: challenges are handed to them and Google joins DuckDuckGo.",
           "isRequired": false
         },
         {
           "type": "named",
-          "name": "--handoff",
-          "description": "Hand challenges to the person in the browser window (implies --browser headed).",
+          "name": "--robots",
+          "description": "default | strict | off — robots.txt for the tool's own fetching: user-initiated agent opt-outs (default), also training-crawler opt-outs (strict), or not consulted (off).",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--engines",
-          "description": "Engine result pages in preference order: google,bing,duckduckgo (default duckduckgo).",
-          "isRequired": false
-        },
-        {
-          "type": "named",
-          "name": "--exa",
-          "description": "Add Exa's keyless hosted search as the fallback (queries are logged by Exa; off by default).",
+          "description": "Engine result pages in preference order: google,bing,duckduckgo (default derived from --browser).",
           "isRequired": false
         },
         {
@@ -55,8 +43,7 @@
           "name": "--deny-domains",
           "description": "Comma-separated deny list of hosts.",
           "isRequired": false
-        },
-        { "type": "named", "name": "--audit-log", "description": "stderr | off | file path.", "isRequired": false }
+        }
       ],
       "environmentVariables": [
         {

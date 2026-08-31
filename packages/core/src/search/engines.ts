@@ -1,21 +1,23 @@
 /**
  * Search-engine result pages opened in the browser tier.
  *
- * Eligibility is where the dials meet: an engine is only used if it is listed in --engines
- * *and* either its robots.txt permits its result pages (DuckDuckGo lite does: `/lite/`, `/html/`) or
- * robots.txt is off (the user-agent posture — Google and Bing both `Disallow: /search`). Whatever the
- * dial, robots.txt is consulted through the same RobotsChecker before the browser opens anything.
+ * Eligibility is where the dials meet: an engine is only used if it is listed in --engines *and*
+ * either its robots.txt permits its result pages (DuckDuckGo lite does: `/lite/`) or a person is
+ * present — a visible browser (headed or extension) with handoff on, where the result page is the
+ * person's own browsing rather than a crawl (Google and Bing both `Disallow: /search`, which governs
+ * unattended crawlers, not a browser someone oversees). `--robots off` also qualifies, as the
+ * explicit user-agent posture. Robots-permitted engines are still verified live before every request.
  *
  * One page per search call, ≥3 s between requests to an engine. A challenge page is the engine's "no":
- * in headless mode the provider stops and cools down; in headed mode with --handoff the tab
- * is handed to the person, who may pass it themselves — the tool never does.
+ * in headless mode the provider stops and cools down; with a person present the tab is handed to
+ * them, who may pass it themselves — the tool never does.
  */
 
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Settings } from "../config.js";
+import { personPresent, type Settings } from "../config.js";
 import type { BrowserTier } from "../fetch/browser.js";
 import type { RobotsChecker } from "../fetch/robots.js";
 import type { Politeness } from "../politeness.js";
@@ -353,7 +355,9 @@ export class EngineProvider implements SearchProvider {
           : "the self-identified headless browser";
     const robots = this.spec.robotsPermitted
       ? "robots.txt allows this page"
-      : "robots.txt disallows result pages; opened because robots is off";
+      : personPresent(this.settings)
+        ? "opened as your own browsing — you oversee this browser and are handed any challenge"
+        : "robots.txt disallows result pages; opened because robots is off";
     return `${this.spec.label} via ${how} (${robots}; ${this.spec.privacy})`;
   }
 
@@ -363,7 +367,7 @@ export class EngineProvider implements SearchProvider {
   }
 
   eligible(): boolean {
-    return this.spec.robotsPermitted || this.settings.robotsPolicy === "off";
+    return this.spec.robotsPermitted || personPresent(this.settings) || this.settings.robotsPolicy === "off";
   }
 
   /** Why a listed engine is not used, for `doctor`. */
@@ -371,18 +375,25 @@ export class EngineProvider implements SearchProvider {
     if (!this.settings.engines.includes(this.name)) return null;
     if (!this.browser.enabled()) return "browser tier is off";
     if (!this.eligible())
-      return `${this.spec.host} disallows result pages in robots.txt; eligible only with --robots off`;
+      return `${this.spec.host} disallows result pages for crawlers; eligible with a visible browser you oversee (--browser headed or extension)`;
     return null;
   }
 
   async search(q: SearchQuery): Promise<SearchResponse> {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
     const url = this.spec.url(query);
-    const decision = await this.robots.check(url);
-    if (!decision.allowed)
-      throw new SearchError(
-        `${this.name}: robots.txt disallows ${url.split("?")[0]} (${decision.reason ?? "disallowed"})`,
-      );
+    // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
+    // eligible through the person-present or robots-off posture are the person's own browsing — the
+    // crawler rules don't apply, so robots.txt is not consulted for their result pages.
+    let crawlDelayMs = 0;
+    if (this.spec.robotsPermitted) {
+      const decision = await this.robots.check(url);
+      if (!decision.allowed)
+        throw new SearchError(
+          `${this.name}: robots.txt disallows ${url.split("?")[0]} (${decision.reason ?? "disallowed"})`,
+        );
+      crawlDelayMs = decision.crawlDelayMs ?? 0;
+    }
     let rendered;
     try {
       rendered = await this.politeness.run(
@@ -400,7 +411,7 @@ export class EngineProvider implements SearchProvider {
               : undefined,
             settleUntilMs: 2500,
           }),
-        Math.max(this.gapMs, decision.crawlDelayMs ?? 0),
+        Math.max(this.gapMs, crawlDelayMs),
       );
     } catch (e) {
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
@@ -410,8 +421,8 @@ export class EngineProvider implements SearchProvider {
       const hint = this.browser.headed
         ? this.settings.handoff
           ? "it was shown in the browser window but not passed in time"
-          : "start with --handoff to be handed the page and pass it yourself"
-        : "with --handoff you could pass it yourself";
+          : "handoff is disabled (FEARCH_HANDOFF=0); with it on you would be handed the page to pass yourself"
+        : "with --browser headed or extension the page would be handed to you to pass yourself";
       throw new SearchError(
         `${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`,
       );

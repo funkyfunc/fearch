@@ -49,10 +49,8 @@ export class Politeness {
     const prev = this.queues.get(host) ?? Promise.resolve();
     let release!: () => void;
     const mine = new Promise<void>((r) => (release = r));
-    this.queues.set(
-      host,
-      prev.then(() => mine),
-    );
+    const tail = prev.then(() => mine);
+    this.queues.set(host, tail);
     await prev;
     try {
       const since = this.now() - (this.lastDone.get(host) ?? -Infinity);
@@ -61,7 +59,8 @@ export class Politeness {
     } finally {
       this.lastDone.set(host, this.now());
       release();
-      if (this.queues.get(host) === prev.then(() => mine)) this.queues.delete(host);
+      // Only the last waiter clears the entry (a later caller may already have chained a new tail).
+      if (this.queues.get(host) === tail) this.queues.delete(host);
     }
   }
 }

@@ -2,11 +2,13 @@ import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Audit } from "../src/audit.js";
 import { settingsFromEnv } from "../src/config.js";
-import { describeNetworkError, FetchError, isTlsError, Transport } from "../src/fetch/transport.js";
+import { describeNetworkError, FetchError, isTlsError, parseRetryAfter, Transport } from "../src/fetch/transport.js";
 
 describe("transport", () => {
   let server: Server;
   let port = 0;
+  let flakyHits = 0;
+  let slowHits = 0;
   beforeAll(async () => {
     server = createServer((req, res) => {
       const host = req.headers.host ?? "";
@@ -15,6 +17,14 @@ describe("transport", () => {
       if (req.url === "/loop") return res.writeHead(302, { location: "/loop" }).end();
       if (req.url === "/big")
         return res.writeHead(200, { "content-type": "text/plain", "content-length": "99999999" }).end("x");
+      if (req.url === "/flaky")
+        return ++flakyHits === 1
+          ? res.writeHead(429, { "retry-after": "0" }).end("slow down")
+          : res.writeHead(200, { "content-type": "text/plain" }).end("recovered");
+      if (req.url === "/slow") {
+        slowHits++;
+        return res.writeHead(429, { "retry-after": "3600" }).end("come back later");
+      }
       if (req.url === "/target")
         return res
           .writeHead(200, { "content-type": "text/plain" })
@@ -58,6 +68,26 @@ describe("transport", () => {
   it("caps redirects and declared body size", async () => {
     await expect(t().get(`http://127.0.0.1:${port}/loop`)).rejects.toThrow(/Too many redirects/);
     await expect(t().get(`http://127.0.0.1:${port}/big`)).rejects.toThrow(/too large/);
+  });
+
+  it("obeys a short Retry-After exactly once; a long one stays a final answer", async () => {
+    const r = await t().get(`http://127.0.0.1:${port}/flaky`);
+    expect(r.status).toBe(200);
+    expect(new TextDecoder().decode(r.body as Uint8Array)).toBe("recovered");
+    expect(flakyHits).toBe(2);
+    const long = await t().get(`http://127.0.0.1:${port}/slow`);
+    expect(long.status).toBe(429);
+    expect(slowHits).toBe(1);
+  });
+
+  it("parses Retry-After as delay-seconds or an HTTP-date", () => {
+    expect(parseRetryAfter("7")).toBe(7);
+    expect(parseRetryAfter(undefined)).toBeNull();
+    expect(parseRetryAfter("garbage")).toBeNull();
+    const inTen = parseRetryAfter(new Date(Date.now() + 10_000).toUTCString());
+    expect(inTen).toBeGreaterThanOrEqual(9);
+    expect(inTen).toBeLessThanOrEqual(11);
+    expect(parseRetryAfter(new Date(Date.now() - 5_000).toUTCString())).toBe(0);
   });
 });
 

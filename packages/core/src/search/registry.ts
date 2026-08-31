@@ -1,7 +1,7 @@
 /**
  * Orders providers and runs a query: eligible engines via the browser (DuckDuckGo lite by default) →
- * Exa hosted (keyless, only with --exa) → keyless first-party federation as the last resort.
- * `kind`-scoped queries go straight to the matching federation providers.
+ * keyless first-party federation as the last resort. `kind`-scoped queries go straight to the
+ * matching federation providers.
  */
 
 import { createHash } from "node:crypto";
@@ -10,7 +10,6 @@ import type { Cache } from "../cache.js";
 import type { Settings } from "../config.js";
 import type { HttpLike } from "../fetch/types.js";
 import type { EngineProvider } from "./engines.js";
-import { ExaHostedProvider } from "./exa-hosted.js";
 import { federationProviders } from "./federation.js";
 import {
   dedupe,
@@ -56,18 +55,15 @@ export class SearchRegistry {
     /** Search-engine result-page providers (browser tier), in preference order; only available ones are used. */
     private readonly engines: EngineProvider[] = [],
   ) {
-    const hosted = new ExaHostedProvider(settings);
-    // "first-party" mode: no third-party search services at all (queries stay with the sites they concern).
+    // "first-party" mode: no engine result pages at all (queries stay with the sites they concern).
     // Order: eligible engines via the browser (DuckDuckGo lite by default: keyless, robots-permitted,
-    // unlogged by DDG) → Exa's keyless endpoint if enabled (rich but rate-limited and query-logging)
-    // → first-party federation.
-    const engine = engines.filter((p) => p.available());
-    this.web = settings.searchMode === "all" ? [...engine, ...(hosted.available() ? [hosted] : [])] : [];
+    // unlogged by DDG) → first-party federation.
+    this.web = settings.searchMode === "all" ? engines.filter((p) => p.available()) : [];
     this.federation = settings.searchMode === "off" ? [] : federationProviders(http);
   }
 
   describe(): string {
-    if (this.settings.searchMode === "off") return "search disabled (--search-mode off)";
+    if (this.settings.searchMode === "off") return "search disabled (FEARCH_SEARCH_MODE=off)";
     const names = this.web.map((p) => p.name);
     const off = this.unusedEngines().map((x) => `${x.name} (${x.why})`);
     return `mode=${this.settings.searchMode}; web: ${names.join(" → ") || "(none)"}; federation: ${this.federation.map((p) => p.name).join(", ")}${off.length ? `; engines listed but not used: ${off.join("; ")}` : ""}`;
@@ -104,7 +100,7 @@ export class SearchRegistry {
   async search(q: SearchQuery): Promise<SearchOutcome> {
     if (this.settings.searchMode === "off") {
       throw new SearchError(
-        "Search is disabled on this server (--search-mode off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
+        "Search is disabled on this server (FEARCH_SEARCH_MODE=off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
       );
     }
     const key = createHash("sha1")
@@ -156,12 +152,7 @@ export class SearchRegistry {
         errors.push(msg);
         this.audit.record({ url: `search:${q.query}`, provider: p.name, status: "error", note: msg });
         if (/rate.?limit|HTTP 429|too many requests/i.test(msg)) {
-          const why =
-            p.name === "exa-hosted"
-              ? "rate-limited on Exa's keyless tier"
-              : p.posture === "browser"
-                ? `${p.name} showed its bot-check page`
-                : "rate-limited";
+          const why = p.posture === "browser" ? `${p.name} showed its bot-check page` : "rate-limited";
           this.cooldown.set(p.name, { until: now + RATE_LIMIT_COOLDOWN_MS, why });
           notes.push(`${p.name}: ${why}`);
         }

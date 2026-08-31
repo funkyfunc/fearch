@@ -1,0 +1,23 @@
+# Weekly canary for the things offline tests cannot see: engine result-page markup (the Google parser
+# is brittle by construction) and the first-party APIs. A red run here means "check the parsers", not
+# "the build is broken" — it never gates pushes or releases. Note: GitHub runners are datacenter IPs,
+# so an engine may answer with its bot-check page; that shows up as the provider's cooldown note, and
+# repeated failures across weeks are the real signal.
+name: live-drift
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: FEARCH_LIVE=1 npm run test:live

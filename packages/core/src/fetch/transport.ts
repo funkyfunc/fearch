@@ -53,6 +53,19 @@ export class FetchError extends Error {
   }
 }
 
+/** Longest Retry-After the transport will actually sit out; anything longer becomes a final diagnosis. */
+export const RETRY_AFTER_MAX_S = 15;
+
+/** RFC 9110 §10.2.3: delay-seconds or an HTTP-date. Returns whole seconds, or null if unparseable. */
+export function parseRetryAfter(value: string | undefined): number | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const date = Date.parse(v);
+  if (Number.isNaN(date)) return null;
+  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
 export interface GetOptions {
   headers?: Record<string, string>;
   conditional?: { etag?: string | null; lastModified?: string | null };
@@ -111,6 +124,7 @@ export class Transport {
 
     let current = url;
     let httpRetried = false;
+    let retriedAfter = false;
     const redirects: string[] = [];
     for (let hop = 0; ; hop++) {
       let res: UndiciResponse;
@@ -190,6 +204,25 @@ export class Transport {
       const hdrs: Record<string, string> = {};
       res.headers.forEach((v, k) => (hdrs[k] = v));
       const contentType = hdrs["content-type"] ?? "";
+
+      // 429/503 with a short Retry-After is the server saying "in a moment": obey it exactly, once.
+      // A long or absent Retry-After stays a final diagnosis — no invented backoff, no hammering.
+      if ((res.status === 429 || res.status === 503) && !retriedAfter) {
+        const waitS = parseRetryAfter(hdrs["retry-after"]);
+        if (waitS !== null && waitS <= RETRY_AFTER_MAX_S) {
+          retriedAfter = true;
+          await res.body?.cancel().catch(() => {});
+          this.audit.record({
+            url: current,
+            status: res.status,
+            note: `Retry-After ${waitS}s — waiting as asked, then retrying once`,
+            provider: opts.source,
+          });
+          await new Promise((r) => setTimeout(r, waitS * 1000));
+          hop--;
+          continue;
+        }
+      }
 
       if (res.status === 304) {
         await res.body?.cancel().catch(() => {});

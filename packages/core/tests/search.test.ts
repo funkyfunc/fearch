@@ -3,7 +3,6 @@ import { Audit } from "../src/audit.js";
 import { Cache } from "../src/cache.js";
 import { settingsFromEnv } from "../src/config.js";
 import type { HttpLike } from "../src/fetch/types.js";
-import { parseExaToolText } from "../src/search/exa-hosted.js";
 import {
   ArxivProvider,
   GitHubProvider,
@@ -57,22 +56,6 @@ describe("provider helpers", () => {
     expect(filterDomains(rs, { query: "", maxResults: 5, site: "docs.python.org" }).length).toBe(1);
     expect(filterDomains(rs, { query: "", maxResults: 5, blockedDomains: ["example.com"] }).length).toBe(1);
     expect(filterDomains(rs, { query: "", maxResults: 5, allowedDomains: ["python.org"] }).length).toBe(1);
-  });
-});
-
-describe("exa hosted parsing", () => {
-  it("parses JSON and text shapes", () => {
-    const json = parseExaToolText(
-      JSON.stringify({ results: [{ title: "A", url: "https://a.test/", highlights: ["h1", "h2"] }] }),
-      "exa-hosted",
-    );
-    expect(json).toEqual([{ title: "A", url: "https://a.test/", snippet: "h1 h2", provider: "exa-hosted" }]);
-    const text = parseExaToolText(
-      "Title: B\nURL: https://b.test/x\nPublished: 2026\nSome summary here.\n\nTitle: C\nURL: https://c.test/\nMore.",
-      "exa-hosted",
-    );
-    expect(text.map((x) => x.url)).toEqual(["https://b.test/x", "https://c.test/"]);
-    expect(text[0].snippet).toBe("Some summary here.");
   });
 });
 
@@ -232,7 +215,7 @@ describe("registry", () => {
   });
 
   function registry(web: SearchProvider[], federation: SearchProvider[]) {
-    const settings = settingsFromEnv({ FEARCH_EXA_HOSTED_URL: "" } as NodeJS.ProcessEnv);
+    const settings = settingsFromEnv({} as NodeJS.ProcessEnv);
     const reg = new SearchRegistry(
       settings,
       new Cache(null),
@@ -281,11 +264,7 @@ describe("registry", () => {
     const o = await registry([], [mdn, wiki]).search({ query: "q", maxResults: 3, kind: "docs" });
     expect(o.results.map((x) => x.url)).toEqual(["https://mdn.test/1", "https://wiki.test/1", "https://mdn.test/2"]);
 
-    const limited = stub(
-      "exa-hosted",
-      [],
-      "exa-hosted: rate-limited (keyless casual-use tier); waiting a few minutes lifts it.",
-    );
+    const limited = stub("slowpoke", [], "slowpoke: rate-limited (HTTP 429); waiting a few minutes lifts it.");
     const gh = stub("github", [r("https://github.com/o/r")], undefined, ["code"]);
     const reg = registry([limited], [gh]);
     const first = await reg.search({ query: "q1", maxResults: 2 });
@@ -294,7 +273,7 @@ describe("registry", () => {
     const second = await reg.search({ query: "q2", maxResults: 2 });
     expect(limited.calls).toBe(1); // on cooldown: not called again
     expect(second.notes.join(" ")).toContain("skipped");
-    expect(renderResults("q2", second)).toContain("Note: exa-hosted: skipped");
+    expect(renderResults("q2", second)).toContain("Note: slowpoke: skipped");
   });
 
   it("errors when nothing works", async () => {

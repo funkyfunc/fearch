@@ -85,7 +85,7 @@ d("live", () => {
       arguments: { query: "python asyncio timeout context manager", max_results: 5 },
     });
     expect(web.isError).toBeFalsy();
-    expect(text(web)).toMatch(/via [a-z+-]+/); // exa-hosted normally; federation when Exa's keyless tier is rate-limited
+    expect(text(web)).toMatch(/via [a-z+-]+/); // an engine normally; federation as the fallback
     const code = text(
       await c.callTool({
         name: "search",

@@ -1,5 +1,5 @@
 export { createApp, type App } from "./app.js";
-export { buildServer, SEARCH_DESCRIPTION, FETCH_DESCRIPTION } from "./server.js";
+export { buildServer, searchDescription, fetchDescription } from "./server.js";
 export { readDocument, type ReadMode, type ReadOptions } from "./fetch/read.js";
 export { settingsFromEnv, settingsFromArgs, userAgentFor, VERSION, PRODUCT, type Settings } from "./config.js";
 export type { SearchProvider, SearchQuery, SearchResult, SearchKind } from "./search/provider.js";

@@ -2,6 +2,7 @@
  * The extension tier. Unit tests drive the bridge with a fake extension client; the integration test
  * loads the real unpacked extension into Playwright's Chromium (skipped if Chromium is unavailable).
  */
+import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Audit } from "../src/audit.js";
@@ -23,14 +24,16 @@ const audit = () => new Audit({ auditLog: "off", logLevel: "error" });
 const ORIGIN = { origin: `chrome-extension://${EXTENSION_ID}`, "content-type": "application/json" };
 // Use a port range that cannot collide with a running fearch server.
 const TEST_PORTS = [47470, 47471, 47472];
+const TOKEN = "test-pairing-token";
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 describe("extension bridge (fake extension client)", () => {
-  it("accepts only the extension's origin, hands out jobs, and returns results", async () => {
-    const bridge = new ExtensionBridge(audit(), EXTENSION_ID, TEST_PORTS);
+  it("pairs via the shared token, hands out proven jobs, and returns authenticated results", async () => {
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, TEST_PORTS);
     const port = await bridge.start();
     expect(TEST_PORTS).toContain(port);
     expect(bridge.connected()).toBe(false);
-    // a web page / random client is refused
+    // a web page / random client is refused by origin
     expect((await fetch(`http://127.0.0.1:${port}/fearch/next`, { method: "POST", body: "{}" })).status).toBe(403);
     expect(
       (
@@ -41,22 +44,40 @@ describe("extension bridge (fake extension client)", () => {
         })
       ).status,
     ).toBe(403);
-    // the extension polls; a queued job is delivered; its result resolves the request
+    // the right origin but no (or a wrong) pairing proof is refused too — a local impostor can spoof
+    // the Origin header, so the token is what actually gates the bridge
+    const unpaired = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
+      method: "POST",
+      headers: ORIGIN,
+      body: JSON.stringify({ version: "9.9.9", nonce: "n1", auth: sha("wrong-token:poll:n1") }),
+    });
+    expect(unpaired.status).toBe(403);
+    expect(((await unpaired.json()) as { error: string }).error).toContain("not paired");
+    expect(bridge.connected()).toBe(false);
+    // a paired poll gets the job, with the server's proof over the poll nonce and job id
     const pending = bridge.request({ op: "ping" });
+    const nonce = "n2";
     const poll = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
       method: "POST",
       headers: ORIGIN,
-      body: JSON.stringify({ version: "9.9.9", incognitoAllowed: true }),
+      body: JSON.stringify({ version: "9.9.9", incognitoAllowed: true, nonce, auth: sha(`${TOKEN}:poll:${nonce}`) }),
     });
     expect(poll.status).toBe(200);
-    const job = (await poll.json()) as { id: string; op: string };
+    const job = (await poll.json()) as { id: string; op: string; proof: string };
     expect(job.op).toBe("ping");
+    expect(job.proof).toBe(sha(`${TOKEN}:job:${nonce}:${job.id}`));
     expect(bridge.connected()).toBe(true);
     expect(bridge.extensionInfo()).toEqual({ version: "9.9.9", incognitoAllowed: true });
+    // a result without the pairing auth is dropped; with it, the pending request resolves
     await fetch(`http://127.0.0.1:${port}/fearch/result`, {
       method: "POST",
       headers: ORIGIN,
       body: JSON.stringify({ id: job.id, ok: true, version: "9.9.9" }),
+    });
+    await fetch(`http://127.0.0.1:${port}/fearch/result`, {
+      method: "POST",
+      headers: ORIGIN,
+      body: JSON.stringify({ id: job.id, ok: true, version: "9.9.9", auth: sha(`${TOKEN}:result:${job.id}`) }),
     });
     expect((await pending).ok).toBe(true);
     // status and setup pages are readable without an origin (a person's browser tab)
@@ -68,7 +89,7 @@ describe("extension bridge (fake extension client)", () => {
   });
 
   it("falls back to another tier when no extension is connected, and says why when there is none", async () => {
-    const bridge = new ExtensionBridge(audit(), EXTENSION_ID, TEST_PORTS);
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, TEST_PORTS);
     const calls: string[] = [];
     const fallback = {
       enabled: () => true,
@@ -92,7 +113,11 @@ describe("extension bridge (fake extension client)", () => {
     const out = await r.render("http://127.0.0.1:1/x");
     expect(out.html).toContain("fallback");
     expect(calls.length).toBe(1);
-    const strict = new ExtensionRenderer(settings(), audit(), new ExtensionBridge(audit(), EXTENSION_ID, [47473]));
+    const strict = new ExtensionRenderer(
+      settings(),
+      audit(),
+      new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47473]),
+    );
     await expect(strict.render("http://127.0.0.1:1/x")).rejects.toThrow(BrowserUnavailable);
     await r.close();
     await strict.close();
@@ -115,11 +140,18 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
     await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
     base = `http://127.0.0.1:${(site.address() as { port: number }).port}`;
     // The real extension scans the production port range; the bridge must be on it for this test.
-    bridge = new ExtensionBridge(audit());
+    bridge = new ExtensionBridge(audit(), TOKEN);
     try {
       await bridge.start();
       const { chromium } = await import("playwright");
-      const ext = new URL("../extension/", import.meta.url).pathname;
+      // Pair a temp copy of the extension the way `fearch extension install` does: token.json inside.
+      const { cpSync, mkdtempSync, writeFileSync } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const { fileURLToPath } = await import("node:url");
+      const ext = join(mkdtempSync(join(tmpdir(), "fearch-ext-")), "extension");
+      cpSync(fileURLToPath(new URL("../extension/", import.meta.url)), ext, { recursive: true });
+      writeFileSync(join(ext, "token.json"), JSON.stringify({ token: TOKEN }));
       ctx = await chromium.launchPersistentContext("", {
         headless: true,
         channel: "chromium",

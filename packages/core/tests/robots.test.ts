@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
 import { RobotsChecker } from "../src/fetch/robots.js";
 
-function checker(
-  body: string | number,
-  opts: { calls?: string[]; policy?: "default" | "strict" | "minimal" | "off" } = {},
-) {
+function checker(body: string | number, opts: { calls?: string[]; policy?: "default" | "strict" | "off" } = {}) {
   const fetcher = async (url: string) => {
     opts.calls?.push(url);
     if (typeof body === "number") return { status: body, body: "" };
@@ -40,9 +37,9 @@ describe("robots", () => {
     const d = await checker(agent).check("https://example.com/article");
     expect(d.allowed).toBe(false);
     expect(d.reason).toContain("Claude-User");
-    // strict: training opt-outs count too; minimal: only * and our own token.
+    // strict: training opt-outs count too; off: not consulted at all.
     expect((await checker(training, { policy: "strict" }).check("https://example.com/a")).reason).toContain("GPTBot");
-    expect((await checker(agent, { policy: "minimal" }).check("https://example.com/a")).allowed).toBe(true);
+    expect((await checker(agent, { policy: "off" }).check("https://example.com/a")).allowed).toBe(true);
   });
 
   it("reads Crawl-delay", async () => {

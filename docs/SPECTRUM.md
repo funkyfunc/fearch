@@ -70,7 +70,7 @@ are EU/UK law; the UK has no commercial TDM exception.
 | Identity | `curl_cffi` **Chrome TLS impersonation** (rung 9) | Honest UA with contact (rung 1) |
 | robots.txt | not read | honored by default for `*`, own token, and the user-initiated agent tokens (`Claude-User`, `ChatGPT-User`); training-crawler opt-outs under `strict` (rungs 1–2); `Crawl-delay`; re-checked on cross-host redirects |
 | On a block / JS shell | automatic fallback to `r.jina.ai` then Wayback (rung 6-style intent; third-party egress) | one attempt in a real headless Chromium that identifies itself (rung 7, no stealth); if that is refused too, **final** with a diagnosis listing both attempts (rung 4) |
-| Search | `ddgs` undeclared SERP scraping (rung 8–9) | DuckDuckGo lite in the browser tier (rung 7; its robots.txt permits it) → first-party APIs (rung 0), with Exa's keyless MCP as an opt-in fallback; Bing/Google result pages only under the user-agent posture (rung 7b, two explicit dials); no keyed adapters |
+| Search | `ddgs` undeclared SERP scraping (rung 8–9) | DuckDuckGo lite in the browser tier (rung 7; its robots.txt permits it) → first-party APIs (rung 0); Google/Bing result pages only with a person present overseeing a visible browser (rung 7b) or the explicit robots-off posture; no third-party search services, no keyed adapters |
 | Headed / extension / human handoff | – | opt-in: installed Chrome with a tool profile, or the person's own Chrome through the read-only fearch bridge extension (no automation signals at all — the one tier where "not blocked" and "not pretending" coincide), challenges handed to the person (rung 7b); `FEARCH_BROWSER_SESSION` decides whether the person's own cookies are sent to ordinary pages, always labelled |
 | Scraping | built in, default | none. An opt-in impersonation module existed briefly and was removed on 2026-08-29: the headed tier covers the personal-use case without lying about what the client is |
 | Verdict | personal use; **orange** | defaults: corporate-safe, **green core + yellow browser tier** — the same place ordinary Playwright/Puppeteer automation sits. User-agent posture: **yellow, the person's explicit choice**, stamped on every result |
@@ -97,7 +97,7 @@ are EU/UK law; the UK has no commercial TDM exception.
 
 1. `User-Agent: fearch/<ver> (+<info URL>; <contact>)` — never a browser string, not configurable to one.
 2. Fetch and cache `/robots.txt`; match own token, `*`, and AI-agent tokens; fail closed on 401/403/parse errors; honor `Crawl-delay`.
-3. ≥1 s between requests to a host; 1 connection per host; obey 429/503 `Retry-After` exactly; exponential backoff; a persistent 403 is final.
+3. ≥1 s between requests to a host; 1 connection per host; obey a short 429/503 `Retry-After` exactly, once; a persistent 403 is final.
 4. Conditional requests with ETag/Last-Modified; on-disk cache; `Accept-Encoding: gzip`.
 5. `Accept: text/markdown, text/html;q=0.9`; try `llms.txt` / `.md` variants; use official APIs (GitHub, PyPI, npm, StackExchange, arXiv) instead of HTML where they exist.
 6. Read and surface `X-Robots-Tag`, `noai`, RSL/AIPREF signals alongside the content.

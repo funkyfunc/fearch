@@ -372,13 +372,15 @@ export async function resolveFastPath(url: string, http: HttpLike): Promise<Fetc
   return null;
 }
 
-const llmsCache = new Map<string, string | null>();
+const llmsCache = new Map<string, { text: string | null; at: number }>();
+const LLMS_TTL_MS = 60 * 60_000;
 
-/** Return the site's /llms.txt content if it exists (cached per origin for the process). */
+/** Return the site's /llms.txt content if it exists (cached per origin for an hour, not forever). */
 export async function llmsTxt(url: string, http: HttpLike): Promise<string | null> {
   const u = new URL(url);
   const origin = `${u.protocol}//${u.host}`;
-  if (llmsCache.has(origin)) return llmsCache.get(origin)!;
+  const hit = llmsCache.get(origin);
+  if (hit && Date.now() - hit.at < LLMS_TTL_MS) return hit.text;
   let text: string | null = null;
   const r = await getOk(http, `${origin}/llms.txt`, { Accept: "text/plain, text/markdown" });
   if (r) {
@@ -386,6 +388,7 @@ export async function llmsTxt(url: string, http: HttpLike): Promise<string | nul
     const body = await r.text();
     if (!ct.includes("html") && !/<html/i.test(body.slice(0, 500)) && body.trim().length > 50) text = body;
   }
-  llmsCache.set(origin, text);
+  if (llmsCache.size > 500) llmsCache.clear();
+  llmsCache.set(origin, { text, at: Date.now() });
   return text;
 }

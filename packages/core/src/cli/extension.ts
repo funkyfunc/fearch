@@ -1,12 +1,12 @@
 /** `fearch extension install|status|path` — setting up the bridge extension in the person's Chrome. */
 
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App } from "../app.js";
-import { EXTENSION_ID, ExtensionBridge, ExtensionRenderer } from "../fetch/extension.js";
+import { EXTENSION_ID, ExtensionBridge, ExtensionRenderer, loadOrCreateExtensionToken } from "../fetch/extension.js";
 import type { Flags } from "./args.js";
 
 /** Where the extension ships inside this package. */
@@ -31,20 +31,24 @@ export async function extensionCommand(app: App, sub: string, flags: Flags): Pro
     out(dir);
     return 0;
   }
-  const bridge = app.browser instanceof ExtensionRenderer ? app.browser.bridge : new ExtensionBridge(app.audit);
+  const token = loadOrCreateExtensionToken(app.settings.cacheDir);
+  const bridge = app.browser instanceof ExtensionRenderer ? app.browser.bridge : new ExtensionBridge(app.audit, token);
   try {
-    if (sub === "install") return await install(bridge, dir, out);
+    if (sub === "install") return await install(bridge, dir, token, out);
     return await status(bridge, dir, flags, out);
   } finally {
     await bridge.close();
   }
 }
 
-async function install(bridge: ExtensionBridge, dir: string, out: (t: string) => void): Promise<number> {
+async function install(bridge: ExtensionBridge, dir: string, token: string, out: (t: string) => void): Promise<number> {
   if (dir !== bundledExtensionDir()) {
     mkdirSync(dir, { recursive: true });
     cpSync(bundledExtensionDir(), dir, { recursive: true });
   }
+  // Pair this Chrome with this user's fearch: the extension refuses jobs from any server that cannot
+  // prove it holds this token, and servers refuse polls without it.
+  writeFileSync(join(dir, "token.json"), JSON.stringify({ token }) + "\n", { mode: 0o600 });
   const copied = copyToClipboard(dir);
   const port = await bridge.start();
   out(`fearch bridge extension folder:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
@@ -53,7 +57,8 @@ async function install(bridge: ExtensionBridge, dir: string, out: (t: string) =>
   out(
     "  2. click “Load unpacked”, press Cmd+Shift+G (macOS) or type in the path box, paste the folder above, and choose it",
   );
-  out("  3. optional: in the extension's details, enable “Allow in Incognito” for --incognito");
+  out("  3. optional: in the extension's details, enable “Allow in Incognito” for FEARCH_INCOGNITO=1");
+  out("  (already loaded before? just click the ↻ reload button on its card so it picks up the new pairing token)");
   out(`\nExpected extension ID: ${EXTENSION_ID}.  Status page: http://127.0.0.1:${port}/setup`);
   openExtensionsPage();
   out("\nWaiting for the extension to connect (up to 3 minutes; Ctrl-C to stop)…");
@@ -66,7 +71,7 @@ async function install(bridge: ExtensionBridge, dir: string, out: (t: string) =>
     `✔ connected — fearch bridge ${info?.version}; incognito ${info?.incognitoAllowed ? "allowed" : "not allowed (optional)"}.`,
   );
   out(
-    "Use it with: fearch --browser extension … (add --robots off for Google/Bing, --incognito to keep your profile out of it)",
+    "Use it with: fearch --browser extension … (Google joins DuckDuckGo automatically — you are present to pass any check; FEARCH_INCOGNITO=1 keeps your profile out of it)",
   );
   return 0;
 }

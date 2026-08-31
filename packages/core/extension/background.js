@@ -2,6 +2,11 @@
 // three verbs: open a URL in a background tab, read the tab's HTML, close the tab (plus "activate", to
 // bring a tab forward when a site shows a challenge for you to deal with). Nothing is clicked, typed or
 // submitted; no chrome.debugger; no automation flags. It only ever touches tabs it opened.
+//
+// Pairing: `fearch extension install` writes token.json next to this file. Every poll proves we hold
+// the token (SHA-256 over a fresh nonce), and every job must carry the server's matching proof back —
+// so a rogue local process that binds the port first cannot drive this extension, and the token never
+// crosses the wire.
 const PORTS = [47365, 47366, 47367, 47368, 47369];
 const VERSION = chrome.runtime.getManifest().version;
 const loops = new Map(); // port -> true while a loop runs
@@ -10,6 +15,26 @@ const windows = { normal: null, incognito: null };
 const ownedTabs = new Set();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let TOKEN = null;
+const tokenReady = fetch(chrome.runtime.getURL("token.json"))
+  .then((r) => r.json())
+  .then((j) => {
+    TOKEN = typeof j.token === "string" && j.token ? j.token : null;
+  })
+  .catch(() => {
+    state.lastError = "token.json missing — run `fearch extension install` to pair, then reload the extension";
+  });
+
+async function sha256hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function newNonce() {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 
 async function hello() {
   let incognitoAllowed = false;
@@ -122,16 +147,30 @@ async function loop(port) {
   if (loops.get(port)) return;
   loops.set(port, true);
   try {
+    await tokenReady;
     for (;;) {
       let job;
+      let nonce;
       try {
+        nonce = newNonce();
         const r = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(await hello()),
+          body: JSON.stringify({
+            ...(await hello()),
+            nonce,
+            auth: TOKEN ? await sha256hex(`${TOKEN}:poll:${nonce}`) : undefined,
+          }),
         });
         if (r.status === 204) {
           state.servers[port] = { connected: true, at: Date.now() };
+          continue;
+        }
+        if (r.status === 403) {
+          const body = await r.json().catch(() => null);
+          state.lastError = (body && body.error) || "not paired — run `fearch extension install`";
+          state.servers[port] = { connected: false, unpaired: true, at: Date.now() };
+          await sleep(5000);
           continue;
         }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -143,6 +182,14 @@ async function loop(port) {
         continue;
       }
       let result;
+      // Execute nothing a paired fearch server did not provably send: whoever holds the port must
+      // echo a SHA-256 over our nonce and the job id, which only a token holder can compute.
+      if (!TOKEN || job.proof !== (await sha256hex(`${TOKEN}:job:${nonce}:${job.id}`))) {
+        state.lastError = "server failed the pairing proof; job refused";
+        state.servers[port] = { connected: false, unpaired: true, at: Date.now() };
+        await sleep(5000);
+        continue;
+      }
       try {
         result = await handle(job);
       } catch (e) {
@@ -153,7 +200,7 @@ async function loop(port) {
         await fetch(`http://127.0.0.1:${port}/fearch/result`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: job.id, ...result }),
+          body: JSON.stringify({ id: job.id, ...result, auth: await sha256hex(`${TOKEN}:result:${job.id}`) }),
         });
       } catch {}
     }

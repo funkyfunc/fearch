@@ -54,7 +54,7 @@ export async function doctor(app: App): Promise<number> {
       const incognito = info?.incognitoAllowed
         ? "allowed"
         : s.incognito
-          ? "not allowed — --incognito will fail until “Allow in Incognito” is enabled"
+          ? "not allowed — FEARCH_INCOGNITO=1 will fail until “Allow in Incognito” is enabled"
           : "not allowed";
       ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
     } else

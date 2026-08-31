@@ -2,25 +2,21 @@ export function usage(): string {
   return `usage: fearch [server flags] [command]
 
 server flags (put these in your MCP config's args):
-  --robots default|strict|minimal|off      robots.txt: which groups apply, or not consulted at all (default: default)
-  --browser headless|headed|extension|off  bundled headless Chromium (default), your installed Chrome in a window, your own
-                                           Chrome via the fearch bridge extension (no automation signals; run
-                                           \`fearch extension install\` once), or none
-  --handoff                                challenges are handed to you in the window, never solved
-                                           (implies --browser headed; on by default with extension)
-  --incognito                              extension only: open pages in an incognito window (needs “Allow in Incognito”)
+  --browser headless|headed|extension|off  who renders pages: bundled headless Chromium (default), your
+                                           installed Chrome in a visible window, your own Chrome via the
+                                           fearch bridge extension (run \`fearch extension install\` once),
+                                           or none. With a visible browser (headed or extension) a person
+                                           is present: challenges are handed to you, never solved, and
+                                           Google joins DuckDuckGo as your own browsing.
+  --robots default|strict|off              robots.txt for the tool's own fetching: honour user-initiated
+                                           agent opt-outs (default), also honour training-crawler opt-outs
+                                           (strict), or don't consult it (off — the user-agent posture)
   --engines google,bing,duckduckgo         engine result pages in preference order
-                                           (default: duckduckgo; google,duckduckgo with --robots off --handoff)
-  --session                                send cookies from the tool's browser profile to ordinary pages (headed only)
-  --identity header|none                   how the browser names the tool (default: header = From/X-Agent headers)
-  --exa                                    add Exa's keyless hosted search (mcp.exa.ai) as the fallback after the engines;
-                                           off by default because queries are logged by a third party
-  --search-mode all|first-party|off        all providers, only the sites' own APIs, or no search tool
+                                           (default: duckduckgo; google,duckduckgo with a visible browser)
   --allow-domains a,b  --deny-domains c    host lists (subdomains included)
-  --audit-log stderr|off|<file>            one JSON line per request
-  --log-level debug|info|warn|error        stderr verbosity
-  --log-file <file>                        also append every log and audit line to a file (for sharing a debug run)
-  --cache-dir <dir>
+
+Everything else is an environment variable (FEARCH_*) — escape hatches, not the interface; see the
+README's configuration reference.
 
 commands (same flags apply; add --json for machine-readable output):
   (none)                                   start the MCP server (stdio)
@@ -30,8 +26,8 @@ commands (same flags apply; add --json for machine-readable output):
   extension install|status|path            set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder
   --version                                print the version
 
-When a person runs a command, the audit log is off and only warnings are printed unless --audit-log /
---log-level say otherwise; the MCP server keeps its defaults (audit to stderr, info).
+When a person runs a command, the audit log is off and only warnings are printed unless FEARCH_AUDIT_LOG /
+FEARCH_LOG_LEVEL say otherwise; the MCP server keeps its defaults (audit to stderr, info).
 Exit codes: 0 ok · 1 refused (a Diagnosis explains why) · 2 failed (network, usage, no results).
 `;
 }

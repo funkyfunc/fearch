@@ -8,3 +8,8 @@ coverage/
 
 # reference repos downloaded for research (large)
 docs/references/repos/
+
+__pycache__/
+*.pyc
+packages/core/extension/token.json
+evals/results/

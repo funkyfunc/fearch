@@ -12,7 +12,11 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   convention as Googlebot, Bingbot and Claude-User — no personal contact is required or expected;
   `FEARCH_UA_CONTACT` exists for deployments that want to append one.
 - The User-Agent cannot be set to a browser string. There is no configuration option to do so.
-- No TLS fingerprint impersonation, no header randomization, no fake `Referer`/`Origin`, no cookies.
+- No TLS fingerprint impersonation, no header randomization, no fake `Referer`/`Origin`. The plain
+  HTTP client holds no cookies. The browser tier's cookies are exactly what a person's browsing
+  creates: the headed mode's tool-owned profile keeps what the person did in that window, and the
+  extension mode is the person's own Chrome profile (their choice to pair it); reads that carry a
+  person's session are labelled in the result header.
 
 ## Consent signals
 
@@ -28,7 +32,6 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
     training-only control that does not affect reading or search. Treating "don't use me as a dataset"
     as "don't read me" would misstate the site's choice.
   - `strict` — additionally honour the training-crawler opt-outs (the most conservative reading).
-  - `minimal` — only `*` and our own token (the literal RFC 9309 reading).
   - `off` — robots.txt is not consulted. This is the *user-agent* posture: RFC 9309 addresses
     "automatic clients" (crawlers), and a person's browser does not read it; a tool driving that browser
     on the person's behalf at human pace takes the same position (as OpenAI's `ChatGPT-User` and all
@@ -41,7 +44,13 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 - **Content Signals** (`Content-Signal: search=yes, ai-input=no, ai-train=no`, as a response header or
   a `robots.txt` line) are honoured under `default` and `strict`: `ai-input=no` means the site does not
   want its pages fed into an AI model, which is exactly what this tool does, so the content is withheld
-  and a `content_signal` diagnosis is returned. Under `minimal` the signal is surfaced but not enforced.
+  and a `content_signal` diagnosis is returned.
+- **Person-present rule.** robots.txt governs the tool fetching on its own. When a person can see the
+  browser and is handed its challenges (`--browser headed` or `--browser extension`, handoff on — the
+  default there), search-engine result pages are that person's own browsing, automated only in the
+  sense that the query is typed and the result read back for them; those pages are then opened without
+  consulting robots.txt, exactly as their own Chrome would. Ordinary page fetches — the tool acting
+  alone — stay under the robots policy above in every mode.
 - If `robots.txt` returns 401/403 or cannot be parsed, the host is treated as disallowed (fail closed).
 - `X-Robots-Tag`, `<meta name="robots">`, `noai`/`noimageai`, RSL and AIPREF headers are recorded and
   shown in the tool output so downstream use can respect them.
@@ -57,26 +66,33 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   challenge page), the page is opened **once** in a real Chromium (Playwright). This is the same thing
   a person does when a page needs a browser, and it is ordinary corporate automation
   (`docs/SPECTRUM.md` rung 7).
-- **Two modes** (`FEARCH_BROWSER`). `headless` (default): the bundled Chromium, no window, no state
-  survives the process. `headed`: the Chrome already installed on the machine (so it receives the
-  machine's enterprise policy — URL blocklists, proxy, certificates — and nothing is downloaded), in a
-  visible window, with a **tool-owned profile** persisted under the cache directory. Chrome refuses
-  automation on a person's real profile; this profile starts empty and only ever contains what the
-  person did in that window.
+- **Four modes** (`FEARCH_BROWSER`: `headless` | `headed` | `extension` | `off`). `headless`
+  (default): the bundled Chromium, no window, no state survives the process (Chromium itself is
+  downloaded lazily on first need, never in a postinstall). `headed`: the Chrome already installed on
+  the machine (so it receives the machine's enterprise policy — URL blocklists, proxy, certificates —
+  and nothing is downloaded), in a visible window, with a **tool-owned profile** persisted under the
+  cache directory. Chrome refuses automation on a person's real profile; this profile starts empty and
+  only ever contains what the person did in that window. `off`: no browser tier at all.
 - **Extension mode** (`--browser extension`). Pages are opened in the person's own Chrome by the bundled
-  "fearch bridge" extension (`packages/core/extension`, ~150 lines, readable in full). No automation
-  flags, no DevTools/CDP, no injected scripts beyond reading the page: it is the person's browser doing
-  what browsers do. The extension knows `open` (a background tab, http(s) only, private addresses
-  refused server-side), `read`, `close`, and `activate` (bring a tab forward for the handoff); it never
-  clicks, types or submits, and only touches tabs it opened. It talks only to a fearch on the same
-  machine: the server binds 127.0.0.1 and accepts requests only from the extension's fixed origin, which
-  is what stops web pages from driving it. Pages open with the person's own profile (their logins,
-  their search history); `--incognito` opens them in an incognito window instead. If the extension is
-  not connected, fearch falls back to the headless tier and says so in the log.
-- **Human handoff** (`FEARCH_HANDOFF=1`, headed only; on by default in extension mode). When a page or search engine shows a
-  challenge, the tab is brought to the front and the tool waits (default 180 s) for the person to deal
-  with it, then continues with what they were shown. The tool clicks, types and solves nothing; it only
-  watches for the page to stop being a challenge. Without handoff, a challenge is final.
+  "fearch bridge" extension (`packages/core/extension`, a few hundred lines, readable in full). No
+  automation flags, no DevTools/CDP, no injected scripts beyond reading the page: it is the person's
+  browser doing what browsers do. The extension knows `open` (a background tab, http(s) only, private
+  addresses refused server-side), `read`, `close`, and `activate` (bring a tab forward for the handoff);
+  it never clicks, types or submits, and only touches tabs it opened. It talks only to a fearch on the
+  same machine: the server binds 127.0.0.1, accepts requests only from the extension's fixed origin,
+  and both sides are **paired through a shared secret** written by `fearch extension install`
+  (`<cacheDir>/extension-token` and `token.json` in the extension folder). The token never crosses the
+  wire — the extension proves it holds it with a SHA-256 over a fresh nonce on every poll, and the
+  server must prove it back on every job before the extension executes anything, so a local process
+  that binds the port first cannot drive the person's Chrome. Pages open with the person's own profile
+  (their logins, their search history) and are labelled as such; `FEARCH_INCOGNITO=1` opens them in an
+  incognito window instead. If the extension is not connected, fearch falls back to the headless tier
+  and says so in the log (including that the handoff is unavailable until it connects).
+- **Human handoff** (on by default whenever the browser is visible — headed or extension;
+  `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge, the tab is brought to
+  the front and the tool waits (default 180 s) for the person to deal with it, then continues with what
+  they were shown. The tool clicks, types and solves nothing; it only watches for the page to stop
+  being a challenge. Without handoff, a challenge is final.
 - **Session** (`FEARCH_BROWSER_SESSION`, headed only, default off). Cookies the person created in the
   tool profile are sent to engine pages always (a passed check lives there) and to ordinary pages only
   when on; such reads are labelled `your session` in the result header and in the audit log.
@@ -85,9 +101,11 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   or `FEARCH_UA_CONTACT`) and `X-Agent: fearch/<version> (+<info-url>)`. The User-Agent is
   Chrome's ordinary one, because it is Chrome (appending the product token to it was measured,
   2026-08-28, to trigger bot-checks that key on unusual UA strings, and was dropped). `none`: plain
-  Chrome with no identifying headers (user-agent posture). Under any
-  policy other than `off`, robots.txt is evaluated under our own token *before* the browser requests
-  anything, so an operator's stated decision is honoured regardless of what their access log shows.
+  Chrome with no identifying headers (user-agent posture). For ordinary page reads under any policy
+  other than `off`, robots.txt is evaluated under our own token *before* the browser requests
+  anything, so an operator's stated decision is honoured regardless of what their access log shows;
+  engine result pages under the person-present rule are the one documented exception (see *Consent
+  signals*).
 - **In every mode:** no automation-signal hiding (`navigator.webdriver` is left true — measured
   2026-08-29: Playwright-driven Chrome reports it true regardless of launch flags, and the only way to
   make it false is the stealth flag `--disable-blink-features=AutomationControlled`, which this project
@@ -105,12 +123,13 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 ## Refusals are final
 
 - HTTP 401, 402, 403, 407, 451, and any bot-challenge / CAPTCHA / login / paywall page are reported to
-  the model as a structured diagnosis (`kind`, `retryable=false`, `attempts`, `recommended_next_action`).
+  the model as a structured diagnosis (`kind`, `retryable=false`, `attempts`, `nextAction`).
 - The only escalation is the single, self-identified browser attempt described above. The server never
   retries a refused request with a different identity, headers, IP, proxy, cookies, or via a third-party
   service.
-- HTTP 429 and 503 with `Retry-After` are obeyed exactly; without it, exponential backoff, at most
-  two retries, then a final diagnosis.
+- HTTP 429 and 503 with a short `Retry-After` (≤ 15 s) are obeyed exactly: the server waits the stated
+  time and retries once. A longer or absent `Retry-After` is a final diagnosis that surfaces the stated
+  wait — no invented backoff, no repeated retries.
 
 ## Politeness
 
@@ -127,26 +146,28 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 - Page fetches go directly from this machine to the target host (through `HTTPS_PROXY` if the
   environment sets one). No reader proxies, no archive fallbacks unless the model explicitly asks for
   `archive: true` on a page the target reported gone (404/410).
-- Search queries go to the configured search provider only. With no configuration they go to
-  DuckDuckGo lite via the self-identified browser (below; DuckDuckGo states it does not log searches),
-  then to the first-party APIs. Exa's publicly offered keyless MCP endpoint (`https://mcp.exa.ai/mcp`,
-  which logs queries on Exa's side) is used only with `--exa`. The provider is named in every result
-  header. There are no keyed third-party providers. Keyless first-party APIs (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia,
-  Hacker News, arXiv, OpenAlex, Semantic Scholar, Marginalia) are used for `kind`-scoped searches and as
-  the fallback. `FEARCH_SEARCH_MODE=first-party` disables every third-party search service so a query
-  only ever reaches the site it concerns; `off` disables the search tool entirely.
+- Search queries go to the configured engines only. With no configuration they go to DuckDuckGo lite
+  via the self-identified browser (below; DuckDuckGo states it does not log searches), then to the
+  first-party APIs. The provider is named in every result header. There are no third-party search
+  services of any kind — keyed or keyless — and no query ever leaves for one. Keyless first-party APIs
+  (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News, arXiv, OpenAlex, Semantic
+  Scholar, Marginalia) are used for `kind`-scoped searches and as the fallback.
+  `FEARCH_SEARCH_MODE=first-party` disables the engine result pages so a query only ever reaches the
+  site it concerns; `off` disables the search tool entirely.
 - The browser identifies itself as ordinary Chrome with `From:`/`X-Agent:` naming this tool (new-headless
   Chromium; see *The browser tier*). Cloudflare's
   Web Bot Auth (signed requests) is **not** used: a locally-run open-source tool cannot hold a private
   signing key without publishing it, which would be extracted and revoked.
-- **Search engines.** Under any robots policy but `off`, the only engine result pages this server
-  requests are DuckDuckGo's `/lite/` (and `/html/`), because DuckDuckGo's robots.txt explicitly allows
-  them and its Terms of Service contain no automated-access clause (checked 2026-08-28). Google and Bing
-  disallow `/search` for all agents and become eligible only when the operator lists them in
-  `FEARCH_ENGINES` **and** sets `FEARCH_ROBOTS_POLICY=off` — a deliberate two-dial choice that
-  `doctor` reports. Engine pages are opened in the same browser tier as page reads, one query per
-  search call, at least 3 s apart. A bot-check page is that engine's "no": the provider stops and cools
-  down for 10 minutes, or — headed with handoff — shows it to the person; nothing is done to avoid it.
+- **Search engines.** With no person present, the only engine result pages this server requests are
+  DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live before
+  every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
+  Google and Bing disallow `/search` for crawlers and become eligible only under the person-present
+  rule (a visible browser whose challenges are handed to the person — then Google is on by default) or
+  the explicit `FEARCH_ROBOTS_POLICY=off` user-agent posture, and Bing additionally only when listed in
+  `FEARCH_ENGINES`. `doctor` reports exactly which engines are in use and why the rest are not. Engine
+  pages are opened in the same browser tier as page reads, one query per search call, at least 3 s
+  apart. A bot-check page is that engine's "no": the provider stops and cools down for 10 minutes, or —
+  person present — shows it to the person; nothing is done to avoid it.
 - No telemetry, no version pings, no crash reporting.
 
 ## Safety limits

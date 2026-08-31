@@ -1,10 +1,11 @@
 /**
  * Browser tier: a real Chromium (Playwright) used when the plain HTTP client either got an empty JS
- * shell or was refused, and for search-engine result pages. Two modes:
+ * shell or was refused, and for search-engine result pages. This class covers two of the four
+ * browser modes (extension.ts covers `extension`; `off` disables the tier):
  *
  * - `headless` (default): the bundled Chromium in new-headless mode. No cookies survive the process.
  * - `headed`: the Chrome already installed on the machine (bundled Chromium if none), in a visible
- *   window. The person can see every tab the tool opens, and with `--handoff` is handed a
+ *   window. The person can see every tab the tool opens and (handoff, on by default) is handed a
  *   challenge page to deal with themselves — the tool waits, then continues with what they were
  *   shown. A tool-owned profile (cookies/storage) persists under the cache dir so a passed check or a
  *   login the person chose to do in that window is remembered. It is never the person's own Chrome
@@ -15,8 +16,10 @@
  * solving, credentials the tool holds. docs/SPECTRUM.md.
  */
 
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { isIP } from "node:net";
 import { dirname } from "node:path";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
@@ -51,7 +54,7 @@ export interface BrowserTier {
 export interface RenderOptions {
   /** Use the persistent tool profile (headed). Engine pages always do; page reads only with browserSession. */
   session?: boolean;
-  /** Allow the human handoff on a challenge (headed + --handoff). Default true. */
+  /** Allow the human handoff on a challenge (visible browser, handoff on). Default true. */
   handoff?: boolean;
   /** Engine-specific challenge detector (gets the current URL too); default is the generic one. */
   isChallenge?: (html: string, status: number, url: string) => boolean;
@@ -70,6 +73,25 @@ export class BrowserUnavailable extends Error {
 }
 
 const BLOCKED_RESOURCES = new Set(["image", "media", "font", "manifest", "texttrack", "eventsource", "websocket"]);
+
+/** One-time lazy download of the bundled Chromium (replaces a postinstall every installer would pay). */
+async function installChromium(audit: Audit): Promise<boolean> {
+  let cli: string;
+  try {
+    cli = createRequire(import.meta.url).resolve("playwright/cli");
+  } catch {
+    return false;
+  }
+  audit.log("warn", "Chromium is not installed yet — downloading it now (one-time, ~100 MB)…");
+  const ok = await new Promise<boolean>((resolve) => {
+    execFile(process.execPath, [cli, "install", "chromium"], { timeout: 600_000 }, (err) => resolve(!err));
+  });
+  audit.log(
+    ok ? "info" : "warn",
+    ok ? "Chromium installed" : "Chromium download failed; the browser tier stays unavailable",
+  );
+  return ok;
+}
 
 function proxyFromEnv(): { server: string; bypass?: string } | undefined {
   const env = process.env;
@@ -163,15 +185,22 @@ export class BrowserRenderer implements BrowserTier {
       // (`navigator.webdriver`) that it is being driven.
       const channels = headless ? ["chromium"] : ["chrome", "chromium"];
       let lastErr = "";
-      for (const channel of channels) {
-        try {
-          this.browser = await pw.chromium.launch({ headless, channel, proxy: proxyFromEnv() });
-          this.channel = channel;
-          break;
-        } catch (e) {
-          lastErr = (e as Error).message.split("\n")[0];
+      const tryLaunch = async () => {
+        for (const channel of channels) {
+          try {
+            this.browser = await pw.chromium.launch({ headless, channel, proxy: proxyFromEnv() });
+            this.channel = channel;
+            return;
+          } catch (e) {
+            lastErr = (e as Error).message.split("\n")[0];
+          }
         }
-      }
+      };
+      await tryLaunch();
+      // The bundled Chromium is downloaded lazily on first need, not in a postinstall (which would
+      // cost every installer ~100 MB whether or not they ever use the browser tier).
+      if (!this.browser && /doesn't exist|does not exist|install/i.test(lastErr) && (await installChromium(this.audit)))
+        await tryLaunch();
       if (!this.browser) {
         throw new BrowserUnavailable(
           `Chromium could not be launched (${lastErr}). Run: npx playwright install chromium`,

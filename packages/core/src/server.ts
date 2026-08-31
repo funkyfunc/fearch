@@ -3,20 +3,37 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { App } from "./app.js";
+import { personPresent, type Settings } from "./config.js";
 import { describeError } from "./errors.js";
 import { READ_MODES, readDocument, type ReadOptions } from "./fetch/read.js";
 import { attachExcerpts } from "./search/excerpt.js";
 import { renderResults } from "./search/render.js";
 
-export const SEARCH_DESCRIPTION = `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
+/**
+ * Tool descriptions are built from the effective settings so the model is never told something the
+ * configuration makes untrue (e.g. "robots.txt is honoured" under --robots off).
+ */
+export function searchDescription(s: Settings): string {
+  const posture = personPresent(s)
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are opened in a browser a person oversees — this is their own browsing, and any challenge is handed to them, never solved by the tool.`
+    : s.robotsPolicy === "off"
+      ? `robots.txt is not consulted on this server (operator's choice — user-agent posture); the tool still identifies itself honestly, paces requests, and never solves challenges.`
+      : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser; first-party APIs).`;
+  return `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
 
 Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
 
 \`kind\` routes to first-party APIs: "code" (GitHub repos/issues), "qa" (StackOverflow), "packages" (npm, crates.io), "docs" (MDN, Wikipedia), "papers" (arXiv, OpenAlex, Semantic Scholar), "community" (Hacker News). Prefer a kind when the question fits one — those APIs are more reliable and more precise than general web search. Omit it for general web search. \`site="docs.python.org"\` restricts to a domain; \`recency="w"\` limits to the past week (d/w/m/y). Results carry a date when the provider knows one. Quote exact error strings. If results are poor, rephrase rather than paging.
 
-This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser; first-party APIs), identifies itself honestly, and never impersonates a browser or hides that it is automated.`;
+${posture} It never impersonates a browser or hides that it is automated.`;
+}
 
-export const FETCH_DESCRIPTION = `Fetch a web page and return its main content as clean markdown (boilerplate removed; code blocks and tables preserved). Handles HTML, markdown, plain text, PDF, GitHub (files, READMEs, issues, tree listings, releases, gists), PyPI, npm, StackOverflow and llms.txt.
+export function fetchDescription(s: Settings): string {
+  const robots =
+    s.robotsPolicy === "off"
+      ? "robots.txt is not consulted on this server (operator's choice — user-agent posture), but it still identifies itself honestly and waits between requests to a host"
+      : "identifies itself honestly, honours robots.txt (including AI-agent opt-outs), and waits between requests to a host";
+  return `Fetch a web page and return its main content as clean markdown (boilerplate removed; code blocks and tables preserved). Handles HTML, markdown, plain text, PDF, GitHub (files, READMEs, issues, tree listings, releases, gists), PyPI, npm, StackOverflow and llms.txt.
 
 Output is bounded by \`max_chars\` (default 12000). Long pages: don't page blindly — pick a mode:
   - \`mode="focus", query="what you are looking for"\` → only the sections relevant to that phrase (BM25, no LLM).
@@ -26,7 +43,8 @@ Output is bounded by \`max_chars\` (default 12000). Long pages: don't page blind
 The header says when the page was last updated when the site declares it; "may be stale" means over a year old.
 \`urls=[...]\` (max 5) reads several pages in one call. \`include_links=true\` keeps hyperlinks as reference-style links.
 
-Respectful by design: identifies itself honestly, honours robots.txt (including AI-agent opt-outs), and waits between requests to a host. If the plain HTTP client gets an empty JavaScript shell or is refused, the page is opened once in a real, self-identified browser (no stealth, no CAPTCHA solving). If that is refused too (403, CAPTCHA, paywall, login) the refusal is final — you get a Diagnosis explaining why and what to do instead; do not retry the same URL. \`archive=true\` reads a Wayback Machine copy, only for pages that are gone (404/410).`;
+Respectful by design: ${robots}. If the plain HTTP client gets an empty JavaScript shell or is refused, the page is opened once in a real, self-identified browser (no stealth, no CAPTCHA solving). If that is refused too (403, CAPTCHA, paywall, login) the refusal is final — you get a Diagnosis explaining why and what to do instead; do not retry the same URL. \`archive=true\` reads a Wayback Machine copy, only for pages that are gone (404/410).`;
+}
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true, idempotentHint: true, destructiveHint: false } as const;
 const MAX_URLS_PER_CALL = 5;
@@ -106,7 +124,12 @@ export function buildServer(app: App): McpServer {
 
   server.registerTool(
     "search",
-    { title: "Web search", description: SEARCH_DESCRIPTION, inputSchema: SEARCH_INPUT, annotations: READ_ONLY },
+    {
+      title: "Web search",
+      description: searchDescription(app.settings),
+      inputSchema: SEARCH_INPUT,
+      annotations: READ_ONLY,
+    },
     async (args, extra) => {
       const query = args.query.trim();
       const progress = progressReporter(extra, 1 + args.fetch_top);
@@ -133,7 +156,12 @@ export function buildServer(app: App): McpServer {
 
   server.registerTool(
     "fetch",
-    { title: "Fetch page", description: FETCH_DESCRIPTION, inputSchema: FETCH_INPUT, annotations: READ_ONLY },
+    {
+      title: "Fetch page",
+      description: fetchDescription(app.settings),
+      inputSchema: FETCH_INPUT,
+      annotations: READ_ONLY,
+    },
     async (args, extra) => {
       const targets = [...(args.url ? [args.url] : []), ...(args.urls ?? [])].map((u) => u.trim()).filter(Boolean);
       if (!targets.length) return failure("Provide `url` or `urls`.");

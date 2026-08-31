@@ -24,7 +24,6 @@ function fakeState(): App {
     FEARCH_NO_CACHE: "1",
     FEARCH_AUDIT_LOG: "off",
     FEARCH_LOG_LEVEL: "error",
-    FEARCH_EXA_HOSTED_URL: "",
   } as NodeJS.ProcessEnv);
   const state = createApp(settings);
   const fake = {

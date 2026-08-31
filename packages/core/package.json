@@ -18,8 +18,8 @@
     "node": ">=22.5"
   },
   "scripts": {
-    "build": "tsc -b",
-    "postinstall": "playwright install chromium || echo 'fearch: Chromium download failed; the browser tier will report itself unavailable until `npx playwright install chromium` succeeds.'",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('tsconfig.tsbuildinfo',{force:true})\" && tsc -b",
+    "prepack": "npm run build",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts"
   },

@@ -233,7 +233,7 @@ export class Fetcher {
 
     // Content-Signal response header: ai-input=no means "don't feed my pages into an AI model".
     const cs = parseContentSignal(fetched.headers["content-signal"]);
-    if (cs?.aiInput === false && this.settings.robotsPolicy !== "minimal" && this.settings.robotsPolicy !== "off") {
+    if (cs?.aiInput === false && this.settings.robotsPolicy !== "off") {
       this.audit.record({
         url,
         status: fetched.status,

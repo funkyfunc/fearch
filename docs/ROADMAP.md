@@ -14,6 +14,14 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Pre-publication pass (2026-08-31).** Person-present rule: with a visible browser whose challenges
+  are handed to the person (headed or extension, handoff now on by default there), engine result pages
+  are the person's own browsing and Google joins DuckDuckGo without `--robots off`. Flag surface cut to
+  four (`--browser --robots --engines --allow/deny-domains`); everything else is env-only. Exa removed
+  entirely (no third-party search services remain). Extension bridge hardened with a pairing token
+  (`fearch extension install` writes it; SHA-256 proofs both ways, token never on the wire). Retry-After
+  (≤15 s) obeyed once, as POLICY promised. `minimal` robots policy folded away. Playwright postinstall
+  replaced by lazy first-use download. Tool descriptions now generated from the effective settings.
 - **Simplification (done 2026-08-29).** Removed the five keyed providers (Brave/Mojeek/Tavily/Exa-keyed/Anthropic), the opt-in impersonation scraper and `got-scraping`, `FEARCH_SEARCH_PROVIDER`, `FEARCH_IGNORE_ROBOTS`, and the `ua` browser identity. Exa is now opt-in (`--exa`) so the default never sends a query to a third-party service. Configuration is flags in the MCP config's `args`.
 - **Ideas queued:** (1) *instant answers* in `search` — DuckDuckGo's official Instant Answer API (`api.duckduckgo.com/?q=…&format=json`, keyless, documented, attribution required) gives an abstract/definition/answer box the model could get before any page fetch; (2) a *Gemini grounding* adapter (`Grounding with Google Search`, free tier 1,500 RPD on 2.5 models) as the one keyed provider worth having, for people who want Google and are willing to get a key; (3) a *scheduled live check* (GitHub Actions, daily `tests/live`) that opens an issue when an engine's markup or a first-party API drifts, so parsers are fixed before users notice.
 - **Extension tier (built 2026-08-29).** `--browser extension` + `fearch extension install|status|path`; bundled MV3 extension with a fixed ID, loopback long-poll bridge (no deps, no tokens — origin-checked), three read-only verbs + activate for handoff, `--incognito`, fallback to headless with a note. Verified in Playwright Chromium: render in ~100 ms, DDG search end to end. Open: Web Store listing (one-click install; needs a review), a `--browser auto` that prefers the extension when connected, measuring Google through the extension from a residential IP.
@@ -62,9 +70,9 @@ is not a goal to get through them.
 
 ## Non-goals (permanent)
 
-- Browser UA strings, TLS/JA3 impersonation, header randomization, fake `Referer`/`Origin`, cookies.
-- Any retry after 401/402/403/429/CAPTCHA with a different identity, IP, or third party.
-- Scraping search-engine result pages in `packages/core` (the opt-in package stays quarantined).
+- Browser UA strings, TLS/JA3 impersonation, header randomization, fake `Referer`/`Origin`.
+- Any retry after 401/402/403/CAPTCHA with a different identity, IP, or third party.
+- Opening engine result pages with no person present and no explicit robots-off choice.
 - Telemetry, version pings, silent third-party egress.
 
 ## Measures of success

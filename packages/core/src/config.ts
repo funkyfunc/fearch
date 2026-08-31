@@ -24,9 +24,10 @@ export interface Settings {
   sessionBudget: { count: number; windowMs: number };
   allowPrivate: boolean;
   /**
-   * Which robots.txt groups apply. `default`/`strict`/`minimal` are the crawler posture (see
-   * fetch/robots.ts). `off` is the user-agent posture: like a browser, robots.txt is not consulted;
-   * pace limits and refusals still apply. Stamped on every result header.
+   * Which robots.txt groups apply. `default`/`strict` are the crawler posture (see fetch/robots.ts).
+   * `off` is the user-agent posture: like a browser, robots.txt is not consulted; pace limits and
+   * refusals still apply. Stamped on every result header. Engine result pages have their own rule:
+   * with a person present (see `personPresent`) they are user-driven browsing, whatever this dial says.
    */
   robotsPolicy: (typeof ROBOTS_POLICIES)[number];
   allowDomains: string[];
@@ -58,8 +59,9 @@ export interface Settings {
    */
   browserIdentity: "header" | "none";
   /**
-   * Headed only. When a page (or engine) shows a challenge, leave the tab in front and wait for the
-   * person to deal with it, then continue with what they were shown. The tool never solves anything.
+   * When a page (or engine) shows a challenge, leave the tab in front and wait for the person to deal
+   * with it, then continue with what they were shown. The tool never solves anything. On by default
+   * whenever the browser is visible (headed or extension); FEARCH_HANDOFF=0 turns it off.
    */
   handoff: boolean;
   handoffTimeoutMs: number;
@@ -83,8 +85,15 @@ export interface Settings {
   searchMode: (typeof SEARCH_MODES)[number];
   /** Minimum gap between requests to specific hosts (ms), e.g. arXiv asks for 3 s. */
   hostGapsMs: Record<string, number>;
-  /** Exa's keyless hosted search, as the fallback after the engines. Empty = off (the default: queries stay off third-party services). */
-  exaHostedUrl: string;
+}
+
+/**
+ * A person can see the browser and is handed challenges — the tool is acting as their user agent, not
+ * as an unattended crawler. Engine result pages are then their own browsing; robots.txt keeps
+ * governing what the tool fetches on its own.
+ */
+export function personPresent(s: Settings): boolean {
+  return (s.browser === "headed" || s.browser === "extension") && s.handoff;
 }
 
 type Env = Record<string, string | undefined>;
@@ -120,7 +129,7 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
 };
 
 export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
-export const ROBOTS_POLICIES = ["default", "strict", "minimal", "off"] as const;
+export const ROBOTS_POLICIES = ["default", "strict", "off"] as const;
 export const BROWSER_MODES = ["headless", "headed", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "first-party", "off"] as const;
 
@@ -128,13 +137,9 @@ export function settingsFromEnv(env: Env = process.env): Settings {
   const cacheDir = env.FEARCH_CACHE_DIR?.trim() || join(homedir(), ".cache", "fearch");
   const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ROBOTS_POLICIES, "default");
   const browser = pick(env.FEARCH_BROWSER, BROWSER_MODES, "headless");
-  // Handoff needs a person-visible browser. In the extension it is the person's own Chrome, so it defaults on.
-  const handoff =
-    browser === "headed"
-      ? envBool(env, "FEARCH_HANDOFF")
-      : browser === "extension"
-        ? envBool(env, "FEARCH_HANDOFF", true)
-        : false;
+  // Handoff needs a person-visible browser; wherever one exists it defaults on (why run a visible
+  // browser if not to collaborate?). FEARCH_HANDOFF=0 opts out.
+  const handoff = browser === "headed" || browser === "extension" ? envBool(env, "FEARCH_HANDOFF", true) : false;
   const infoUrl = env.FEARCH_UA_INFO_URL?.trim() || pkg.homepage || "https://github.com/funkyfunc/fearch";
   const contact = env.FEARCH_UA_CONTACT?.trim() || "";
   return {
@@ -168,10 +173,11 @@ export function settingsFromEnv(env: Env = process.env): Settings {
     extensionConnectMs: envInt(env, "FEARCH_EXTENSION_CONNECT_MS", 4_000),
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 180_000),
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
-    // Derived default: DuckDuckGo (the robots-permitted engine); with robots off *and* a person to pass
-    // Google's check, Google first. Bing is opt-in (it has served decoy results to automated browsers).
+    // Derived default: DuckDuckGo (the robots-permitted engine); with a person present to oversee the
+    // browser and pass Google's check, Google first. Bing is opt-in (it has served decoy results to
+    // automated browsers).
     engines: (env.FEARCH_ENGINES === undefined
-      ? robotsPolicy === "off" && handoff
+      ? (browser === "headed" || browser === "extension") && handoff
         ? ["google", "duckduckgo"]
         : ["duckduckgo"]
       : envList(env, "FEARCH_ENGINES")
@@ -186,8 +192,6 @@ export function settingsFromEnv(env: Env = process.env): Settings {
       "api.semanticscholar.org": 3000,
       "api2.marginalia-search.com": 4000,
     },
-    // Off unless asked for (--exa): a third-party service that logs queries is not a sensible corporate default.
-    exaHostedUrl: envBool(env, "FEARCH_EXA") ? env.FEARCH_EXA_HOSTED_URL?.trim() || "https://mcp.exa.ai/mcp" : "",
   };
 }
 
@@ -200,34 +204,24 @@ export function domainMatches(host: string, list: string[]): boolean {
 /**
  * Command-line flags — the intended way to configure the server from an MCP config's `args`:
  *
- *   --robots default|strict|minimal|off   consent dial (default: default)
- *   --browser headless|headed|extension|off  bundled headless Chromium, your installed Chrome, your own Chrome via the extension, or none
- *   --incognito                            extension only: open pages in an incognito window
- *   --handoff                              hand challenges to the person (implies --browser headed)
- *   --engines google,duckduckgo            search-engine order (default derived from the two above)
- *   --exa                                  add Exa's keyless hosted search as the fallback after the engines
- *   --session                              send cookies from the tool profile to ordinary pages (headed)
- *   --identity header|none                 how the browser names the tool (default: header)
+ *   --browser headless|headed|extension|off  bundled headless Chromium (default), your installed
+ *                                            Chrome in a visible window, your own Chrome via the
+ *                                            bridge extension, or none
+ *   --robots default|strict|off            consent dial for the tool's own fetching (default: default)
+ *   --engines google,duckduckgo            search-engine order (default derived from --browser)
+ *   --allow-domains a,b  --deny-domains c  host lists (subdomains included)
  *
- * Flags map onto the same settings as the environment variables and win over them. Returns the
- * remaining argv (subcommands and their own flags) alongside the settings.
+ * That is the whole flag surface on purpose. Every other setting is an environment variable
+ * (FEARCH_*) — escape hatches, not the interface. Flags map onto the same settings as the
+ * environment variables and win over them. Returns the remaining argv (subcommands and their own
+ * flags) alongside the settings.
  */
 export const SERVER_FLAGS: Record<string, { env: string; boolean?: boolean }> = {
   robots: { env: "FEARCH_ROBOTS_POLICY" },
   browser: { env: "FEARCH_BROWSER" },
-  handoff: { env: "FEARCH_HANDOFF", boolean: true },
   engines: { env: "FEARCH_ENGINES" },
-  exa: { env: "FEARCH_EXA", boolean: true },
-  incognito: { env: "FEARCH_INCOGNITO", boolean: true },
-  session: { env: "FEARCH_BROWSER_SESSION", boolean: true },
-  identity: { env: "FEARCH_BROWSER_IDENTITY" },
   "allow-domains": { env: "FEARCH_ALLOW_DOMAINS" },
   "deny-domains": { env: "FEARCH_DENY_DOMAINS" },
-  "audit-log": { env: "FEARCH_AUDIT_LOG" },
-  "log-file": { env: "FEARCH_LOG_FILE" },
-  "log-level": { env: "FEARCH_LOG_LEVEL" },
-  "cache-dir": { env: "FEARCH_CACHE_DIR" },
-  "search-mode": { env: "FEARCH_SEARCH_MODE" },
 };
 
 export function settingsFromArgs(
@@ -252,6 +246,5 @@ export function settingsFromArgs(
       overrides[spec.env] = v;
     }
   }
-  if (envBool(overrides, "FEARCH_HANDOFF") && !overrides.FEARCH_BROWSER) overrides.FEARCH_BROWSER = "headed";
   return { settings: settingsFromEnv({ ...env, ...overrides }), rest, overrides };
 }
