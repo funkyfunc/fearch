@@ -17,7 +17,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Audit } from "../audit.js";
 import type { Settings } from "../config.js";
@@ -33,6 +33,11 @@ const CONNECTED_WINDOW_MS = 40_000;
 
 export function extensionTokenPath(cacheDir: string): string {
   return join(cacheDir, "extension-token");
+}
+
+/** Written by `fearch extension install`; its presence tells auto mode an extension is worth waiting for. */
+export function extensionInstalledMarker(cacheDir: string): string {
+  return join(cacheDir, "extension-installed");
 }
 
 /** The pairing secret shared with the extension. Created on first use, private to this user. */
@@ -308,6 +313,9 @@ export class ExtensionBridge {
 export class ExtensionRenderer implements BrowserTier {
   readonly headed = true;
   private warnedFallback = false;
+  private everConnected = false;
+  /** `fearch extension install` leaves this marker; with it, auto's first render waits properly. */
+  private readonly installedHint: boolean;
 
   /** Honest about who actually rendered last: the bridge when connected, else the fallback tier. */
   get browserChannel(): string {
@@ -319,7 +327,9 @@ export class ExtensionRenderer implements BrowserTier {
     private readonly audit: Audit,
     readonly bridge: ExtensionBridge,
     private readonly fallback?: BrowserTier,
-  ) {}
+  ) {
+    this.installedHint = existsSync(extensionInstalledMarker(settings.cacheDir));
+  }
 
   enabled(): boolean {
     return true;
@@ -337,15 +347,21 @@ export class ExtensionRenderer implements BrowserTier {
     if (!this.settings.allowPrivate && (isBlockedHostname(host) || (isIP(host) && isPrivateAddress(host)))) {
       throw new BlockedURL(`refusing to open a private address in the browser (${target})`);
     }
-    // Explicit extension mode waits for the extension; auto only glances (its fallback still
-    // escalates challenges to a window, so nothing is lost while the extension is absent).
-    const waitMs = this.settings.browser === "extension" ? this.settings.extensionConnectMs : 300;
+    // Explicit extension mode always waits for the extension. Auto waits properly once when the
+    // pairing was ever installed here (the extension re-polls every ~3 s, so a fresh bridge cannot
+    // be connected instantly), and otherwise only glances — its fallback still escalates challenges
+    // to a window, so nothing is lost while the extension is absent.
+    const waitMs =
+      this.settings.browser === "extension" || (this.installedHint && !this.everConnected)
+        ? this.settings.extensionConnectMs
+        : 300;
     let connected = false;
     try {
       connected = await this.bridge.waitForConnection(waitMs);
     } catch (e) {
       this.audit.log("warn", `extension bridge unavailable (${(e as Error).message.split("\n")[0]})`);
     }
+    if (connected) this.everConnected = true;
     if (!connected) {
       const hint =
         "the fearch bridge extension is not connected — run `fearch extension install` (or open chrome://extensions and check it is enabled)";

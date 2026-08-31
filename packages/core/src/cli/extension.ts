@@ -6,7 +6,13 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App } from "../app.js";
-import { EXTENSION_ID, ExtensionBridge, ExtensionRenderer, loadOrCreateExtensionToken } from "../fetch/extension.js";
+import {
+  EXTENSION_ID,
+  ExtensionBridge,
+  ExtensionRenderer,
+  extensionInstalledMarker,
+  loadOrCreateExtensionToken,
+} from "../fetch/extension.js";
 import type { Flags } from "./args.js";
 
 /** Where the extension ships inside this package. */
@@ -34,14 +40,20 @@ export async function extensionCommand(app: App, sub: string, flags: Flags): Pro
   const token = loadOrCreateExtensionToken(app.settings.cacheDir);
   const bridge = app.browser instanceof ExtensionRenderer ? app.browser.bridge : new ExtensionBridge(app.audit, token);
   try {
-    if (sub === "install") return await install(bridge, dir, token, out);
+    if (sub === "install") return await install(bridge, dir, token, app.settings.cacheDir, out);
     return await status(bridge, dir, flags, out);
   } finally {
     await bridge.close();
   }
 }
 
-async function install(bridge: ExtensionBridge, dir: string, token: string, out: (t: string) => void): Promise<number> {
+async function install(
+  bridge: ExtensionBridge,
+  dir: string,
+  token: string,
+  cacheDir: string,
+  out: (t: string) => void,
+): Promise<number> {
   if (dir !== bundledExtensionDir()) {
     mkdirSync(dir, { recursive: true });
     cpSync(bundledExtensionDir(), dir, { recursive: true });
@@ -49,6 +61,8 @@ async function install(bridge: ExtensionBridge, dir: string, token: string, out:
   // Pair this Chrome with this user's fearch: the extension refuses jobs from any server that cannot
   // prove it holds this token, and servers refuse polls without it.
   writeFileSync(join(dir, "token.json"), JSON.stringify({ token }) + "\n", { mode: 0o600 });
+  // Tell auto mode an extension is worth waiting for on a fresh server's first render.
+  writeFileSync(extensionInstalledMarker(cacheDir), new Date().toISOString() + "\n");
   const copied = copyToClipboard(dir);
   const port = await bridge.start();
   out(`fearch bridge extension folder:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
