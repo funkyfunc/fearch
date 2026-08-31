@@ -347,12 +347,15 @@ export class EngineProvider implements SearchProvider {
   }
 
   get disclosure(): string {
+    const ch = this.browser.browserChannel;
     const how =
-      this.browser.browserChannel === "extension"
+      ch === "extension"
         ? "your own Chrome (fearch bridge extension)"
-        : this.browser.headed
-          ? "the visible browser window"
-          : "the self-identified headless browser";
+        : ch === "auto"
+          ? "the self-identified headless browser — any check is opened in a window for you"
+          : this.settings.browser === "headed"
+            ? "the visible browser window"
+            : "the self-identified headless browser";
     const robots = this.spec.robotsPermitted
       ? "robots.txt allows this page"
       : personPresent(this.settings)
@@ -375,7 +378,7 @@ export class EngineProvider implements SearchProvider {
     if (!this.settings.engines.includes(this.name)) return null;
     if (!this.browser.enabled()) return "browser tier is off";
     if (!this.eligible())
-      return `${this.spec.host} disallows result pages for crawlers; eligible with a visible browser you oversee (--browser headed or extension)`;
+      return `${this.spec.host} disallows result pages for crawlers; eligible when a person is on call to pass its checks (a display, handoff on)`;
     return null;
   }
 
@@ -418,11 +421,11 @@ export class EngineProvider implements SearchProvider {
     }
     if (this.spec.isChallenge(rendered.status, rendered.html, rendered.finalUrl)) {
       // The engine's "no". Stop and cool down (the registry treats "rate-limited" as such).
-      const hint = this.browser.headed
-        ? this.settings.handoff
-          ? "it was shown in the browser window but not passed in time"
-          : "handoff is disabled (FEARCH_HANDOFF=0); with it on you would be handed the page to pass yourself"
-        : "with --browser headed or extension the page would be handed to you to pass yourself";
+      const hint = !this.settings.handoff
+        ? "handoff is disabled (FEARCH_HANDOFF=0); with it on you would be handed the page to pass yourself"
+        : this.settings.canSurface
+          ? "it was opened in a window for you but not passed in time"
+          : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
       throw new SearchError(
         `${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`,
       );

@@ -45,12 +45,14 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   a `robots.txt` line) are honoured under `default` and `strict`: `ai-input=no` means the site does not
   want its pages fed into an AI model, which is exactly what this tool does, so the content is withheld
   and a `content_signal` diagnosis is returned.
-- **Person-present rule.** robots.txt governs the tool fetching on its own. When a person can see the
-  browser and is handed its challenges (`--browser headed` or `--browser extension`, handoff on — the
-  default there), search-engine result pages are that person's own browsing, automated only in the
-  sense that the query is typed and the result read back for them; those pages are then opened without
-  consulting robots.txt, exactly as their own Chrome would. Ordinary page fetches — the tool acting
-  alone — stay under the robots policy above in every mode. This position has published industry
+- **Person-present rule.** robots.txt governs the tool fetching on its own. When a person is on call —
+  a window (or their own Chrome via the extension) can reach them and handoff is on, which is the
+  default wherever a display exists — search-engine result pages are that person's own browsing,
+  automated only in the sense that the query is typed and the result read back for them, and every
+  gate a site raises is decided by them personally; those pages are then opened without consulting
+  robots.txt, exactly as their own Chrome would. Ordinary page fetches — the tool acting alone — stay
+  under the robots policy above in every mode, and where no person can be reached (no display,
+  handoff off, explicit headless) the carve-out simply does not apply. This position has published industry
   precedent: RFC 9309 scopes itself to "automatic clients known as crawlers", and OpenAI's crawler
   documentation states of its user-initiated `ChatGPT-User` agent that "because these actions are
   initiated by a user, robots.txt rules may not apply" (verified 2026-08-31 at
@@ -70,13 +72,19 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   challenge page), the page is opened **once** in a real Chromium (Playwright). This is the same thing
   a person does when a page needs a browser, and it is ordinary corporate automation
   (`docs/SPECTRUM.md` rung 7).
-- **Four modes** (`FEARCH_BROWSER`: `headless` | `headed` | `extension` | `off`). `headless`
-  (default): the bundled Chromium, no window, no state survives the process (Chromium itself is
-  downloaded lazily on first need, never in a postinstall). `headed`: the Chrome already installed on
-  the machine (so it receives the machine's enterprise policy — URL blocklists, proxy, certificates —
-  and nothing is downloaded), in a visible window, with a **tool-owned profile** persisted under the
-  cache directory. Chrome refuses automation on a person's real profile; this profile starts empty and
-  only ever contains what the person did in that window. `off`: no browser tier at all.
+- **Five modes** (`FEARCH_BROWSER`: `auto` | `headless` | `headed` | `extension` | `off`). `auto`
+  (default): renders happen in the bundled headless Chromium; when a page comes back as a challenge
+  and a display exists, that one page is opened in a visible window (the installed Chrome) and handed
+  to the person — passed, its clearance persists in the tool-owned profile so the window need not
+  reappear; unanswered, no further windows are opened for 10 minutes; where no window can be shown,
+  the challenge is final. The person's own Chrome via the paired bridge extension is preferred over
+  all of this whenever it is connected. `headless`: never a window, no state survives the process
+  (Chromium itself is downloaded lazily on first need, never in a postinstall). `headed`: every render
+  in the Chrome already installed on the machine (so it receives the machine's enterprise policy —
+  URL blocklists, proxy, certificates), visible, with the **tool-owned profile** persisted under the
+  cache directory. Chrome refuses automation on a person's real profile; the tool profile starts
+  empty and only ever contains what the person did in windows the tool opened. `off`: no browser
+  tier at all.
 - **Extension mode** (`--browser extension`). Pages are opened in the person's own Chrome by the bundled
   "fearch bridge" extension (`packages/core/extension`, a few hundred lines, readable in full). No
   automation flags, no DevTools/CDP, no injected scripts beyond reading the page: it is the person's
@@ -92,14 +100,19 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   (their logins, their search history) and are labelled as such; `FEARCH_INCOGNITO=1` opens them in an
   incognito window instead. If the extension is not connected, fearch falls back to the headless tier
   and says so in the log (including that the handoff is unavailable until it connects).
-- **Human handoff** (on by default whenever the browser is visible — headed or extension;
-  `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge, the tab is brought to
-  the front and the tool waits (default 180 s) for the person to deal with it, then continues with what
-  they were shown. The tool clicks, types and solves nothing; it only watches for the page to stop
-  being a challenge. Without handoff, a challenge is final.
+- **Human handoff** (on by default whenever a window could reach the person — auto with a display,
+  headed, or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
+  it is surfaced — the auto tier opens that one page in a visible window; headed brings the tab to
+  the front; the extension activates the tab in the person's Chrome — and the tool waits (default
+  180 s) for the person to deal with it, then continues with what they were shown. The tool clicks,
+  types and solves nothing; it only watches for the page to stop being a challenge. Without handoff,
+  or where nothing can be shown, a challenge is final.
 - **Session** (`FEARCH_BROWSER_SESSION`, headed only, default off). Cookies the person created in the
   tool profile are sent to engine pages always (a passed check lives there) and to ordinary pages only
-  when on; such reads are labelled `your session` in the result header and in the audit log.
+  when on; such reads are labelled `your session` in the result header and in the audit log. In auto
+  mode the tool profile rides along on browser renders for the same reason — it contains only what the
+  person did in windows the tool opened (passed checks, above all), and carrying it is what keeps a
+  passed check passed; reads that used its cookies carry the same label.
 - **Identity** (`FEARCH_BROWSER_IDENTITY`). `header` (default): every request carries `From:`
   (RFC 9110 §10.1.2 — the header defined for a robot to name who controls it; set to the bot-info URL
   or `FEARCH_UA_CONTACT`) and `X-Agent: fearch/<version> (+<info-url>)`. The User-Agent is
@@ -166,12 +179,13 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live before
   every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
   Google and Bing disallow `/search` for crawlers and become eligible only under the person-present
-  rule (a visible browser whose challenges are handed to the person — then Google is on by default) or
-  the explicit `FEARCH_ROBOTS_POLICY=off` user-agent posture, and Bing additionally only when listed in
-  `FEARCH_ENGINES`. `doctor` reports exactly which engines are in use and why the rest are not. Engine
-  pages are opened in the same browser tier as page reads, one query per search call, at least 3 s
-  apart. A bot-check page is that engine's "no": the provider stops and cools down for 10 minutes, or —
-  person present — shows it to the person; nothing is done to avoid it.
+  rule (a person on call — any check the engine raises opens in a window, or their own Chrome, for
+  them to decide; then Google is on by default) or the explicit `FEARCH_ROBOTS_POLICY=off` user-agent
+  posture, and Bing additionally only when listed in `FEARCH_ENGINES`. `doctor` reports exactly which
+  engines are in use and why the rest are not. Engine pages are opened in the same browser tier as
+  page reads, one query per search call, at least 3 s apart. A bot-check page is that engine's "no":
+  the provider stops and cools down for 10 minutes, unless the person passes it themselves in the
+  surfaced window; nothing is done to avoid it.
 - No telemetry, no version pings, no crash reporting.
 
 ## Safety limits

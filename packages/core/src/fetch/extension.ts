@@ -299,11 +299,20 @@ export class ExtensionBridge {
   }
 }
 
-/** The renderer used when `--browser extension`: the person's Chrome via the bridge; falls back to a given tier if the extension isn't there. */
+/**
+ * The renderer for `--browser extension` and the extension-preferring half of `auto`: the person's
+ * Chrome via the bridge when it is connected; a given fallback tier when it isn't. In auto the
+ * extension is opportunistic — a short connection check, a quiet note — while explicit extension
+ * mode waits longer and warns properly.
+ */
 export class ExtensionRenderer implements BrowserTier {
   readonly headed = true;
-  readonly browserChannel = "extension";
   private warnedFallback = false;
+
+  /** Honest about who actually rendered last: the bridge when connected, else the fallback tier. */
+  get browserChannel(): string {
+    return this.bridge.connected() ? "extension" : (this.fallback?.browserChannel ?? "extension");
+  }
 
   constructor(
     private readonly settings: Settings,
@@ -328,16 +337,25 @@ export class ExtensionRenderer implements BrowserTier {
     if (!this.settings.allowPrivate && (isBlockedHostname(host) || (isIP(host) && isPrivateAddress(host)))) {
       throw new BlockedURL(`refusing to open a private address in the browser (${target})`);
     }
-    if (!(await this.bridge.waitForConnection(this.settings.extensionConnectMs))) {
+    // Explicit extension mode waits for the extension; auto only glances (its fallback still
+    // escalates challenges to a window, so nothing is lost while the extension is absent).
+    const waitMs = this.settings.browser === "extension" ? this.settings.extensionConnectMs : 300;
+    let connected = false;
+    try {
+      connected = await this.bridge.waitForConnection(waitMs);
+    } catch (e) {
+      this.audit.log("warn", `extension bridge unavailable (${(e as Error).message.split("\n")[0]})`);
+    }
+    if (!connected) {
       const hint =
         "the fearch bridge extension is not connected — run `fearch extension install` (or open chrome://extensions and check it is enabled)";
       if (this.fallback) {
         if (!this.warnedFallback) {
           this.audit.log(
-            "warn",
-            `${hint}; using the ${this.fallback.headed ? "headed" : "headless"} browser tier instead${
-              this.fallback.headed ? "" : " — challenges cannot be handed to you until the extension connects"
-            }`,
+            this.settings.browser === "extension" ? "warn" : "info",
+            this.settings.browser === "extension"
+              ? `${hint}; using the fallback browser tier instead`
+              : "extension not connected; using the built-in browser (optional: `fearch extension install` routes pages through your own Chrome)",
           );
           this.warnedFallback = true;
         }

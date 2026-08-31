@@ -45,24 +45,34 @@ export async function doctor(app: App): Promise<number> {
     if (s.logLevel === "debug") process.stderr.write(`${(e as Error).stack}\n`);
   }
 
-  // The extension bridge, when that tier is selected.
+  // The extension bridge (used by auto and extension modes).
   if (app.browser instanceof ExtensionRenderer) {
     const bridge = app.browser.bridge;
-    const port = await bridge.start();
-    if (await bridge.waitForConnection(3_000)) {
-      const info = bridge.extensionInfo();
-      const incognito = info?.incognitoAllowed
-        ? "allowed"
-        : s.incognito
-          ? "not allowed — FEARCH_INCOGNITO=1 will fail until “Allow in Incognito” is enabled"
-          : "not allowed";
-      ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
-    } else
-      warn(
-        "extension",
-        `not connected on port ${port} — run \`fearch extension install\`; falling back to the headless tier meanwhile`,
-      );
+    try {
+      const port = await bridge.start();
+      if (await bridge.waitForConnection(3_000)) {
+        const info = bridge.extensionInfo();
+        const incognito = info?.incognitoAllowed
+          ? "allowed"
+          : s.incognito
+            ? "not allowed — FEARCH_INCOGNITO=1 will fail until “Allow in Incognito” is enabled"
+            : "not allowed";
+        ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
+      } else if (s.browser === "extension")
+        warn("extension", `not connected on port ${port} — run \`fearch extension install\`; falling back meanwhile`);
+      else
+        ok("extension", `not connected (optional — \`fearch extension install\` routes pages through your own Chrome)`);
+    } catch (e) {
+      warn("extension", (e as Error).message);
+    }
   }
+  if (s.browser === "auto")
+    ok(
+      "escalation",
+      s.canSurface
+        ? `a challenge opens in a visible window for you (handoff ${s.handoff ? "on" : "off"})`
+        : "no display detected — challenges stay final (graceful headless behaviour)",
+    );
 
   // The browser tier.
   if (s.browser === "off") warn("browser", "off (--browser off)");

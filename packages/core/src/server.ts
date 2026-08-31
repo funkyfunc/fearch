@@ -15,7 +15,7 @@ import { renderResults } from "./search/render.js";
  */
 export function searchDescription(s: Settings): string {
   const posture = personPresent(s)
-    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are opened in a browser a person oversees — this is their own browsing, and any challenge is handed to them, never solved by the tool.`
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any challenge opened in a visible window for them to pass; the tool never solves anything.`
     : s.robotsPolicy === "off"
       ? `robots.txt is not consulted on this server (operator's choice — user-agent posture); the tool still identifies itself honestly, paces requests, and never solves challenges.`
       : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser; first-party APIs).`;

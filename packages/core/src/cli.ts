@@ -75,8 +75,12 @@ function describeBrowser(s: Settings): string {
       return `headed — your installed Chrome in a visible window; handoff=${s.handoff ? "on" : "off"}; session=${s.browserSession ? "on" : "off"}`;
     case "extension":
       return `extension — your own Chrome via the fearch bridge; incognito=${s.incognito ? "on" : "off"}; falls back to headless if not connected`;
+    case "headless":
+      return "headless — bundled Chromium, self-identified, never visible; challenges are final";
     default:
-      return "headless — bundled Chromium, self-identified, used for engine pages and once when the plain client gets a JS shell or is refused";
+      return s.canSurface
+        ? `auto — headless until a challenge, which opens in a window for you${s.handoff ? "" : " (handoff off: it won't)"}; your own Chrome via the extension when connected`
+        : "auto — no display here, so effectively headless; challenges are final (graceful)";
   }
 }
 

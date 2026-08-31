@@ -93,26 +93,37 @@ for right now, one connection per host at a paced gap, inside a session budget, 
 crawling ever** — fearch never follows links on its own. That is the line between an agent and a
 crawler, and it is the one this tool will not cross.
 
-## One choice: who renders pages
+## Headless until it matters
 
-Everything follows from `--browser`. If a person can see the browser, challenges are handed to them
-and Google joins DuckDuckGo — that's you browsing, with the typing automated; if not, fearch stays a
-self-identified crawler on DuckDuckGo and the first-party APIs.
+`npx fearch` just does the right thing. Pages render in an invisible headless browser — nothing pops
+up, nothing flickers. The moment a site shows a bot check, that page opens **once** in a visible
+window for you: pass it the way you would in your own browsing, and everything continues; the
+clearance is remembered so the window doesn't come back. If nobody answers, no more windows for ten
+minutes. If nothing _can_ be shown (a server, CI, no display), the check is simply final, reported
+honestly. And if you've installed the bridge extension, your own Chrome is used instead whenever it's
+connected — no window management at all, just a tab that appears if a check ever needs you.
 
-| Mode                    | What it is                                                          | Person present? | Engines                 |
-| ----------------------- | ------------------------------------------------------------------- | --------------- | ----------------------- |
-| `npx fearch` (headless) | bundled Chromium, robots.txt honoured — works anywhere, zero config | no              | DuckDuckGo              |
-| `--browser headed`      | your installed Chrome, visible window, tool-owned profile           | yes             | Google, then DuckDuckGo |
-| `--browser extension`   | your own Chrome via the bundled bridge extension                    | yes             | Google, then DuckDuckGo |
+Because any check reaches a person, a person is on call — so Google (with its AI Overview) joins
+DuckDuckGo by default wherever a window could reach you; where it couldn't, fearch stays a
+self-identified crawler on DuckDuckGo and the first-party APIs. `--browser` pins one behaviour when
+you want it fixed:
+
+| Mode                  | What it is                                                                       | Engines                 |
+| --------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `npx fearch` (auto)   | headless until a challenge, which opens in a window for you; extension preferred | Google, then DuckDuckGo |
+| `--browser headless`  | never a window; challenges are final — for servers and CI                        | DuckDuckGo              |
+| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                        | Google, then DuckDuckGo |
+| `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | Google, then DuckDuckGo |
+| `--browser off`       | no browser tier at all                                                           | DuckDuckGo              |
 
 Search tries engines in order, then first-party APIs; a bot-check page is that engine's "no"
-(10-minute cooldown). With a person present the check is brought to _you_ in the browser window
-instead — pass it as you would in your own browsing, and the search continues. The tool never solves
-anything. Bing exists but is opt-in (`--engines bing,duckduckgo`): it has served decoy results to
-automated browsers, the worst failure mode. The output says when a listed engine was skipped and why.
+(10-minute cooldown) unless you pass it. The tool never solves anything. Bing exists but is opt-in
+(`--engines bing,duckduckgo`): it has served decoy results to automated browsers, the worst failure
+mode. The output says when a listed engine was skipped and why.
 
-**The extension tier** (`--browser extension`) opens pages in the Chrome you already have, through a
-bundled few-hundred-line extension you can read in full. No automation flags, no DevTools — it is your
+**The extension** opens pages in the Chrome you already have, through a bundled few-hundred-line
+extension you can read in full — auto mode prefers it whenever it's connected (`--browser extension`
+pins it). No automation flags, no DevTools — it is your
 browser doing what browsers do. The extension only opens/reads/closes tabs a paired local fearch asked
 for (pairing token written by the install command; nothing else on the machine can drive it); it never
 clicks, types, or submits. Setup is one command plus one click:
@@ -131,15 +142,15 @@ ground: your installed Chrome with a tool-owned empty profile at `~/.cache/fearc
 The whole flag surface, on purpose:
 
 ```
---browser headless|headed|extension|off  who renders pages (see the table above; default headless)
+--browser auto|headless|headed|extension|off  who renders pages (see the table above; default auto)
 --robots default|strict|off              robots.txt for the tool's own fetching (strict adds training-crawler
                                          opt-outs; off = user-agent posture, like a browser)
---engines google,bing,duckduckgo         engine order (default derived from --browser)
+--engines google,bing,duckduckgo         engine order (default derived from --browser and your display)
 --allow-domains a,b  --deny-domains c    host lists (subdomains included)
 ```
 
 Everything else is a `FEARCH_*` environment variable — escape hatches, not the interface:
-`FEARCH_HANDOFF=0` (challenges are handed to you by default whenever the browser is visible),
+`FEARCH_HANDOFF=0` (challenges are surfaced to you by default whenever a window could reach you),
 `FEARCH_INCOGNITO=1`, `FEARCH_BROWSER_SESSION=1` (headed: send tool-profile cookies to ordinary
 pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_MODE=first-party|off`
 (queries only reach the sites they concern / no search at all), `FEARCH_AUDIT_LOG=off|<file>`,

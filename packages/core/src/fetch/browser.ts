@@ -145,6 +145,15 @@ export class BrowserRenderer implements BrowserTier {
     return this.settings.browser === "headed";
   }
 
+  /**
+   * Whether the persistent tool profile may be used. Headed always; `auto` too — its routine renders
+   * are headless, but a check the person passed in an escalation window lives in that profile, and
+   * carrying it means the window does not have to reappear. Explicit `headless` stays stateless.
+   */
+  private get profileAllowed(): boolean {
+    return this.headed || this.settings.browser === "auto";
+  }
+
   /** The exact User-Agent the browser sends. Empty until first launch. */
   get browserUserAgent(): string {
     return this.userAgent;
@@ -248,13 +257,13 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   /**
-   * `plain`: ephemeral (cookies live only while the browser process does). `profile`: headed only —
+   * `plain`: ephemeral (cookies live only while the browser process does). `profile`: headed or auto —
    * persisted to `browserStatePath` after each use so a passed challenge or a login the person did in
-   * the window survives restarts. In headless mode both names resolve to the ephemeral context.
+   * the window survives restarts. In explicit headless mode both names resolve to the ephemeral context.
    */
   private async context(kind: "plain" | "profile"): Promise<BrowserContext> {
     const browser = await this.launch();
-    if (kind === "profile" && this.headed) {
+    if (kind === "profile" && this.profileAllowed) {
       if (this.profile) return this.profile;
       const path = this.settings.browserStatePath;
       const ctx = await browser.newContext({
@@ -321,7 +330,7 @@ export class BrowserRenderer implements BrowserTier {
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
     if (!this.enabled()) throw new BrowserUnavailable("browser tier disabled (--browser off)");
     const target = normalizeUrl(url);
-    const useProfile = this.headed && !!opts.session;
+    const useProfile = this.profileAllowed && !!opts.session;
     const ctx = await this.context(useProfile ? "profile" : "plain");
     const usedSession = useProfile && (await ctx.cookies(target)).length > 0;
     if (this.inFlight >= this.settings.browserMaxConcurrent) {
@@ -440,5 +449,85 @@ export class BrowserRenderer implements BrowserTier {
     this.plain = null;
     this.profile = null;
     this.browser = null;
+  }
+}
+
+/** How long to stop opening windows after one goes unanswered — the person is evidently away. */
+const AWAY_COOLDOWN_MS = 10 * 60_000;
+
+/**
+ * The `auto` tier: headless until it matters. Routine renders happen invisibly (with the tool
+ * profile, so a passed check stays passed); when a page comes back as a challenge, the same URL is
+ * opened once in a visible window and handed to the person. If the window goes unanswered, no more
+ * windows for a while; if no window can be opened at all (no display, no Chrome), the challenge is
+ * final exactly as in headless mode. Nothing is ever clicked or solved by the tool.
+ */
+export class EscalatingRenderer implements BrowserTier {
+  readonly browserChannel = "auto";
+  readonly headed = false;
+  private escalation: BrowserTier | null = null;
+  private cannotEscalate = false;
+  private awayUntil = 0;
+
+  constructor(
+    private readonly settings: Settings,
+    private readonly audit: Audit,
+    private readonly routine: BrowserTier,
+    private readonly makeEscalation: () => BrowserTier = () =>
+      new BrowserRenderer({ ...settings, browser: "headed" }, audit),
+  ) {}
+
+  enabled(): boolean {
+    return true;
+  }
+
+  get browserUserAgent(): string {
+    return this.routine.browserUserAgent;
+  }
+
+  private canEscalate(): boolean {
+    return this.settings.canSurface && this.settings.handoff && !this.cannotEscalate && Date.now() >= this.awayUntil;
+  }
+
+  async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
+    // Always with the tool profile: it holds only what the person did in escalation windows, and
+    // carrying it is what keeps a passed check passed — the window must not reappear per page.
+    const first = await this.routine.render(url, { ...opts, session: true, handoff: false });
+    const isChallenge = opts.isChallenge ?? isChallengePage;
+    if (!isChallenge(first.html, first.status, first.finalUrl) || opts.handoff === false || !this.canEscalate()) {
+      return first;
+    }
+    this.audit.log("warn", `challenge on ${url}: opening it in a visible window for you to deal with`);
+    let second: Rendered;
+    try {
+      this.escalation ??= this.makeEscalation();
+      // session:true so what the person passes lands in the shared profile and the window need not reappear.
+      second = await this.escalation.render(url, { ...opts, session: true, handoff: true });
+    } catch (e) {
+      const msg = (e as Error).message;
+      // A window that cannot be opened here (no display, no Chrome) will not open next time either.
+      if (/could not be launched|not installed/i.test(msg)) this.cannotEscalate = true;
+      this.audit.log("warn", `no visible window could be opened (${msg.split("\n")[0]}); the challenge stands`);
+      return first;
+    }
+    if (second.handedOff) {
+      // The person passed the check; restart the routine renderer so its next context loads the
+      // updated profile state instead of the pre-clearance cookies it launched with.
+      await this.routine.close().catch(() => {});
+      return second;
+    }
+    if (isChallenge(second.html, second.status, second.finalUrl)) {
+      this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
+      this.audit.log(
+        "warn",
+        `the window went unanswered; not opening another for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
+      );
+    }
+    return second;
+  }
+
+  async close(): Promise<void> {
+    await this.routine.close();
+    await this.escalation?.close().catch(() => {});
   }
 }

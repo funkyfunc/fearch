@@ -2,17 +2,21 @@ export function usage(): string {
   return `usage: fearch [server flags] [command]
 
 server flags (put these in your MCP config's args):
-  --browser headless|headed|extension|off  who renders pages: bundled headless Chromium (default), your
-                                           installed Chrome in a visible window, your own Chrome via the
-                                           fearch bridge extension (run \`fearch extension install\` once),
-                                           or none. With a visible browser (headed or extension) a person
-                                           is present: challenges are handed to you, never solved, and
-                                           Google joins DuckDuckGo as your own browsing.
+  --browser auto|headless|headed|extension|off
+                                           auto (default): headless until a site shows a challenge — then
+                                           that page opens in a visible window for you to deal with (never
+                                           solved by the tool), and Google joins DuckDuckGo as your own
+                                           browsing; prefers your own Chrome via the fearch bridge
+                                           extension when it is connected (\`fearch extension install\`);
+                                           with no display, challenges are simply final. Or pin one
+                                           behaviour: headless (never a window) · headed (your installed
+                                           Chrome, always visible) · extension (your Chrome only) · off.
   --robots default|strict|off              robots.txt for the tool's own fetching: honour user-initiated
                                            agent opt-outs (default), also honour training-crawler opt-outs
                                            (strict), or don't consult it (off — the user-agent posture)
   --engines google,bing,duckduckgo         engine result pages in preference order
-                                           (default: duckduckgo; google,duckduckgo with a visible browser)
+                                           (default: google,duckduckgo where a window could reach you;
+                                           duckduckgo elsewhere)
   --allow-domains a,b  --deny-domains c    host lists (subdomains included)
 
 Everything else is an environment variable (FEARCH_*) — escape hatches, not the interface; see the

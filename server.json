@@ -17,7 +17,7 @@
         {
           "type": "named",
           "name": "--browser",
-          "description": "headless | headed | extension | off — bundled headless Chromium (default), your installed Chrome in a visible window, your own Chrome via the bridge extension, or no browser tier. With a visible browser a person is present: challenges are handed to them and Google joins DuckDuckGo.",
+          "description": "auto | headless | headed | extension | off — auto (default): headless until a site shows a challenge, which then opens in a visible window for the person to pass (their own Chrome via the bridge extension preferred when connected; graceful where no display exists). With a person on call, Google joins DuckDuckGo. The other values pin one behaviour: never visible, always visible, extension only, or no browser tier.",
           "isRequired": false
         },
         {

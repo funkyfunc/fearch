@@ -14,6 +14,13 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **`--browser auto`, the new default (2026-08-31, user's UX direction: "headless when I can, surface
+  to me when I can't, graceful when nothing can be shown").** Routine renders headless with the tool
+  profile; a challenge opens that one page in a visible window for the person (EscalatingRenderer);
+  an unanswered window backs off 10 min; no display → challenges final, as before; the paired
+  extension is preferred whenever connected (short opportunistic check, quiet note). Engine defaults
+  now derive from `canSurface` + handoff, so `npx fearch` on a desktop gets Google + DuckDuckGo with
+  zero flags. Explicit `headless|headed|extension|off` remain as pins.
 - **Pre-publication pass (2026-08-31).** Person-present rule: with a visible browser whose challenges
   are handed to the person (headed or extension, handoff now on by default there), engine result pages
   are the person's own browsing and Google joins DuckDuckGo without `--robots off`. Flag surface cut to

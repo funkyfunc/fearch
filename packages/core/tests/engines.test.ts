@@ -53,8 +53,13 @@ const GOOGLE_2026 = `<html><head><title>x - Google Search</title></head><body><d
 </body></html>`;
 const GOOGLE_SORRY = `<html><body>Our systems have detected unusual traffic from your computer network. This page checks to see if it's really you sending the requests, and not a robot.</body></html>`;
 
-function settings(env: Record<string, string> = {}): Settings {
-  return settingsFromEnv({ FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error", ...env });
+// Platform pinned to "linux" (no display) so defaults are deterministic across dev machines and CI;
+// a display is simulated with DISPLAY=":0", a Mac desktop with platform "darwin".
+function settings(env: Record<string, string> = {}, platform = "linux"): Settings {
+  return settingsFromEnv(
+    { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error", ...env },
+    platform,
+  );
 }
 function fakeBrowser(render: (url: string) => Promise<{ html: string; status: number }>, headed = false) {
   return {
@@ -160,21 +165,27 @@ describe("engine eligibility — the dials play together", () => {
         new Politeness(1, { count: 1, windowMs: 1 }),
       );
     const names = (ps: EngineProvider[]) => ps.filter((p) => p.available()).map((p) => p.name);
+    // No display (CI, servers): nothing can be surfaced, so DuckDuckGo only.
     expect(names(mk({}))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo", FEARCH_ROBOTS_POLICY: "off" }))).toEqual([
       "google",
       "duckduckgo",
     ]);
-    // A visible browser with handoff (the default there) is a person present: Google becomes their own browsing.
+    // auto with a display: a person is on call for any check, so Google is their own browsing.
+    expect(names(mk({ DISPLAY: ":0" }))).toEqual(["google", "duckduckgo"]);
+    // A visible browser with handoff (the default there) likewise.
     expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["google", "duckduckgo"]);
     expect(names(mk({ FEARCH_BROWSER: "extension" }))).toEqual(["google", "duckduckgo"]);
-    // …but not with handoff explicitly off (nobody would be there to pass a check).
+    // …but not with handoff explicitly off (nobody would ever see a check).
     expect(names(mk({ FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
+    expect(names(mk({ DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
+    // …and never in explicit headless, display or not.
+    expect(names(mk({ DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_ENGINES: "bing", FEARCH_ROBOTS_POLICY: "strict" }))).toEqual([]);
     expect(names(mk({ FEARCH_ENGINES: "bing,nonsense", FEARCH_ROBOTS_POLICY: "off" }))).toEqual(["bing"]);
     const listedButOff = mk({ FEARCH_ENGINES: "google" }).find((p) => p.name === "google")!;
-    expect(listedButOff.ineligibleReason()).toMatch(/--browser headed or extension/);
+    expect(listedButOff.ineligibleReason()).toMatch(/person is on call/);
   });
 
   it("the registry orders eligible engines in FEARCH_ENGINES order and reports the rest in describe()", () => {
@@ -244,7 +255,7 @@ describe("engine eligibility — the dials play together", () => {
     const out = await reg.search({ query: "turndown", maxResults: 3 });
     expect(out.providers.map((p) => p.name)).toEqual(["duckduckgo"]);
     expect(out.notes.join("\n")).toMatch(
-      /google: listed in --engines but not used — www\.google\.com disallows .*--browser headed or extension/,
+      /google: listed in --engines but not used — www\.google\.com disallows .*person is on call/,
     );
   });
 
@@ -282,7 +293,9 @@ describe("engine eligibility — the dials play together", () => {
       calls++;
       return { html: BOTCHECK, status: 202 };
     });
-    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(/rate-limited.*--browser headed/);
+    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(
+      /rate-limited.*no browser window can be shown/,
+    );
     expect(calls).toBe(1);
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(SearchError);
   });
@@ -316,7 +329,7 @@ describe("human handoff loop", () => {
 describe("server flags", () => {
   it("maps flags onto settings, wins over env, derives engines, and passes the rest through", () => {
     const base = { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" };
-    const a = settingsFromArgs(["--browser", "headed", "search", "some query", "--n", "3"], base);
+    const a = settingsFromArgs(["--browser", "headed", "search", "some query", "--n", "3"], base, "linux");
     // A visible browser means handoff on and Google first — no extra flags.
     expect([a.settings.robotsPolicy, a.settings.browser, a.settings.handoff, a.settings.engines]).toEqual([
       "default",
@@ -325,39 +338,48 @@ describe("server flags", () => {
       ["google", "duckduckgo"],
     ]);
     expect(a.rest).toEqual(["search", "some query", "--n", "3"]);
-    const b = settingsFromArgs(["--robots=strict", "--browser=off", "--engines", "bing,duckduckgo", "doctor"], {
-      ...base,
-      FEARCH_ROBOTS_POLICY: "off",
-    });
+    const b = settingsFromArgs(
+      ["--robots=strict", "--browser=off", "--engines", "bing,duckduckgo", "doctor"],
+      { ...base, FEARCH_ROBOTS_POLICY: "off" },
+      "linux",
+    );
     expect([b.settings.robotsPolicy, b.settings.browser, b.settings.engines, b.rest]).toEqual([
       "strict",
       "off",
       ["bing", "duckduckgo"],
       ["doctor"],
     ]);
-    // robots off alone leaves no person to pass Google's check: DuckDuckGo only, unless engines are set explicitly
-    expect(settingsFromArgs(["--robots", "off"], base).settings.engines).toEqual(["duckduckgo"]);
-    expect(settingsFromArgs(["--browser", "extension"], base).settings.engines).toEqual(["google", "duckduckgo"]);
-    // handoff opted out (env escape hatch): nobody is watching, so back to DuckDuckGo only
-    expect(settingsFromArgs(["--browser", "headed"], { ...base, FEARCH_HANDOFF: "0" }).settings.engines).toEqual([
+    // robots off alone (no display) leaves no person to pass Google's check: DuckDuckGo only
+    expect(settingsFromArgs(["--robots", "off"], base, "linux").settings.engines).toEqual(["duckduckgo"]);
+    expect(settingsFromArgs(["--browser", "extension"], base, "linux").settings.engines).toEqual([
+      "google",
       "duckduckgo",
     ]);
-    expect(settingsFromArgs([], base).settings.engines).toEqual(["duckduckgo"]);
-    expect(() => settingsFromArgs(["--robots"], base)).toThrow(/needs a value/);
+    // a desktop platform means auto can surface a window: Google by default with zero flags
+    expect(settingsFromArgs([], base, "darwin").settings.engines).toEqual(["google", "duckduckgo"]);
+    // handoff opted out (env escape hatch): nobody would see a check, so back to DuckDuckGo only
+    expect(
+      settingsFromArgs(["--browser", "headed"], { ...base, FEARCH_HANDOFF: "0" }, "linux").settings.engines,
+    ).toEqual(["duckduckgo"]);
+    expect(settingsFromArgs([], base, "linux").settings.engines).toEqual(["duckduckgo"]);
+    expect(() => settingsFromArgs(["--robots"], base, "linux")).toThrow(/needs a value/);
   });
 });
 
 describe("config dials", () => {
-  it("parses browser/identity/handoff/session/engines/robots and keeps headed-only dials off in headless mode", () => {
+  it("parses browser/identity/handoff/session/engines/robots and derives surfacing from mode + display", () => {
     const d = settings();
-    expect([d.browser, d.browserIdentity, d.handoff, d.browserSession, d.engines, d.robotsPolicy]).toEqual([
-      "headless",
+    // Default is auto with handoff armed; with no display it cannot surface, so engines stay DuckDuckGo.
+    expect([d.browser, d.browserIdentity, d.handoff, d.canSurface, d.engines, d.robotsPolicy]).toEqual([
+      "auto",
       "header",
-      false,
+      true,
       false,
       ["duckduckgo"],
       "default",
     ]);
+    const mac = settings({}, "darwin");
+    expect([mac.canSurface, mac.engines]).toEqual([true, ["google", "duckduckgo"]]);
     const h = settings({
       FEARCH_BROWSER: "headed",
       FEARCH_HANDOFF: "1",
@@ -375,13 +397,15 @@ describe("config dials", () => {
       "off",
     ]);
     expect(h.browserStatePath).toMatch(/browser-state\.json$/);
-    const hl = settings({ FEARCH_HANDOFF: "1", FEARCH_BROWSER_SESSION: "1" });
-    expect([hl.handoff, hl.browserSession]).toEqual([false, false]);
-    // Handoff defaults on wherever a person could see the browser; FEARCH_HANDOFF=0 opts out.
+    const hl = settings({ FEARCH_BROWSER: "headless", FEARCH_HANDOFF: "1", FEARCH_BROWSER_SESSION: "1" });
+    expect([hl.handoff, hl.browserSession, hl.canSurface]).toEqual([false, false, false]);
+    // Handoff defaults on wherever a person could be reached; FEARCH_HANDOFF=0 opts out.
     expect(settings({ FEARCH_BROWSER: "headed" }).handoff).toBe(true);
     expect(settings({ FEARCH_BROWSER: "extension" }).handoff).toBe(true);
     expect(settings({ FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }).handoff).toBe(false);
-    expect(settings({ FEARCH_BROWSER: "auto" }).browser).toBe("headless");
+    // A display via env works for auto on linux too; unknown modes fall back to auto.
+    expect(settings({ DISPLAY: ":0" }).canSurface).toBe(true);
+    expect(settings({ FEARCH_BROWSER: "nonsense" }).browser).toBe("auto");
     expect(settings({ FEARCH_ENGINES: "" }).engines).toEqual([]);
   });
 });

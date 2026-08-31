@@ -39,14 +39,20 @@ export interface Settings {
   logFile: string;
   logLevel: "debug" | "info" | "warn" | "error";
   /**
-   * `headless` (default): bundled Chromium, new-headless. `headed`: the Chrome already installed on the
-   * machine (falls back to bundled Chromium), in a visible window with a tool-owned profile that
-   * persists across runs — the "user agent" posture, where the person can see what is opened and step
-   * in on a challenge (see `handoff`). `extension`: the person's own Chrome via the fearch bridge
-   * extension — no automation signals at all (falls back to headless if the extension isn't there).
-   * `off`: no browser tier.
+   * `auto` (default): headless until a page shows a challenge — then the same page opens once in a
+   * visible window for the person to deal with; where no window can be shown, the challenge stays
+   * final. Prefers the person's own Chrome via the bridge extension whenever it is connected. The
+   * other values pin one behaviour: `headless` — never show a window; `headed` — every render in the
+   * visible installed Chrome; `extension` — the person's Chrome, headless fallback; `off` — no
+   * browser tier.
    */
   browser: (typeof BROWSER_MODES)[number];
+  /**
+   * Whether a visible browser window could be shown to the person here (a display exists, and the
+   * mode allows it). Derived, not an input: headed/extension assert it; auto detects it; headless/off
+   * never surface anything.
+   */
+  canSurface: boolean;
   /** Extension only: open pages in an incognito window (no cookies from the person's profile). */
   incognito: boolean;
   /** Extension only: how long to wait for the extension to show up before falling back (ms). */
@@ -88,12 +94,13 @@ export interface Settings {
 }
 
 /**
- * A person can see the browser and is handed challenges — the tool is acting as their user agent, not
- * as an unattended crawler. Engine result pages are then their own browsing; robots.txt keeps
- * governing what the tool fetches on its own.
+ * A person is on call: any challenge the web shows will be surfaced in a visible window (or their own
+ * Chrome) and only they can pass it — the tool is acting as their user agent, not as an unattended
+ * crawler. Engine result pages are then their browsing, typed and read back for them; robots.txt
+ * keeps governing what the tool fetches on its own.
  */
 export function personPresent(s: Settings): boolean {
-  return (s.browser === "headed" || s.browser === "extension") && s.handoff;
+  return (s.browser === "auto" || s.browser === "headed" || s.browser === "extension") && s.handoff && s.canSurface;
 }
 
 type Env = Record<string, string | undefined>;
@@ -130,16 +137,30 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
 
 export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
 export const ROBOTS_POLICIES = ["default", "strict", "off"] as const;
-export const BROWSER_MODES = ["headless", "headed", "extension", "off"] as const;
+export const BROWSER_MODES = ["auto", "headless", "headed", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "first-party", "off"] as const;
 
-export function settingsFromEnv(env: Env = process.env): Settings {
+/** Could this machine show the person a browser window? macOS/Windows sessions can; elsewhere only with a display. */
+function displayAvailable(env: Env, platform: string): boolean {
+  return platform === "darwin" || platform === "win32" || !!(env.DISPLAY || env.WAYLAND_DISPLAY);
+}
+
+export function settingsFromEnv(env: Env = process.env, platform: string = process.platform): Settings {
   const cacheDir = env.FEARCH_CACHE_DIR?.trim() || join(homedir(), ".cache", "fearch");
   const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ROBOTS_POLICIES, "default");
-  const browser = pick(env.FEARCH_BROWSER, BROWSER_MODES, "headless");
-  // Handoff needs a person-visible browser; wherever one exists it defaults on (why run a visible
-  // browser if not to collaborate?). FEARCH_HANDOFF=0 opts out.
-  const handoff = browser === "headed" || browser === "extension" ? envBool(env, "FEARCH_HANDOFF", true) : false;
+  const browser = pick(env.FEARCH_BROWSER, BROWSER_MODES, "auto");
+  const canSurface =
+    browser === "headed" || browser === "extension"
+      ? true
+      : browser === "auto"
+        ? displayAvailable(env, platform)
+        : false;
+  // Handoff defaults on wherever a window (or the person's Chrome) could carry a challenge to them.
+  // FEARCH_HANDOFF=0 opts out — then nothing is ever surfaced and challenges are final.
+  const handoff =
+    browser === "auto" || browser === "headed" || browser === "extension"
+      ? envBool(env, "FEARCH_HANDOFF", true)
+      : false;
   const infoUrl = env.FEARCH_UA_INFO_URL?.trim() || pkg.homepage || "https://github.com/funkyfunc/fearch";
   const contact = env.FEARCH_UA_CONTACT?.trim() || "";
   return {
@@ -167,17 +188,18 @@ export function settingsFromEnv(env: Env = process.env): Settings {
     logFile: env.FEARCH_LOG_FILE?.trim() || "",
     logLevel: (env.FEARCH_LOG_LEVEL?.toLowerCase() as Settings["logLevel"]) || "info",
     browser,
+    canSurface,
     browserIdentity: pick(env.FEARCH_BROWSER_IDENTITY, ["header", "none"] as const, "header"),
     handoff,
     incognito: browser === "extension" && envBool(env, "FEARCH_INCOGNITO"),
     extensionConnectMs: envInt(env, "FEARCH_EXTENSION_CONNECT_MS", 4_000),
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 180_000),
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
-    // Derived default: DuckDuckGo (the robots-permitted engine); with a person present to oversee the
-    // browser and pass Google's check, Google first. Bing is opt-in (it has served decoy results to
+    // Derived default: DuckDuckGo (the robots-permitted engine); with a person on call to pass
+    // Google's check when it appears, Google first. Bing is opt-in (it has served decoy results to
     // automated browsers).
     engines: (env.FEARCH_ENGINES === undefined
-      ? (browser === "headed" || browser === "extension") && handoff
+      ? canSurface && handoff
         ? ["google", "duckduckgo"]
         : ["duckduckgo"]
       : envList(env, "FEARCH_ENGINES")
@@ -204,9 +226,10 @@ export function domainMatches(host: string, list: string[]): boolean {
 /**
  * Command-line flags — the intended way to configure the server from an MCP config's `args`:
  *
- *   --browser headless|headed|extension|off  bundled headless Chromium (default), your installed
- *                                            Chrome in a visible window, your own Chrome via the
- *                                            bridge extension, or none
+ *   --browser auto|headless|headed|extension|off  auto (default): headless until a challenge, which
+ *                                            opens in a visible window for the person (extension
+ *                                            preferred when connected; graceful with no display);
+ *                                            or pin: never visible / always visible / extension / none
  *   --robots default|strict|off            consent dial for the tool's own fetching (default: default)
  *   --engines google,duckduckgo            search-engine order (default derived from --browser)
  *   --allow-domains a,b  --deny-domains c  host lists (subdomains included)
@@ -227,6 +250,7 @@ export const SERVER_FLAGS: Record<string, { env: string; boolean?: boolean }> = 
 export function settingsFromArgs(
   argv: string[],
   env: Env = process.env,
+  platform: string = process.platform,
 ): { settings: Settings; rest: string[]; overrides: Record<string, string> } {
   const overrides: Record<string, string> = {};
   const rest: string[] = [];
@@ -246,5 +270,5 @@ export function settingsFromArgs(
       overrides[spec.env] = v;
     }
   }
-  return { settings: settingsFromEnv({ ...env, ...overrides }), rest, overrides };
+  return { settings: settingsFromEnv({ ...env, ...overrides }, platform), rest, overrides };
 }
