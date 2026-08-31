@@ -73,6 +73,26 @@ Every rule is enforced in code and tested. `docs/POLICY.md` states them for secu
 There is no stealth mode and no "personal mode" that adds one. The one way to reach engines that
 refuse unattended clients is below — a browser you can see, with you passing any check.
 
+## Where this sits
+
+The web now sorts automated traffic into three kinds: **search** crawlers that index, **training**
+crawlers that harvest, and **agents** that act in real time for one person. fearch is the third kind,
+and says so. That category has published precedent: [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309)
+scopes the robots.txt protocol to "automatic clients known as crawlers", and OpenAI's
+[crawler documentation](https://developers.openai.com/api/docs/bots) says of its user-initiated
+`ChatGPT-User` agent that "because these actions are initiated by a user, robots.txt rules may not
+apply" (DuckDuckGo's real-time DuckAssistBot draws the same line). fearch honours robots.txt by
+default anyway for everything it fetches on its own — an **ethical surplus**, not an obligation — and
+reserves the user-agent posture for the moments a person is actually present. When a site then shows
+a challenge, it isn't an obstacle to defeat: a check that asks "is a human there?" gets answered by
+the human who is.
+
+An agent's task is not one request — a broad question can mean several searches and a dozen page
+reads. What is bounded is the _shape_ of the traffic: every request is a page a person's agent asked
+for right now, one connection per host at a paced gap, inside a session budget, with **no recursive
+crawling ever** — fearch never follows links on its own. That is the line between an agent and a
+crawler, and it is the one this tool will not cross.
+
 ## One choice: who renders pages
 
 Everything follows from `--browser`. If a person can see the browser, challenges are handed to them
@@ -151,7 +171,8 @@ If you operate a website and see this agent in your logs:
 
 - **User-Agent:** `fearch/<version> (+https://github.com/funkyfunc/fearch#bot-info)`
 - **What it is:** a locally-run tool fetching individual pages a developer's coding assistant asked
-  for. It does not crawl, does not follow links on its own, and does not train models.
+  for. In the search/agent/training taxonomy it is **agent traffic**: it does not crawl, does not
+  follow links on its own, and does not train models.
 - **Volume:** one request at a time per host, ≥ 1 s apart, capped per session.
 - **To block it:** `User-agent: fearch` + `Disallow: /` in robots.txt. It also honours `Claude-User` /
   `ChatGPT-User` disallows (and `GPTBot`-class tokens under `--robots strict`) and `Crawl-delay`.

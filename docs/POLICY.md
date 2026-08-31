@@ -50,7 +50,11 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   default there), search-engine result pages are that person's own browsing, automated only in the
   sense that the query is typed and the result read back for them; those pages are then opened without
   consulting robots.txt, exactly as their own Chrome would. Ordinary page fetches — the tool acting
-  alone — stay under the robots policy above in every mode.
+  alone — stay under the robots policy above in every mode. This position has published industry
+  precedent: RFC 9309 scopes itself to "automatic clients known as crawlers", and OpenAI's crawler
+  documentation states of its user-initiated `ChatGPT-User` agent that "because these actions are
+  initiated by a user, robots.txt rules may not apply" (verified 2026-08-31 at
+  developers.openai.com/api/docs/bots); see `RESEARCH-RECONCILIATION.md`, Report C.
 - If `robots.txt` returns 401/403 or cannot be parsed, the host is treated as disallowed (fail closed).
 - `X-Robots-Tag`, `<meta name="robots">`, `noai`/`noimageai`, RSL and AIPREF headers are recorded and
   shown in the tool output so downstream use can respect them.
