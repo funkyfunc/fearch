@@ -44,12 +44,28 @@ const LOGIN_RE = /(type=["']password["']|Sign in to continue|Log in to continue|
 const PAYWALL_RE = /("isAccessibleForFree"\s*:\s*false|subscribe to continue|subscription required|paywall)/i;
 
 /** Is this rendered page a bot challenge / CAPTCHA interstitial (the thing a human, not the tool, may pass)? */
+// Turnstile widgets live in a cross-origin iframe: the "Verify you are human" text is invisible to a
+// DOM snapshot, and only the loader script or its container betrays them in the outer page.
+const TURNSTILE_RE = /(challenges\.cloudflare\.com|cf-turnstile)/i;
+
 export function isChallengePage(html: string, status = 200, _url = ""): boolean {
-  return (
+  if (
     CHALLENGE_RE.test(html) ||
     /unusual traffic|not a robot|verify you are|are you a human/i.test(html) ||
     status === 429
-  );
+  ) {
+    return true;
+  }
+  // A Turnstile on an otherwise empty page is a challenge interstitial. On a page with real content
+  // (a login or signup form embedding the widget) it is just a widget, not a gate on this content.
+  if (TURNSTILE_RE.test(html)) {
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length < 800;
+  }
+  return false;
 }
 
 const BOOK = "Do not retry with different headers, identities, or proxies — this server never does that.";
@@ -60,7 +76,7 @@ export function finalizeAfterBrowser(d: Diagnosis, attempts: string[]): Diagnosi
     ...d,
     retryable: false,
     attempts,
-    message: `${d.message} A real (headless, self-identified) browser was also tried and was refused.`,
+    message: `${d.message} A real, self-identified browser was also tried and was refused.`,
     nextAction:
       "The site does not serve automated readers, even browsers. Use a different source, an official API, or ask the user to open the page. " +
       BOOK,

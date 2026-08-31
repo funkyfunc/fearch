@@ -52,3 +52,16 @@ describe("diagnose", () => {
     expect(text).toContain("never does that");
   });
 });
+
+describe("isChallengePage — Turnstile lives in an invisible iframe", () => {
+  it("treats a Turnstile on an otherwise empty page as a challenge, but not one embedded in real content", async () => {
+    const { isChallengePage } = await import("../src/fetch/diagnose.js");
+    const demo = `<html><head><title>x</title><script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script></head><body><div class="cf-turnstile"></div><h1>BY NODRIVER</h1></body></html>`;
+    expect(isChallengePage(demo)).toBe(true);
+    const login = `<html><body><main><h1>Sign up</h1><p>${"Real page content around an embedded widget. ".repeat(30)}</p><div class="cf-turnstile"></div></main></body></html>`;
+    expect(isChallengePage(login)).toBe(false);
+    // the classic interstitial still matches on its own markers
+    expect(isChallengePage(`<html><head><title>Just a moment...</title></head><body></body></html>`)).toBe(true);
+    expect(isChallengePage(`<html><body><main>ordinary page</main></body></html>`)).toBe(false);
+  });
+});
