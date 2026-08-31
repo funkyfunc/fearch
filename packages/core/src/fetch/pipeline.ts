@@ -399,7 +399,9 @@ export class Fetcher {
       contentType: "text/html",
       headers: {},
     };
-    const dx = diagnose(fetched, { isShell: detectShell(rendered.html) });
+    // A page the person just unlocked is never re-classified as a refusal — their pass is the final
+    // word on access. If what's behind the gate is nearly empty, that near-empty page is the answer.
+    const dx = rendered.handedOff ? null : diagnose(fetched, { isShell: detectShell(rendered.html) });
     if (dx) throw new DiagnosedError(url, finalizeAfterBrowser(dx, [...attempts, `browser: ${dx.kind}`]));
     return fetched;
   }

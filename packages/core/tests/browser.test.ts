@@ -121,6 +121,21 @@ describe("browser ladder (fake renderer)", () => {
     expect(calls.filter((c) => c.endsWith("/challenge")).length).toBe(2);
   });
 
+  it("never re-classifies a page the person unlocked as a refusal — their pass is the final word", async () => {
+    // Behind the gate is an almost-empty demo page; without the handoff this would be js_required.
+    const tiny = `<html><head><title>Demo</title></head><body><h1>Success!</h1></body></html>`;
+    const fake = {
+      enabled: () => true,
+      async render(u: string) {
+        return { html: tiny, finalUrl: u, status: 200, salvaged: false, handedOff: true, usedSession: false };
+      },
+    };
+    const { fetcher } = makeFetcher({ renderer: fake });
+    const doc = await fetcher.fetch(`${base}/challenge`);
+    expect(doc.source).toContain("challenge passed by you");
+    expect(doc.markdown).toContain("Success!");
+  });
+
   it("never renders when robots disallows, and reports when the browser is unavailable", async () => {
     const calls: string[] = [];
     const fake = {
