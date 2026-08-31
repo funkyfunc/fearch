@@ -87,3 +87,29 @@ posture* (`SPECTRUM.md`, "Two axes"). It is a set of dials, off by default.
 ## Confidence notes
 
 Both reports lean on secondary sources for several claims (IPRoyal/proxy-vendor blogs for DuckDuckGo's ToS; dev.to posts for OpenAlex/Semantic Scholar limits; a `pkg.go.dev` package page for arXiv's rules). The readability percentages in B's first table are unsourced estimates. The one primary academic source (arXiv 2606.14525, *Detecting Bot Detection*) measured datacenter vantage points, not residential ones. Treat the numbers as directional.
+
+## Report C (2026-08-31): "Human-Supervised Fetching vs Crawling" (`docs/research/`)
+
+Commissioned to stress-test the person-present rule before it shipped. Verdict of the report: the
+framing is "a highly defensible, emerging standard". Independent verification of its pillars:
+
+- **Verified, primary source.** OpenAI's live crawler docs (developers.openai.com/api/docs/bots,
+  fetched 2026-08-31) state of ChatGPT-User, verbatim: *"Because these actions are initiated by a
+  user, robots.txt rules may not apply."* This is the strongest citable industry precedent for the
+  person-present rule, and RFC 9309 does scope itself to "automatic clients known as crawlers".
+  DuckDuckGo's DuckAssistBot (real-time fetch, no training) is a second vendor on the same line.
+- **Real, but only as a dispute.** Amazon sued Perplexity over the Comet browser's agentic shopping
+  (filed 2025-11-05; Guardian/Verge coverage confirmed via HN). The report's centerpiece — a Ninth
+  Circuit ruling of 2026-08-04 ("Amazon.com Services, LLC v. Perplexity AI", agent = "tool, not a
+  person", access attributed to the human) — **could not be verified anywhere**: no HN, no news, no
+  reachable docket, and the timeline (appellate ruling nine months after filing) is improbable.
+  Treat the "ruling" as unconfirmed at best and likely a hallucinated synthesis. **Do not cite it.**
+  The argument stands on Van Buren / hiQ / Meta v. Bright Data without it.
+- **Directionally consistent, unverified specifics.** Cloudflare's Search/Agent/Training taxonomy and
+  its 2026 WAF defaults; the Perplexity stealth-crawling report (2025, real) is characterised fairly.
+- The report's four mitigations (human-passed challenges, one query per action, honest identity,
+  robots-by-default as an "ethical surplus") are exactly what shipped; no changes were made because
+  of the report. Its Web Bot Auth recommendation stays set aside for the key-publishing reason in
+  ROADMAP. Its "fetch logged-out" advice (Meta v. Bright Data) protects a *tool operator*; in the
+  person-present model the person is the user, and whether their own logged-in profile browses is
+  their choice (`FEARCH_INCOGNITO=1` exists for the other preference).
