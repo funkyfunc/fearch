@@ -222,8 +222,10 @@ describe("browser tier (real Chromium)", () => {
     try {
       await renderer.render(`${base}/ua`);
     } catch (e) {
-      if (e instanceof BrowserUnavailable) available = false;
-      else throw e;
+      if (!(e instanceof BrowserUnavailable)) throw e;
+      available = false;
+      // CI installs Chromium: unavailability there is broken setup, and silence would shed this coverage.
+      if (process.env.CI) throw e;
     }
   }, 60_000);
   afterAll(async () => {
@@ -231,8 +233,8 @@ describe("browser tier (real Chromium)", () => {
     server.close();
   });
 
-  it("renders a JS-only page and identifies itself honestly", async () => {
-    if (!available) return; // Chromium not installed on this machine
+  it("renders a JS-only page and identifies itself honestly", async (ctx) => {
+    if (!available) return ctx.skip(); // Chromium not installed on this machine
     const r = await renderer.render(`${base}/shell`);
     expect(r.html).toContain("Rendered Guide");
     expect(r.html).toContain("npm install rendered-guide");
@@ -266,8 +268,8 @@ describe("browser tier (real Chromium)", () => {
     }
   }, 90_000);
 
-  it("blocks private subresources and non-http schemes at the request gate", async () => {
-    if (!available) return;
+  it("blocks private subresources and non-http schemes at the request gate", async (ctx) => {
+    if (!available) return ctx.skip();
     // With allowPrivate the gate lets 127.0.0.1 through; verify a metadata-style host is still refused when not allowed.
     const strict = new BrowserRenderer(
       settingsFromEnv({ FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" }),

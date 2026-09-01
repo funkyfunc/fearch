@@ -158,8 +158,11 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
         args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
       });
       available = await bridge.waitForConnection(20_000);
-    } catch {
+      if (!available && process.env.CI) throw new Error("the real extension did not connect within 20 s in CI");
+    } catch (e) {
       available = false;
+      // CI installs Chromium: unavailability there is broken setup, and silence would shed this coverage.
+      if (process.env.CI) throw e;
     }
   }, 60_000);
   afterAll(async () => {
@@ -168,8 +171,8 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
     site.close();
   });
 
-  it("loads with the fixed ID, connects, renders a page with JavaScript, and closes its tab", async () => {
-    if (!available) return; // no Chromium here
+  it("loads with the fixed ID, connects, renders a page with JavaScript, and closes its tab", async (ctx) => {
+    if (!available) return ctx.skip(); // no Chromium here
     expect(ctx!.serviceWorkers()[0]?.url()).toContain(`chrome-extension://${EXTENSION_ID}/`);
     const r = new ExtensionRenderer(settings(), audit(), bridge);
     const out = await r.render(`${base}/page`);
