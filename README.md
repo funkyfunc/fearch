@@ -27,12 +27,13 @@ actually needed — installing fearch costs you nothing extra.
 MCP (any stdio client):
 
 ```json
-{ "mcpServers": { "fearch": { "command": "npx", "args": ["-y", "fearch"] } } }
+{ "mcpServers": { "fearch": { "command": "npx", "args": ["-y", "@funkyfunc/fearch"] } } }
 ```
 
-Claude Code: `claude mcp add fearch -- npx -y fearch`
+Claude Code: `claude mcp add fearch -- npx -y @funkyfunc/fearch`
 
-Or globally: `npm install -g fearch`, then the `fearch` CLI is on your PATH. From source:
+Or globally: `npm install -g @funkyfunc/fearch`, then the `fearch` CLI is on your PATH.
+(The package is scoped because npm reserves names this close to `fetch`; the command is still `fearch`.) From source:
 `git clone https://github.com/funkyfunc/fearch && cd fearch && npm install && npm run build`
 (the server is then `node packages/core/dist/cli.js`).
 
@@ -94,7 +95,7 @@ crawler, and it is the one this tool will not cross.
 
 ## Headless until it matters
 
-`npx fearch` just does the right thing. Pages render in an invisible headless browser — nothing pops
+`fearch` just does the right thing out of the box. Pages render in an invisible headless browser — nothing pops
 up, nothing flickers. The moment a site shows a bot check, that page opens **once** in a visible
 window for you: pass it the way you would in your own browsing, and everything continues; the
 clearance is remembered so the window doesn't come back. If nobody answers, no more windows for ten
@@ -109,7 +110,7 @@ you want it fixed:
 
 | Mode                  | What it is                                                                       | Engines                 |
 | --------------------- | -------------------------------------------------------------------------------- | ----------------------- |
-| `npx fearch` (auto)   | headless until a challenge, which opens in a window for you; extension preferred | Google, then DuckDuckGo |
+| `fearch` (auto)       | headless until a challenge, which opens in a window for you; extension preferred | Google, then DuckDuckGo |
 | `--browser headless`  | never a window; challenges are final — for servers and CI                        | DuckDuckGo              |
 | `--browser headed`    | your installed Chrome, always visible, tool-owned profile                        | Google, then DuckDuckGo |
 | `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | Google, then DuckDuckGo |

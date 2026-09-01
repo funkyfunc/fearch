@@ -1,5 +1,5 @@
 {
-  "name": "fearch",
+  "name": "@funkyfunc/fearch",
   "version": "2.0.0",
   "description": "Respectful web search and page reading for coding agents: an MCP server and CLI that identify themselves honestly, honour robots.txt, and treat a refusal as final.",
   "license": "MIT",

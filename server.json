@@ -10,20 +10,22 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "fearch",
+      "identifier": "@funkyfunc/fearch",
       "version": "2.0.0",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "packageArguments": [
         {
           "type": "named",
           "name": "--browser",
-          "description": "auto | headless | headed | extension | off — auto (default): headless until a site shows a challenge, which then opens in a visible window for the person to pass (their own Chrome via the bridge extension preferred when connected; graceful where no display exists). With a person on call, Google joins DuckDuckGo. The other values pin one behaviour: never visible, always visible, extension only, or no browser tier.",
+          "description": "auto | headless | headed | extension | off \u2014 auto (default): headless until a site shows a challenge, which then opens in a visible window for the person to pass (their own Chrome via the bridge extension preferred when connected; graceful where no display exists). With a person on call, Google joins DuckDuckGo. The other values pin one behaviour: never visible, always visible, extension only, or no browser tier.",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--robots",
-          "description": "default | strict | off — robots.txt for the tool's own fetching: user-initiated agent opt-outs (default), also training-crawler opt-outs (strict), or not consulted (off).",
+          "description": "default | strict | off \u2014 robots.txt for the tool's own fetching: user-initiated agent opt-outs (default), also training-crawler opt-outs (strict), or not consulted (off).",
           "isRequired": false
         },
         {
