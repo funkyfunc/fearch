@@ -16,7 +16,6 @@ interface Q {
   id: string;
   question: string;
   query: string;
-  kind?: "web" | "code" | "qa" | "packages" | "docs";
   expect_host: string;
   must_contain: string[];
   must_not_contain?: string[];
@@ -45,15 +44,13 @@ interface R {
 }
 
 const results: R[] = [];
-let fellBack = 0;
 for (const q of questions.filter((q) => !filter || q.id.startsWith(filter))) {
   const r: R = { id: q.id, ok: false, searchMs: 0, fetchMs: 0, provider: "", missing: [], forbidden: [] };
   try {
     let t = Date.now();
-    const o = await state.search.search({ query: q.query, maxResults: 6, kind: q.kind });
+    const o = await state.search.search({ query: q.query, maxResults: 6 });
     r.searchMs = Date.now() - t;
     r.provider = o.providers.map((p) => p.name).join("+");
-    if (o.fellBackToFederation) fellBack++;
     const hit = o.results.find((x) => hostMatches(x.url, q.expect_host)) ?? o.results[0];
     r.hit = hit?.url;
     if (!hit) throw new Error("no results");
@@ -77,11 +74,6 @@ for (const q of questions.filter((q) => !filter || q.id.startsWith(filter))) {
 
 const passed = results.filter((r) => r.ok).length;
 console.log(`\n${passed}/${results.length} passed`);
-if (fellBack) {
-  console.log(
-    `NOTE: ${fellBack} web queries fell back to first-party APIs because no general-web provider answered (Exa's keyless tier rate-limits after bursts). These results measure the fallback path, not the primary one; wait an hour or set EXA_API_KEY/TAVILY_API_KEY to measure the primary path.`,
-  );
-}
 mkdirSync(join(here, "results"), { recursive: true });
 writeFileSync(
   join(here, "results", "latest.json"),
@@ -92,7 +84,6 @@ writeFileSync(
       robotsPolicy: state.settings.robotsPolicy,
       browser: state.settings.browser,
       providers: state.search.describe(),
-      webFallbacks: fellBack,
       passed,
       total: results.length,
       results,

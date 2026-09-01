@@ -24,11 +24,6 @@ export function renderResults(query: string, o: SearchOutcome): string {
       `Note: result pages of ${engines.join(", ")} were opened in the browser tier (one page per search, no stealth); see the Provider line for robots and logging facts.`,
     );
   }
-  if (o.fellBackToFederation) {
-    lines.push(
-      "Note: no general-web provider answered; these come from keyless first-party APIs (Stack Overflow, MDN, Hacker News, Wikipedia, GitHub). Try a more specific `kind`, or ask the user for a URL.",
-    );
-  }
   for (const n of [...new Set(o.notes ?? [])]) lines.push(`Note: ${n}`);
   lines.push("");
   o.results.forEach((r, i) => {

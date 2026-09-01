@@ -89,7 +89,7 @@ d("live", () => {
     const code = text(
       await c.callTool({
         name: "search",
-        arguments: { query: "duckduckgo metasearch python", kind: "code", max_results: 5 },
+        arguments: { query: "duckduckgo metasearch python site:github.com", max_results: 5 },
       }),
     );
     expect(code).toContain("via github");

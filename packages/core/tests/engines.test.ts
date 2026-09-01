@@ -196,28 +196,13 @@ describe("engine eligibility — the dials play together", () => {
       new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }), "off"),
       new Politeness(1, { count: 1, windowMs: 1 }),
     );
-    const reg = new SearchRegistry(
-      s,
-      new Cache(null),
-      new Audit(s),
-      {
-        get: async () => {
-          throw new Error("no");
-        },
-      } as never,
-      engines,
-    );
+    const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
     expect(reg.web.map((p) => p.name)).toEqual(["bing", "duckduckgo", "google"]);
     const s2 = settings({ FEARCH_ENGINES: "google,duckduckgo" });
     const reg2 = new SearchRegistry(
       s2,
       new Cache(null),
       new Audit(s2),
-      {
-        get: async () => {
-          throw new Error("no");
-        },
-      } as never,
       engineProviders(
         s2,
         fakeBrowser(async () => ({ html: "", status: 200 })),
@@ -226,7 +211,7 @@ describe("engine eligibility — the dials play together", () => {
       ),
     );
     expect(reg2.web.map((p) => p.name)).toEqual(["duckduckgo"]);
-    expect(reg2.describe()).toMatch(/engines listed but not used: google \(www\.google\.com disallows/);
+    expect(reg2.describe()).toMatch(/listed but not used: google \(www\.google\.com disallows/);
   });
 
   it("tells the model inline when a listed engine was skipped by the robots dial", async () => {
@@ -241,17 +226,7 @@ describe("engine eligibility — the dials play together", () => {
       robots,
       new Politeness(1, { count: 100, windowMs: 60_000 }),
     );
-    const reg = new SearchRegistry(
-      s,
-      new Cache(null),
-      new Audit(s),
-      {
-        get: async () => {
-          throw new Error("no");
-        },
-      } as never,
-      engines,
-    );
+    const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
     const out = await reg.search({ query: "turndown", maxResults: 3 });
     expect(out.providers.map((p) => p.name)).toEqual(["duckduckgo"]);
     expect(out.notes.join("\n")).toMatch(
@@ -437,17 +412,7 @@ describe("google AI overview", () => {
       new Politeness(1, { count: 100, windowMs: 60_000 }),
     );
     const cache = new Cache(null);
-    const reg = new SearchRegistry(
-      s,
-      cache,
-      new Audit(s),
-      {
-        get: async () => {
-          throw new Error("no");
-        },
-      } as never,
-      engines,
-    );
+    const reg = new SearchRegistry(s, cache, new Audit(s), engines);
     const out = await reg.search({ query: "what is a rest api", maxResults: 3 });
     expect(out.summary?.provider).toBe("google");
     expect(out.summary?.text).toMatch(/^A REST API/);

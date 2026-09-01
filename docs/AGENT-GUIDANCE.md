@@ -8,10 +8,8 @@ well. It is short on purpose.
 
 You have `search` and `fetch`.
 
-- Use `search` to find sources. Use `kind` when you know the shape of what you want:
-  `code` (GitHub), `qa` (StackOverflow), `packages` (npm, crates.io), `docs` (MDN, Wikipedia),
-  `papers` (arXiv, OpenAlex), `community` (Hacker News).
-  Add `fetch_top=2` when you will read the top results anyway — it saves a round trip.
+- Use `search` to find sources. Add `fetch_top=2` when you will read the top results anyway — it
+  saves a round trip. `site="…"` restricts to a domain; `recency="w"` to the past week.
 - Use `fetch` to read a page. Do not page through long pages: use `mode="focus", query="..."` to get
   only the relevant sections, `mode="section", query="Heading"` for one section, or
   `mode="pattern", query="regex"` to check whether a page mentions something.

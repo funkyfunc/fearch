@@ -6,13 +6,22 @@ retry-after-block.
 
 ## Guiding expectation
 
-The target is "Claude Code's WebFetch for harnesses that don't have one, free": an honest client that
-works on the sites developers actually read (docs, GitHub, registries, Q&A, blogs, PDFs) and reports
-clearly when a site chooses not to serve automated readers. It will hit the same walls Claude Code's
+The target is honest, free web search and page reading for any agent — not just coding agents: a
+client that works on the pages people actually read (docs, news, reference, GitHub, Q&A, blogs,
+PDFs) and reports clearly when a site chooses not to serve automated readers. It will hit the same walls Claude Code's
 WebFetch hits — Cloudflare-challenged consumer sites, paywalls, JS-only apps, most social media — and it
 is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
+
+- **General-use refocus (2026-08-31, user's positioning call: "fearch should be for general use").**
+  Search now does exactly one thing: engines, or an honest no. Removed the automatic federation
+  fallback (its query classifier guessed "technical vs not" and routed legal questions to MDN —
+  silently wrong results are the worst failure mode), then the `kind` routing and all eleven
+  first-party search providers with it. Engine failures are now surfaced as notes (a robots timeout
+  is named, not buried); `recency` is implemented by the engines themselves (DDG `df=`, Google
+  `tbs=qdr:`); `FEARCH_SEARCH_MODE` is `all|off`. The fetch fast paths (GitHub, PyPI, npm,
+  StackOverflow, arXiv via their APIs) are untouched — they are about reading pages well.
 
 - **`--browser auto`, the new default (2026-08-31, user's UX direction: "headless when I can, surface
   to me when I can't, graceful when nothing can be shown").** Routine renders headless with the tool
@@ -61,7 +70,6 @@ is not a goal to get through them.
 | 7 | **Volatility-aware cache TTLs** | Flat 24 h is wrong for both news and API docs. webfetch classifies `realtime / recent / stable`. | TTL chosen from host class + freshness signals; `[cache: hit, 3h old]` provenance shown; `fresh=true` escape hatch on `fetch`. |
 | 8 | **MCP registry + plugin packaging** | webfetch's `server.json` + a code-free plugin pinned to `@latest` never goes stale. | `server.json` published; `npx fearch` works from a clean machine; a Claude Code plugin dir; a packaging test guards version agreement. |
 | 9 | **Routing guidance shipped with the server** | CC-Web writes a CLAUDE.md snippet and a hook so the model knows when to use it. | A `docs/AGENT-GUIDANCE.md` snippet users paste into their harness's system prompt; optional skill file. |
-| 10 | **More first-party federation** | Keyless official APIs are the respectful growth path. | docs.rs, Go pkg index, RubyGems, Hacker News (Algolia API), ReadTheDocs search; `kind` list grows accordingly. |
 | 11 | **Team/shared mode** | Corporate users share an egress; a shared cache halves traffic. | Streamable-HTTP transport behind auth; cache in a shared sqlite/redis; audit log to a file per user. |
 
 ## v2.3 — binaries and browser ergonomics

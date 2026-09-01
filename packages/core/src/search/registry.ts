@@ -1,21 +1,20 @@
 /**
- * Orders providers and runs a query: eligible engines via the browser (DuckDuckGo lite by default) →
- * keyless first-party federation as the last resort. `kind`-scoped queries go straight to the
- * matching federation providers.
+ * Orders the eligible engines and runs a query through them, in --engines order, via the browser
+ * tier. Search does one thing: engines, or an honest no. When no engine answers, the failure names
+ * every reason and what to do next; nothing is silently substituted (an automatic fallback used to
+ * guess a query's shape and route legal questions to MDN — confidently irrelevant results are worse
+ * than a clear no).
  */
 
 import { createHash } from "node:crypto";
 import type { Audit } from "../audit.js";
 import type { Cache } from "../cache.js";
 import type { Settings } from "../config.js";
-import type { HttpLike } from "../fetch/types.js";
 import type { EngineProvider } from "./engines.js";
-import { federationProviders } from "./federation.js";
 import {
   dedupe,
   SearchError,
   type EngineSummary,
-  type SearchKind,
   type SearchProvider,
   type SearchQuery,
   type SearchResult,
@@ -27,46 +26,31 @@ export interface SearchOutcome {
   fromCache: boolean;
   /** The engine's own generated answer box, when the page carried one. Labelled, never merged into results. */
   summary?: EngineSummary;
-  fellBackToFederation: boolean;
   /** Human-readable notes about what happened (rate limits, cooldowns), shown to the model. */
   notes: string[];
-}
-
-/** Round-robin merge so no single provider crowds the others out of a small result budget. */
-export function interleave(lists: SearchResult[][]): SearchResult[] {
-  const out: SearchResult[] = [];
-  const max = Math.max(0, ...lists.map((l) => l.length));
-  for (let i = 0; i < max; i++) for (const l of lists) if (l[i]) out.push(l[i]);
-  return out;
 }
 
 const RATE_LIMIT_COOLDOWN_MS = 10 * 60_000;
 
 export class SearchRegistry {
   readonly web: SearchProvider[] = [];
-  readonly federation: SearchProvider[];
   private readonly cooldown = new Map<string, { until: number; why: string }>();
 
   constructor(
     private readonly settings: Settings,
     private readonly cache: Cache,
     private readonly audit: Audit,
-    http: HttpLike,
     /** Search-engine result-page providers (browser tier), in preference order; only available ones are used. */
     private readonly engines: EngineProvider[] = [],
   ) {
-    // "first-party" mode: no engine result pages at all (queries stay with the sites they concern).
-    // Order: eligible engines via the browser (DuckDuckGo lite by default: keyless, robots-permitted,
-    // unlogged by DDG) → first-party federation.
-    this.web = settings.searchMode === "all" ? engines.filter((p) => p.available()) : [];
-    this.federation = settings.searchMode === "off" ? [] : federationProviders(http);
+    this.web = settings.searchMode === "off" ? [] : engines.filter((p) => p.available());
   }
 
   describe(): string {
     if (this.settings.searchMode === "off") return "search disabled (FEARCH_SEARCH_MODE=off)";
     const names = this.web.map((p) => p.name);
     const off = this.unusedEngines().map((x) => `${x.name} (${x.why})`);
-    return `mode=${this.settings.searchMode}; web: ${names.join(" → ") || "(none)"}; federation: ${this.federation.map((p) => p.name).join(", ")}${off.length ? `; engines listed but not used: ${off.join("; ")}` : ""}`;
+    return `engines: ${names.join(" → ") || "(none)"}${off.length ? `; listed but not used: ${off.join("; ")}` : ""}`;
   }
 
   /** Engines the operator listed in --engines that the other dials make ineligible. */
@@ -75,26 +59,6 @@ export class SearchRegistry {
       const why = p.ineligibleReason();
       return why ? [{ name: p.name, why }] : [];
     });
-  }
-
-  private forKind(kind: SearchKind): SearchProvider[] {
-    return this.federation.filter((p) => p.kinds.includes(kind));
-  }
-
-  /**
-   * Peers for the general-web fallback (no web provider answered). Q&A, web docs and repositories
-   * first; Wikipedia only when the query doesn't look like code; package indexes never (they are
-   * for `kind: packages`).
-   */
-  private webFallback(query: string): SearchProvider[] {
-    const technical =
-      /[A-Z][a-z]+[A-Z]|[a-z]+\.[a-z]+\(|[_:/()<>{}=]|\b(npm|pip|cargo|api|error|exception|config|install|version|function|class|async)\b/i.test(
-        query,
-      ) || query.split(/\s+/).length > 5;
-    const order = technical
-      ? ["stackexchange", "mdn", "hackernews", "github"]
-      : ["stackexchange", "mdn", "wikipedia", "hackernews", "marginalia", "github"];
-    return order.map((n) => this.federation.find((p) => p.name === n)).filter((p): p is SearchProvider => !!p);
   }
 
   async search(q: SearchQuery): Promise<SearchOutcome> {
@@ -109,12 +73,11 @@ export class SearchRegistry {
     const cached = this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
-      const providers = [...this.web, ...this.federation].filter((p) => cached.providers.includes(p.name));
+      const providers = this.web.filter((p) => cached.providers.includes(p.name));
       return {
         results: cached.results,
         providers,
         fromCache: true,
-        fellBackToFederation: false,
         notes: [],
         summary: cached.summary,
       };
@@ -125,7 +88,6 @@ export class SearchRegistry {
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
     let summary: EngineSummary | undefined;
-    let fellBack = false;
     /** A provider ahead of the first one that answered failed or was skipped (chain searches only). */
     let preferredFailed = false;
     const now = Date.now();
@@ -155,6 +117,9 @@ export class SearchRegistry {
           const why = p.posture === "browser" ? `${p.name} showed its bot-check page` : "rate-limited";
           this.cooldown.set(p.name, { until: now + RATE_LIMIT_COOLDOWN_MS, why });
           notes.push(`${p.name}: ${why}`);
+        } else {
+          // Say why an answer is missing (a robots.txt timeout, a parse failure) instead of burying it.
+          notes.push(`${p.name}: ${msg.split("\n")[0].slice(0, 160)}`);
         }
         return [];
       }
@@ -169,34 +134,19 @@ export class SearchRegistry {
         results = dedupe([...results, ...got]);
       }
     };
-    // Peers: run all, then interleave so a small budget still shows every provider.
-    const runPeers = async (providers: SearchProvider[]) => {
-      const lists = await Promise.all(providers.map(runOne));
-      results = dedupe([...results, ...interleave(lists)]);
-    };
-
-    if (q.kind && q.kind !== "web") {
-      await runPeers(this.forKind(q.kind));
-    } else {
-      const chain = [...this.web];
-      for (const u of this.unusedEngines()) notes.push(`${u.name}: listed in --engines but not used — ${u.why}`);
-      await runChain(chain);
-      if (!results.length) {
-        fellBack = true;
-        await runPeers(this.webFallback(q.query));
-      }
-    }
+    for (const u of this.unusedEngines()) notes.push(`${u.name}: listed in --engines but not used — ${u.why}`);
+    await runChain(this.web);
 
     if (!results.length)
       throw new SearchError(
-        `No results from any provider (${[...errors, ...notes].join("; ") || "no providers configured"}).`,
+        `No results (${[...new Set([...errors, ...notes])].join("; ") || "no engines configured"}). ` +
+          "Fetch a URL you already know, or retry after any cooldown named above.",
       );
     results = results.slice(0, q.maxResults);
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than
     // 15 minutes of the fallback's answer.
-    if (!preferredFailed && !fellBack)
-      this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
-    return { results, providers: used, fromCache: false, fellBackToFederation: fellBack, notes, summary };
+    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
+    return { results, providers: used, fromCache: false, notes, summary };
   }
 }

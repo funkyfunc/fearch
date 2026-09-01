@@ -18,12 +18,12 @@ export function searchDescription(s: Settings): string {
     ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any challenge opened in a visible window for them to pass; the tool never solves anything.`
     : s.robotsPolicy === "off"
       ? `robots.txt is not consulted on this server (operator's choice — user-agent posture); the tool still identifies itself honestly, paces requests, and never solves challenges.`
-      : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser; first-party APIs).`;
+      : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser).`;
   return `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
 
 Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
 
-\`kind\` routes to first-party APIs: "code" (GitHub repos/issues), "qa" (StackOverflow), "packages" (npm, crates.io), "docs" (MDN, Wikipedia), "papers" (arXiv, OpenAlex, Semantic Scholar), "community" (Hacker News). Prefer a kind when the question fits one — those APIs are more reliable and more precise than general web search. Omit it for general web search. \`site="docs.python.org"\` restricts to a domain; \`recency="w"\` limits to the past week (d/w/m/y). Results carry a date when the provider knows one. Quote exact error strings. If results are poor, rephrase rather than paging.
+\`site="docs.python.org"\` restricts to a domain; \`recency="w"\` limits to the past week (d/w/m/y). Results carry a date when the engine shows one. Quote exact error strings. If results are poor, rephrase rather than paging.
 
 ${posture} It never impersonates a browser or hides that it is automated.`;
 }
@@ -54,12 +54,6 @@ const SEARCH_INPUT = {
   max_results: z.number().int().min(1).max(20).default(8).describe("Number of results (default 8)."),
   recency: z.enum(["d", "w", "m", "y"]).optional().describe("Restrict to the past day/week/month/year."),
   site: z.string().optional().describe("Restrict results to this domain, e.g. 'docs.python.org'."),
-  kind: z
-    .enum(["web", "code", "qa", "packages", "docs", "papers", "community"])
-    .optional()
-    .describe(
-      "Route to first-party APIs: code=GitHub, qa=StackOverflow, packages=npm+crates.io, docs=MDN+Wikipedia, papers=arXiv+OpenAlex+Semantic Scholar, community=Hacker News.",
-    ),
   allowed_domains: z.array(z.string()).optional().describe("Only include results from these domains."),
   blocked_domains: z.array(z.string()).optional().describe("Never include results from these domains."),
   fetch_top: z
@@ -141,7 +135,6 @@ export function buildServer(app: App): McpServer {
           site: args.site?.trim() || undefined,
           allowedDomains: args.allowed_domains,
           blockedDomains: args.blocked_domains,
-          kind: args.kind,
         });
         await progress(1, `search done via ${outcome.providers.map((p) => p.name).join("+") || "cache"}`);
         await attachExcerpts(app, outcome.results, query, args.fetch_top, (done, r) =>

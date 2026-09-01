@@ -1,6 +1,5 @@
 /** Search provider contract shared by every backend, plus result normalization. */
 
-export type SearchKind = "web" | "code" | "qa" | "packages" | "docs" | "papers" | "community";
 export type Recency = "d" | "w" | "m" | "y";
 
 export interface SearchQuery {
@@ -10,7 +9,6 @@ export interface SearchQuery {
   site?: string;
   allowedDomains?: string[];
   blockedDomains?: string[];
-  kind?: SearchKind;
 }
 
 export interface SearchResult {
@@ -48,12 +46,10 @@ export interface SearchResponse {
 }
 
 export interface SearchProvider {
-  /** Short id shown in output, e.g. "exa-hosted", "github". */
+  /** Short id shown in output, e.g. "google", "duckduckgo". */
   name: string;
   /** Human description of where queries go, shown in the result header. */
   disclosure: string;
-  /** Which kinds this provider serves; "web" providers are general-purpose. */
-  kinds: SearchKind[];
   /** Posture per docs/SPECTRUM.md: official API, or a result page opened in the browser tier. */
   posture: "official" | "browser";
   available(): boolean;

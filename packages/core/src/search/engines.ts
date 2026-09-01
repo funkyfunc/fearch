@@ -26,6 +26,7 @@ import {
   filterDomains,
   SearchError,
   type EngineSummary,
+  type Recency,
   type SearchProvider,
   type SearchResponse,
   type SearchQuery,
@@ -40,7 +41,7 @@ export interface EngineSpec {
   robotsPermitted: boolean;
   /** What the engine says about queries (shown in the disclosure). */
   privacy: string;
-  url(query: string): string;
+  url(query: string, recency?: Recency): string;
   parse(html: string, provider: string): SearchResult[];
   isChallenge(status: number, html: string, url?: string): boolean;
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
@@ -300,7 +301,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "lite.duckduckgo.com",
     robotsPermitted: true,
     privacy: "DDG does not log searches",
-    url: (q) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=us-en`,
+    url: (q, r) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=us-en${r ? `&df=${r}` : ""}`,
     parse: parseLite,
     isChallenge: ddgChallenge,
     resultsSelector: "a.result-link",
@@ -322,7 +323,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.google.com",
     robotsPermitted: false,
     privacy: "queries are logged by Google, tied to any Google session in the tool profile",
-    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en&num=10`,
+    url: (q, r) => `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en&num=10${r ? `&tbs=qdr:${r}` : ""}`,
     parse: parseGoogle,
     isChallenge: googleChallenge,
     resultsSelector: "a h3",
@@ -332,7 +333,6 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
 
 export class EngineProvider implements SearchProvider {
   readonly name: string;
-  readonly kinds: SearchProvider["kinds"] = ["web"];
   readonly posture: SearchProvider["posture"] = "browser";
 
   constructor(
@@ -384,7 +384,7 @@ export class EngineProvider implements SearchProvider {
 
   async search(q: SearchQuery): Promise<SearchResponse> {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
-    const url = this.spec.url(query);
+    const url = this.spec.url(query, q.recency);
     // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
     // eligible through the person-present or robots-off posture are the person's own browsing — the
     // crawler rules don't apply, so robots.txt is not consulted for their result pages.

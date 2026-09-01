@@ -87,7 +87,7 @@ export interface Settings {
   browserStatePath: string;
   browserTimeoutMs: number;
   browserMaxConcurrent: number;
-  /** all: third-party services + first-party APIs; first-party: only the sites' own APIs; off: no search tool activity. */
+  /** all: the configured engines; off: no search tool activity at all. */
   searchMode: (typeof SEARCH_MODES)[number];
   /** Minimum gap between requests to specific hosts (ms), e.g. arXiv asks for 3 s. */
   hostGapsMs: Record<string, number>;
@@ -138,7 +138,7 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
 export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
 export const ROBOTS_POLICIES = ["default", "strict", "off"] as const;
 export const BROWSER_MODES = ["auto", "headless", "headed", "extension", "off"] as const;
-export const SEARCH_MODES = ["all", "first-party", "off"] as const;
+export const SEARCH_MODES = ["all", "off"] as const;
 
 /** Could this machine show the person a browser window? macOS/Windows sessions can; elsewhere only with a display. */
 function displayAvailable(env: Env, platform: string): boolean {
@@ -211,8 +211,6 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     hostGapsMs: {
       "export.arxiv.org": 3000,
       "arxiv.org": 3000,
-      "api.semanticscholar.org": 3000,
-      "api2.marginalia-search.com": 4000,
     },
   };
 }

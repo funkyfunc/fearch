@@ -52,7 +52,7 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
   const browser = createBrowser(settings, audit);
   const fetcher = new Fetcher(settings, cache, transport, robots, politeness, audit, browser);
   const engines = engineProviders(settings, browser, robots, politeness);
-  const search = new SearchRegistry(settings, cache, audit, fetcher.http("search", { budget: false }), engines);
+  const search = new SearchRegistry(settings, cache, audit, engines);
 
   return {
     settings,

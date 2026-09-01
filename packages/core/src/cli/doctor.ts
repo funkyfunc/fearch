@@ -36,10 +36,7 @@ export async function doctor(app: App): Promise<number> {
   // One keyless search.
   try {
     const o = await app.search.search({ query: "fearch doctor check", maxResults: 2 });
-    ok(
-      "search",
-      `${o.results.length} result(s) via ${o.providers.map((p) => p.name).join("+") || "cache"}${o.fellBackToFederation ? " (federation fallback)" : ""}`,
-    );
+    ok("search", `${o.results.length} result(s) via ${o.providers.map((p) => p.name).join("+") || "cache"}`);
   } catch (e) {
     warn("search", (e as Error).message);
     if (s.logLevel === "debug") process.stderr.write(`${(e as Error).stack}\n`);

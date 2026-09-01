@@ -154,7 +154,7 @@ describe("server", () => {
     const c = await client(state);
     const r = await c.callTool({ name: "search", arguments: { query: "anything" } });
     expect(r.isError).toBe(true);
-    expect(text(r)).toContain("No results from any provider");
+    expect(text(r)).toContain("No results (");
   });
 });
 

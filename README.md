@@ -1,17 +1,17 @@
 # fearch
 
-Web search and page reading for coding agents — an MCP server and CLI that are **respectful enough to
-run at work**. It identifies itself honestly, honours `robots.txt`, waits between requests, and treats
+Web search and page reading for agents — an MCP server and CLI that are **respectful enough to run
+at work**. It identifies itself honestly, honours `robots.txt`, waits between requests, and treats
 a refusal as final. Free: no keys, no accounts.
 
 Two tools:
 
-- **`search`** — DuckDuckGo lite opened in a real browser (the one engine whose robots.txt permits
-  it), falling back to keyless first-party APIs; or those APIs directly via `kind`: GitHub (`code`),
-  Stack Overflow (`qa`), npm + crates.io (`packages`), MDN + Wikipedia (`docs`), arXiv + OpenAlex
-  (`papers`), Hacker News (`community`). `fetch_top=N` inlines excerpts of the top results so one call
-  replaces search-then-fetch. Every result names its provider. Searches through Google include the
-  page's AI Overview when present — labelled as Google's unverified summary, with its sources.
+- **`search`** — real search engines, honestly: Google and DuckDuckGo by default when a person is on
+  call (Bing opt-in), DuckDuckGo lite alone where nothing can reach you. `fetch_top=N` inlines
+  excerpts of the top results so one call replaces search-then-fetch. Every result names its
+  provider. Searches through Google include the page's AI Overview when present — labelled as
+  Google's unverified summary, with its sources. When no engine answers, the failure says exactly
+  why and what to do next — nothing is ever silently substituted.
 - **`fetch`** — main content as markdown, **keeping code blocks and tables** (pure HTML→markdown on
   the main container, guarded by counting `<pre>` in vs. fences out; Readability only as a fallback).
   Long pages: `mode=focus` (BM25 sections for a phrase), `mode=section` (one heading), `mode=pattern`
@@ -105,7 +105,7 @@ connected — no window management at all, just a tab that appears if a check ev
 
 Because any check reaches a person, a person is on call — so Google (with its AI Overview) joins
 DuckDuckGo by default wherever a window could reach you; where it couldn't, fearch stays a
-self-identified crawler on DuckDuckGo and the first-party APIs. `--browser` pins one behaviour when
+self-identified crawler on DuckDuckGo alone. `--browser` pins one behaviour when
 you want it fixed:
 
 | Mode                  | What it is                                                                       | Engines                 |
@@ -116,8 +116,8 @@ you want it fixed:
 | `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | Google, then DuckDuckGo |
 | `--browser off`       | no browser tier at all                                                           | DuckDuckGo              |
 
-Search tries engines in order, then first-party APIs; a bot-check page is that engine's "no"
-(10-minute cooldown) unless you pass it. The tool never solves anything. Bing exists but is opt-in
+Search tries the engines in order — and that's all: no hidden fallback ever substitutes a different
+source. A bot-check page is an engine's "no" (10-minute cooldown) unless you pass it. The tool never solves anything. Bing exists but is opt-in
 (`--engines bing,duckduckgo`): it has served decoy results to automated browsers, the worst failure
 mode. The output says when a listed engine was skipped and why.
 
@@ -152,8 +152,8 @@ The whole flag surface, on purpose:
 Everything else is a `FEARCH_*` environment variable — escape hatches, not the interface:
 `FEARCH_HANDOFF=0` (challenges are surfaced to you by default whenever a window could reach you),
 `FEARCH_INCOGNITO=1`, `FEARCH_BROWSER_SESSION=1` (headed: send tool-profile cookies to ordinary
-pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_MODE=first-party|off`
-(queries only reach the sites they concern / no search at all), `FEARCH_AUDIT_LOG=off|<file>`,
+pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_MODE=off`
+(no search tool at all), `FEARCH_AUDIT_LOG=off|<file>`,
 `FEARCH_LOG_LEVEL`, `FEARCH_LOG_FILE`, `FEARCH_CACHE_DIR`, `FEARCH_MAX_CHARS` (12000),
 `FEARCH_TIMEOUT_MS` (30000), `FEARCH_MAX_BYTES` (10 MB), `FEARCH_PER_HOST_DELAY_MS` (1000),
 `FEARCH_BUDGET_COUNT`/`_WINDOW_MS` (60 / 10 min), `FEARCH_HANDOFF_TIMEOUT_MS` (180 s),
@@ -166,15 +166,15 @@ the OS trust store (on managed machines the CA is already there).
 
 ## Where queries go
 
-| Provider                                                                                                                     | When                                            | Notes                                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| DuckDuckGo lite (default)                                                                                                    | always eligible                                 | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches            |
-| Google / Bing result pages                                                                                                   | person present (or `--robots off`); Bing listed | their robots.txt disallows `/search` for crawlers — with you overseeing the browser it's your own browsing, and says so |
-| First-party APIs (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, HN, arXiv, OpenAlex, Semantic Scholar, Marginalia) | `kind` searches and the fallback                | keyless, official; CC BY-SA content is attributed                                                                       |
+| Provider                   | When                                            | Notes                                                                                                                   |
+| -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| DuckDuckGo lite (default)  | always eligible                                 | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches            |
+| Google / Bing result pages | person present (or `--robots off`); Bing listed | their robots.txt disallows `/search` for crawlers — with you overseeing the browser it's your own browsing, and says so |
 
-No third-party search services — keyed or keyless — by design: your queries reach an engine you chose
-or the site they concern, nothing else. Searches are cached 15 minutes. The first-party APIs are
-strong for developer questions, weak for general prose.
+No third-party search services — keyed or keyless — and no hidden fallback sources, by design: your
+queries reach an engine you chose, nothing else. Searches are cached 15 minutes. (Reading pages is a
+different story: `fetch` uses official APIs for GitHub, PyPI, npm, Stack Overflow and arXiv URLs —
+that is about reading those pages well, and queries never go there.)
 
 ## Bot info
 
@@ -194,8 +194,7 @@ If you operate a website and see this agent in your logs:
 ## Tool reference
 
 ```
-search(query, max_results=8, recency?: d|w|m|y, site?,
-       kind?: web|code|qa|packages|docs|papers|community, allowed_domains?, blocked_domains?, fetch_top=0..3)
+search(query, max_results=8, recency?: d|w|m|y, site?, allowed_domains?, blocked_domains?, fetch_top=0..3)
 
 fetch(url | urls[≤5], mode=read|focus|section|pattern|raw, query?, max_chars=12000,
       cursor?, include_links=false, context_chars=200, archive=false)

@@ -9,7 +9,7 @@ import { describeError, isExpected } from "../errors.js";
 import { DiagnosedError } from "../fetch/pipeline.js";
 import { readDocument, type ReadMode } from "../fetch/read.js";
 import { attachExcerpts } from "../search/excerpt.js";
-import type { Recency, SearchKind } from "../search/provider.js";
+import type { Recency } from "../search/provider.js";
 import { renderResults } from "../search/render.js";
 import { num, parseArgs, str, type Flags } from "./args.js";
 import { doctor } from "./doctor.js";
@@ -86,7 +86,6 @@ async function searchCommand(app: ReturnType<typeof createApp>, query: string, f
     const outcome = await app.search.search({
       query,
       maxResults: num(flags.n, 8),
-      kind: str(flags.kind) as SearchKind | undefined,
       site: str(flags.site),
       recency: str(flags.recency) as Recency | undefined,
     });

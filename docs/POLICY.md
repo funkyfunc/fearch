@@ -163,14 +163,12 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 - Page fetches go directly from this machine to the target host (through `HTTPS_PROXY` if the
   environment sets one). No reader proxies, no archive fallbacks unless the model explicitly asks for
   `archive: true` on a page the target reported gone (404/410).
-- Search queries go to the configured engines only. With no configuration they go to DuckDuckGo lite
-  via the self-identified browser (below; DuckDuckGo states it does not log searches), then to the
-  first-party APIs. The provider is named in every result header. There are no third-party search
-  services of any kind — keyed or keyless — and no query ever leaves for one. Keyless first-party APIs
-  (GitHub, Stack Exchange, npm, crates.io, MDN, Wikipedia, Hacker News, arXiv, OpenAlex, Semantic
-  Scholar, Marginalia) are used for `kind`-scoped searches and as the fallback.
-  `FEARCH_SEARCH_MODE=first-party` disables the engine result pages so a query only ever reaches the
-  site it concerns; `off` disables the search tool entirely.
+- Search queries go to the configured engines only — nowhere else, ever. The engine is named in
+  every result header. There are no third-party search services of any kind — keyed or keyless — no
+  hidden fallback sources, and no query ever leaves for one; when no engine answers, the search fails
+  with the reasons. `FEARCH_SEARCH_MODE=off` disables the search tool entirely. (The fetch tool's
+  documented API fast paths — GitHub, PyPI, npm, Stack Overflow, arXiv — are for reading URLs the
+  model already has; search queries never reach them.)
 - The browser identifies itself as ordinary Chrome with `From:`/`X-Agent:` naming this tool (new-headless
   Chromium; see *The browser tier*). Cloudflare's
   Web Bot Auth (signed requests) is **not** used: a locally-run open-source tool cannot hold a private

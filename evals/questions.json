@@ -17,7 +17,6 @@
     "id": "js-array-flatmap",
     "question": "What does Array.prototype.flatMap do?",
     "query": "Array.prototype.flatMap",
-    "kind": "docs",
     "expect_host": "developer.mozilla.org",
     "must_contain": ["flatMap"]
   },
@@ -25,7 +24,6 @@
     "id": "js-fetch-abort",
     "question": "How do I abort a fetch request in JavaScript?",
     "query": "AbortController fetch abort signal",
-    "kind": "docs",
     "expect_host": "developer.mozilla.org",
     "must_contain": ["AbortController"]
   },
@@ -54,7 +52,6 @@
     "id": "so-yield",
     "question": "What does the yield keyword do in Python?",
     "query": "python yield keyword generator",
-    "kind": "qa",
     "expect_host": "stackoverflow.com",
     "must_contain": ["generator"]
   },
@@ -62,7 +59,6 @@
     "id": "gh-mcp-sdk",
     "question": "Where is the TypeScript MCP SDK repository?",
     "query": "modelcontextprotocol typescript-sdk",
-    "kind": "code",
     "expect_host": "github.com",
     "must_contain": ["typescript-sdk"]
   },
@@ -70,7 +66,6 @@
     "id": "pkg-turndown",
     "question": "Which npm package converts HTML to Markdown with GFM tables?",
     "query": "turndown plugin gfm",
-    "kind": "packages",
     "expect_host": "npmjs.com",
     "must_contain": ["turndown-plugin-gfm"]
   },
@@ -113,7 +108,6 @@
     "id": "wiki-mcp",
     "question": "What is the Model Context Protocol?",
     "query": "Model Context Protocol",
-    "kind": "docs",
     "expect_host": "wikipedia.org",
     "must_contain": ["Anthropic"]
   },
