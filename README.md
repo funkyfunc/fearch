@@ -24,18 +24,17 @@ Two tools:
 Node ≥ 22.5. The headless Chromium (~100 MB) is downloaded lazily the first time the browser tier is
 actually needed — installing fearch costs you nothing extra.
 
-```bash
-git clone https://github.com/funkyfunc/fearch && cd fearch
-npm install && npm run build
-```
-
 MCP (any stdio client):
 
 ```json
-{ "mcpServers": { "fearch": { "command": "node", "args": ["/path/to/fearch/packages/core/dist/cli.js"] } } }
+{ "mcpServers": { "fearch": { "command": "npx", "args": ["-y", "fearch"] } } }
 ```
 
-Claude Code: `claude mcp add fearch -- node /path/to/fearch/packages/core/dist/cli.js`
+Claude Code: `claude mcp add fearch -- npx -y fearch`
+
+Or globally: `npm install -g fearch`, then the `fearch` CLI is on your PATH. From source:
+`git clone https://github.com/funkyfunc/fearch && cd fearch && npm install && npm run build`
+(the server is then `node packages/core/dist/cli.js`).
 
 CLI (same engine, same output):
 

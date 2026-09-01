@@ -13,3 +13,5 @@ __pycache__/
 *.pyc
 packages/core/extension/token.json
 evals/results/
+packages/core/README.md
+packages/core/LICENSE

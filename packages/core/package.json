@@ -12,14 +12,17 @@
   },
   "files": [
     "dist",
-    "extension"
+    "extension/background.js",
+    "extension/manifest.json",
+    "extension/status.html",
+    "extension/status.js"
   ],
   "engines": {
     "node": ">=22.5"
   },
   "scripts": {
     "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('tsconfig.tsbuildinfo',{force:true})\" && tsc -b",
-    "prepack": "npm run build",
+    "prepack": "npm run build && node -e \"fs.copyFileSync('../../README.md','README.md');fs.copyFileSync('../../LICENSE','LICENSE')\"",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts"
   },
@@ -43,7 +46,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/funkyfunc/fearch.git"
+    "url": "git+https://github.com/funkyfunc/fearch.git",
+    "directory": "packages/core"
   },
   "bugs": {
     "url": "https://github.com/funkyfunc/fearch/issues"
@@ -53,9 +57,13 @@
     "mcp-server",
     "web-search",
     "web-fetch",
-    "html-to-markdown",
+    "search",
+    "fetch",
+    "agent",
     "robots-txt",
-    "coding-agents",
+    "human-in-the-loop",
+    "duckduckgo",
+    "google",
     "cli"
   ]
 }
