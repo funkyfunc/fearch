@@ -426,3 +426,10 @@ describe("google AI overview", () => {
     expect(again.summary?.text).toMatch(/^A REST API/);
   });
 });
+
+describe("google AI overview — tab bar is not an overview", () => {
+  it("ignores the 'AI Mode' navigation tab when the page has no overview region", () => {
+    const nav = `<div id="search"><div role="navigation"><div><span>AI Mode</span></div><div><span>All</span></div><div><span>Web</span></div><div><span>Images</span></div><div><span>Short videos</span></div><div><span>Maps</span></div><div><span>Videos</span></div><div><span>More</span></div></div><div class="g"><a href="https://example.com/x"><h3>A result</h3></a></div></div>`;
+    expect(parseGoogleOverview(nav)).toBeNull();
+  });
+});

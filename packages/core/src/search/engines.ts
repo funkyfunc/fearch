@@ -256,8 +256,10 @@ export function parseGoogleOverview(html: string): Omit<EngineSummary, "provider
   const $ = cheerio.load(html);
   let region: cheerio.Cheerio<AnyNode> = $("#m-x-content").first();
   if (!region.length) {
+    // "AI Overview" or "AI Mode reply for …" mark a real overview region; the bare "AI Mode" TAB in
+    // the results-page navigation must not (it would make the tab bar the "overview").
     const marker = $("div, span, h1, h2").filter(
-      (_, e) => $(e).children().length === 0 && /^AI (Overview|Mode)/.test($(e).text().trim()),
+      (_, e) => $(e).children().length === 0 && /^(AI Overview|AI Mode reply)/.test($(e).text().trim()),
     );
     if (!marker.length) return null;
     region = marker.first().closest("div[id], div[jscontroller]");
@@ -288,7 +290,7 @@ export function parseGoogleOverview(html: string): Omit<EngineSummary, "provider
     .replace(/Shared?\s*\d+\s*files?\s*$/, "")
     .replace(/Show (more|all)\s*$/i, "")
     .trim();
-  if (text.length < 80 || /^(An AI Overview is not available|Can't generate)/.test(text)) return null;
+  if (text.length < 80 || /^(An AI Overview is not available|Can't generate|All Web Images)/.test(text)) return null;
   return { text: text.slice(0, 2500), sources: sources.slice(0, 10) };
 }
 
