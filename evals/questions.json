@@ -154,5 +154,75 @@
     "expect_host": "docs.python.org",
     "must_contain": ["asyncio"],
     "must_not_contain": ["Python 2.7"]
+  },
+  {
+    "id": "gen-egg-boil",
+    "question": "How long should I boil an egg for a hard-boiled result?",
+    "query": "how long to hard boil an egg",
+    "expect_host": "simplyrecipes.com",
+    "must_contain": ["minutes"]
+  },
+  {
+    "id": "gen-dehydration",
+    "question": "What are the symptoms of dehydration?",
+    "query": "dehydration symptoms site:nhs.uk",
+    "expect_host": "nhs.uk",
+    "must_contain": ["thirsty"]
+  },
+  {
+    "id": "gen-jet-lag",
+    "question": "How do I reduce jet lag on a long flight?",
+    "query": "how to reduce jet lag long flight tips",
+    "expect_host": "sleepfoundation.org",
+    "must_contain": ["sleep"]
+  },
+  {
+    "id": "gen-yellowstone",
+    "question": "When is Yellowstone National Park open?",
+    "query": "yellowstone national park operating hours seasons site:nps.gov",
+    "expect_host": "nps.gov",
+    "must_contain": ["Yellowstone"]
+  },
+  {
+    "id": "gen-tax-deadline",
+    "question": "When are US federal taxes due?",
+    "query": "when are federal taxes due site:irs.gov",
+    "expect_host": "irs.gov",
+    "must_contain": ["April"]
+  },
+  {
+    "id": "gen-eiffel",
+    "question": "How tall is the Eiffel Tower?",
+    "query": "eiffel tower height",
+    "expect_host": "wikipedia.org",
+    "must_contain": ["metres"]
+  },
+  {
+    "id": "gen-cpr-rate",
+    "question": "What is the recommended chest-compression rate for CPR?",
+    "query": "cpr chest compression rate per minute",
+    "expect_host": "heart.org",
+    "must_contain": ["100"]
+  },
+  {
+    "id": "gen-tomatoes",
+    "question": "When should I plant tomatoes?",
+    "query": "when to plant tomatoes after last frost",
+    "expect_host": "almanac.com",
+    "must_contain": ["frost"]
+  },
+  {
+    "id": "gen-passport",
+    "question": "How long does a US passport renewal take?",
+    "query": "us passport renewal processing time site:travel.state.gov",
+    "expect_host": "travel.state.gov",
+    "must_contain": ["weeks"]
+  },
+  {
+    "id": "gen-mediterranean",
+    "question": "What foods are part of a Mediterranean diet?",
+    "query": "mediterranean diet foods list",
+    "expect_host": "mayoclinic.org",
+    "must_contain": ["olive oil"]
   }
 ]

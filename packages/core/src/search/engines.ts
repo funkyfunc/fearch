@@ -17,7 +17,7 @@ import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { personPresent, type Settings } from "../config.js";
+import { localeParts, personPresent, type Settings } from "../config.js";
 import type { BrowserTier } from "../fetch/browser.js";
 import type { RobotsChecker } from "../fetch/robots.js";
 import type { Politeness } from "../politeness.js";
@@ -41,7 +41,7 @@ export interface EngineSpec {
   robotsPermitted: boolean;
   /** What the engine says about queries (shown in the disclosure). */
   privacy: string;
-  url(query: string, recency?: Recency): string;
+  url(query: string, recency?: Recency, locale?: string): string;
   parse(html: string, provider: string): SearchResult[];
   isChallenge(status: number, html: string, url?: string): boolean;
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
@@ -62,6 +62,14 @@ const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
 // ---------------------------------------------------------------- DuckDuckGo lite
 
 export const DDG_LITE = "https://lite.duckduckgo.com/lite/";
+
+/** DDG's region-lang code for a locale ("de-DE" → "de-de", "en-GB" → "uk-en"); worldwide without a region. */
+export function ddgRegion(locale = "en-US"): string {
+  const { lang, region } = localeParts(locale);
+  if (!region) return "wt-wt";
+  const r = region.toLowerCase();
+  return `${r === "gb" ? "uk" : r}-${lang}`;
+}
 
 function unwrapDdg(href: string): string {
   try {
@@ -303,7 +311,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "lite.duckduckgo.com",
     robotsPermitted: true,
     privacy: "DDG does not log searches",
-    url: (q, r) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=us-en${r ? `&df=${r}` : ""}`,
+    url: (q, r, loc) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=${ddgRegion(loc)}${r ? `&df=${r}` : ""}`,
     parse: parseLite,
     isChallenge: ddgChallenge,
     resultsSelector: "a.result-link",
@@ -314,7 +322,10 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.bing.com",
     robotsPermitted: false,
     privacy: "queries are logged by Microsoft",
-    url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=en&cc=US`,
+    url: (q, _r, loc = "en-US") => {
+      const { lang, region } = localeParts(loc);
+      return `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=${lang}${region ? `&cc=${region}` : ""}`;
+    },
     parse: parseBing,
     isChallenge: bingChallenge,
     resultsSelector: "li.b_algo",
@@ -325,7 +336,10 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.google.com",
     robotsPermitted: false,
     privacy: "queries are logged by Google, tied to any Google session in the tool profile",
-    url: (q, r) => `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en&num=10${r ? `&tbs=qdr:${r}` : ""}`,
+    url: (q, r, loc = "en-US") => {
+      const { lang, region } = localeParts(loc);
+      return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}&num=10${r ? `&tbs=qdr:${r}` : ""}`;
+    },
     parse: parseGoogle,
     isChallenge: googleChallenge,
     resultsSelector: "a h3",
@@ -386,7 +400,7 @@ export class EngineProvider implements SearchProvider {
 
   async search(q: SearchQuery): Promise<SearchResponse> {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
-    const url = this.spec.url(query, q.recency);
+    const url = this.spec.url(query, q.recency, this.settings.locale);
     // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
     // eligible through the person-present or robots-off posture are the person's own browsing — the
     // crawler rules don't apply, so robots.txt is not consulted for their result pages.

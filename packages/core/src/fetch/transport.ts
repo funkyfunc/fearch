@@ -13,6 +13,7 @@ import {
 } from "undici";
 import type { Audit } from "../audit.js";
 import type { Settings } from "../config.js";
+import { acceptLanguage } from "../config.js";
 import { assertPublicUrl, BlockedURL } from "./guard.js";
 import type { ContentKind, Fetched } from "./types.js";
 
@@ -116,7 +117,7 @@ export class Transport {
     const headers: Record<string, string> = {
       "user-agent": this.settings.userAgent,
       accept: ACCEPT_HEADER,
-      "accept-language": "en-US,en;q=0.8",
+      "accept-language": acceptLanguage(this.settings.locale),
       ...Object.fromEntries(Object.entries(opts.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])),
     };
     if (opts.conditional?.etag) headers["if-none-match"] = opts.conditional.etag;

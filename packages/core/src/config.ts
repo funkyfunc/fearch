@@ -89,6 +89,12 @@ export interface Settings {
   browserMaxConcurrent: number;
   /** all: the configured engines; off: no search tool activity at all. */
   searchMode: (typeof SEARCH_MODES)[number];
+  /**
+   * BCP-47 tag ("de-DE", "en-US", bare "fr") derived from the machine's environment — the honest
+   * locale, never an invented persona. Engines receive it as their own language/region parameters;
+   * Accept-Language reflects it. FEARCH_LOCALE overrides; default en-US.
+   */
+  locale: string;
   /** Minimum gap between requests to specific hosts (ms), e.g. arXiv asks for 3 s. */
   hostGapsMs: Record<string, number>;
 }
@@ -139,6 +145,25 @@ export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
 export const ROBOTS_POLICIES = ["default", "strict", "off"] as const;
 export const BROWSER_MODES = ["auto", "headless", "headed", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "off"] as const;
+
+/** The machine's locale from the environment (FEARCH_LOCALE wins), normalised to lang or lang-REGION. */
+function localeFrom(env: Env): string {
+  const raw = (env.FEARCH_LOCALE || env.LC_ALL || env.LC_MESSAGES || env.LANG || env.LANGUAGE || "").trim();
+  const m = /^([a-zA-Z]{2,3})(?:[_-]([a-zA-Z]{2}))?/.exec(raw);
+  if (!m || /^(c|posix)$/i.test(m[1])) return "en-US";
+  return m[2] ? `${m[1].toLowerCase()}-${m[2].toUpperCase()}` : m[1].toLowerCase();
+}
+
+export function localeParts(locale: string): { lang: string; region: string } {
+  const [lang, region] = locale.split("-");
+  return { lang, region: region ?? "" };
+}
+
+/** Accept-Language for the machine's locale, with an honest English fallback for non-English locales. */
+export function acceptLanguage(locale: string): string {
+  const { lang } = localeParts(locale);
+  return lang === "en" ? `${locale},en;q=0.8` : `${locale},${lang};q=0.9,en;q=0.5`;
+}
 
 /** Could this machine show the person a browser window? macOS/Windows sessions can; elsewhere only with a display. */
 function displayAvailable(env: Env, platform: string): boolean {
@@ -208,6 +233,7 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     browserTimeoutMs: envInt(env, "FEARCH_BROWSER_TIMEOUT_MS", 20_000),
     browserMaxConcurrent: envInt(env, "FEARCH_BROWSER_MAX_CONCURRENT", 2),
     searchMode: pick(env.FEARCH_SEARCH_MODE, SEARCH_MODES, "all"),
+    locale: localeFrom(env),
     hostGapsMs: {
       "export.arxiv.org": 3000,
       "arxiv.org": 3000,

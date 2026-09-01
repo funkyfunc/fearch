@@ -14,6 +14,14 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Locale-aware engines (2026-08-31, from google-search-mcp's honest host-derived locale).** Engine
+  URLs, `Accept-Language`, and the browser context now speak the machine's real locale (`FEARCH_LOCALE`
+  / `LC_ALL` / `LANG`; `de_DE.UTF-8` → DDG `kl=de-de`, Google `hl=de&gl=de`, Bing `setlang=de&cc=DE`;
+  no region → DDG worldwide). No invented persona — the honest locale, with an English fallback in
+  Accept-Language. Challenge detection stays locale-safe via structural anchors (Google's `/sorry/`
+  URL, DDG's HTTP 202, Cloudflare's `cf_chl_`/turnstile markers); the AI-Overview extractor is
+  English-labelled and simply stays quiet elsewhere. Eval set broadened with ten general-persona
+  questions (health, travel, cooking, tax, reference); judged-vs-baseline grading remains open (#1).
 - **General-use refocus (2026-08-31, user's positioning call: "fearch should be for general use").**
   Search now does exactly one thing: engines, or an honest no. Removed the automatic federation
   fallback (its query classifier guessed "technical vs not" and routed legal questions to MDN —
@@ -62,7 +70,6 @@ is not a goal to get through them.
 |---|---|---|---|
 | 1 | **Grow the eval set — general personas, judged** | 22 dev questions is a smoke test, and now mis-aimed: fearch is for general agent use. webfetch (reference repo) judged itself against a hosted baseline on SimpleQA-style general questions — the only rigorous eval in the corpus. | ~50+ questions across personas (news, health, travel, reference, dev); judged against a baseline, not substring-graded; a scheduled CI run; regressions block releases. |
 | 6 | **Progress notifications when the browser engages** | Batch and excerpt progress ship; the browser render itself (3–15 s) is still silent — and the escalation window doubly so. | Progress event before/after each browser render and when a challenge window opens. |
-| 14 | **Locale-aware engines** | Engines are hardcoded to `hl=en`/`kl=us-en` — wrong for a general, global audience. google-search-mcp (reference repo) derived locale honestly from the real host machine. | Engine URLs derive language/region from the machine's locale (override env); caveat: challenge detectors that key on English strings must first be made locale-safe (Google's `/sorry/` URL already is). |
 | 15 | **Chrome Web Store listing for the bridge extension** | "Developer mode → Load unpacked" is a dev-only ritual; general users will never do it, and the extension tier is the best experience. | Store listing published; `fearch extension install` prefers it and falls back to unpacked for development. |
 
 ## v2.2 — fit into the harness

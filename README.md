@@ -155,6 +155,7 @@ Everything else is a `FEARCH_*` environment variable — escape hatches, not the
 pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_MODE=off`
 (no search tool at all), `FEARCH_AUDIT_LOG=off|<file>`,
 `FEARCH_LOG_LEVEL`, `FEARCH_LOG_FILE`, `FEARCH_CACHE_DIR`, `FEARCH_MAX_CHARS` (12000),
+`FEARCH_LOCALE` (defaults to the machine's `LANG` — engines answer in your language and region),
 `FEARCH_TIMEOUT_MS` (30000), `FEARCH_MAX_BYTES` (10 MB), `FEARCH_PER_HOST_DELAY_MS` (1000),
 `FEARCH_BUDGET_COUNT`/`_WINDOW_MS` (60 / 10 min), `FEARCH_HANDOFF_TIMEOUT_MS` (180 s),
 `FEARCH_BROWSER_TIMEOUT_MS` (20 s), `FEARCH_UA_INFO_URL` (your org's bot page), `FEARCH_UA_CONTACT`,

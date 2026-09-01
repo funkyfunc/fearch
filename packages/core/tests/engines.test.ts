@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
-import { settingsFromArgs, settingsFromEnv, type Settings } from "../src/config.js";
+import { acceptLanguage, settingsFromArgs, settingsFromEnv, type Settings } from "../src/config.js";
 import { waitForHuman, type BrowserRenderer } from "../src/fetch/browser.js";
 import { RobotsChecker } from "../src/fetch/robots.js";
 import { Politeness } from "../src/politeness.js";
@@ -431,5 +431,26 @@ describe("google AI overview — tab bar is not an overview", () => {
   it("ignores the 'AI Mode' navigation tab when the page has no overview region", () => {
     const nav = `<div id="search"><div role="navigation"><div><span>AI Mode</span></div><div><span>All</span></div><div><span>Web</span></div><div><span>Images</span></div><div><span>Short videos</span></div><div><span>Maps</span></div><div><span>Videos</span></div><div><span>More</span></div></div><div class="g"><a href="https://example.com/x"><h3>A result</h3></a></div></div>`;
     expect(parseGoogleOverview(nav)).toBeNull();
+  });
+});
+
+describe("locale", () => {
+  it("derives the machine locale from the environment; FEARCH_LOCALE wins; C/POSIX means en-US", () => {
+    expect(settings().locale).toBe("en-US");
+    expect(settings({ LANG: "de_DE.UTF-8" }).locale).toBe("de-DE");
+    expect(settings({ LANG: "fr" }).locale).toBe("fr");
+    expect(settings({ LANG: "C.UTF-8" }).locale).toBe("en-US");
+    expect(settings({ LANG: "de_DE.UTF-8", FEARCH_LOCALE: "ja-JP" }).locale).toBe("ja-JP");
+  });
+
+  it("engines speak the machine's locale in their own dialects", () => {
+    expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "de-DE")).toContain("kl=de-de");
+    expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "en-GB")).toContain("kl=uk-en");
+    expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "fr")).toContain("kl=wt-wt");
+    expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
+    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&num=10&tbs=qdr:m");
+    expect(ENGINE_SPECS.bing.url("q", undefined, "de-DE")).toContain("setlang=de&cc=DE");
+    expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");
+    expect(acceptLanguage("en-US")).toBe("en-US,en;q=0.8");
   });
 });

@@ -24,7 +24,7 @@ import { isIP } from "node:net";
 import { dirname } from "node:path";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
 import type { Audit } from "../audit.js";
-import type { Settings } from "../config.js";
+import { acceptLanguage, type Settings } from "../config.js";
 import { isChallengePage } from "./diagnose.js";
 import { BlockedURL, isBlockedHostname, isPrivateAddress, normalizeUrl } from "./guard.js";
 
@@ -240,14 +240,14 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   private contextOptions(): Parameters<Browser["newContext"]>[0] {
-    const headers: Record<string, string> = { "Accept-Language": "en-US,en;q=0.8" };
+    const headers: Record<string, string> = { "Accept-Language": acceptLanguage(this.settings.locale) };
     if (this.settings.browserIdentity !== "none") {
       headers.From = this.settings.uaContact || this.settings.uaInfoUrl;
       headers["X-Agent"] = this.settings.userAgent;
     }
     return {
       userAgent: this.userAgent,
-      locale: "en-US",
+      locale: this.settings.locale,
       javaScriptEnabled: true,
       acceptDownloads: false,
       serviceWorkers: "block",
