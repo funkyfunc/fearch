@@ -171,8 +171,8 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
     site.close();
   });
 
-  it("loads with the fixed ID, connects, renders a page with JavaScript, and closes its tab", async (ctx) => {
-    if (!available) return ctx.skip(); // no Chromium here
+  it("loads with the fixed ID, connects, renders a page with JavaScript, and closes its tab", async (t) => {
+    if (!available) return t.skip(); // no Chromium here
     expect(ctx!.serviceWorkers()[0]?.url()).toContain(`chrome-extension://${EXTENSION_ID}/`);
     const r = new ExtensionRenderer(settings(), audit(), bridge);
     const out = await r.render(`${base}/page`);
