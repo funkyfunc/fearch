@@ -70,7 +70,9 @@ is not a goal to get through them.
 |---|---|---|---|
 | 1 | **Grow the eval set — general personas, judged** | 22 dev questions is a smoke test, and now mis-aimed: fearch is for general agent use. webfetch (reference repo) judged itself against a hosted baseline on SimpleQA-style general questions — the only rigorous eval in the corpus. | ~50+ questions across personas (news, health, travel, reference, dev); judged against a baseline, not substring-graded; a scheduled CI run; regressions block releases. |
 | 6 | **Progress notifications when the browser engages** | Batch and excerpt progress ship; the browser render itself (3–15 s) is still silent — and the escalation window doubly so. | Progress event before/after each browser render and when a challenge window opens. |
-| 15 | **Chrome Web Store listing for the bridge extension** | "Developer mode → Load unpacked" is a dev-only ritual; general users will never do it, and the extension tier is the best experience. | Store listing published; `fearch extension install` prefers it and falls back to unpacked for development. |
+| 15 | **Chrome Web Store listing for the bridge extension — via native messaging** | "Load unpacked" is a dev-only ritual; and Report D found the store path has an architectural precondition: loopback HTTP polling + `<all_urls>` likely fails CWS review, while Chrome **native messaging** is the documented, sanctioned channel for extension↔local-app links. Bonus: stdin/stdout to a Chrome-launched host retires the loopback port (and with it, most of what the pairing token defends against) for the store build. | Store listing published; the store build talks native messaging (extension ↔ Chrome-spawned host ↔ fearch); the unpacked dev build keeps the loopback bridge; `fearch extension install` prefers the store. |
+| 16 | **MCPB (.mcpb) packaging** | One-click install for Claude Desktop: the whole Node server + node_modules in one bundle, double-click to register, env vars in the OS keychain — the non-developer install path that exists today (Report D; formerly Anthropic DXT). | An `.mcpb` artifact built in CI; installing it also registers the native-messaging host manifest so the store extension pairs without any manual step. |
+| 17 | **URL-mode elicitation for the handoff** | Verified against the 2026-07-28 MCP spec: elicitation now has a URL mode for exactly this ("direct users to external URLs for interactions that must not pass through the client"). A bot-check could notify the person through their MCP client — "a check needs you, window is open" — instead of relying on window focus alone. | When the client declares `elicitation.url`, a challenge emits an elicitation alongside opening the window; without it, today's focus-based handoff is the graceful fallback. |
 
 ## v2.2 — fit into the harness
 
@@ -90,6 +92,10 @@ is not a goal to get through them.
 
 ## Considered and set aside
 
+- **Official keyed search-API fallbacks (Brave/Mojeek APIs) when DOM parsing breaks** (Report D's
+  hedge against SERP hostility). Declined: keys and third-party query logging are exactly what was
+  removed on 2026-08-31; the honest hedge is what already ships — graceful, reasoned failure, and a
+  human who can browse anything. Revisit only if the engines-or-honest-no posture stops serving users.
 - **Cloudflare Web Bot Auth / BotBase registration.** Would let Cloudflare-fronted sites recognise the tool cryptographically, but a locally-run open-source tool cannot hold the private signing key without publishing it. Only viable with a hosted signing service, which breaks "run locally, no accounts." Revisit if the standard adds per-installation keys or delegated identities.
 
 ## Non-goals (permanent)

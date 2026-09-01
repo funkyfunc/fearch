@@ -113,3 +113,30 @@ framing is "a highly defensible, emerging standard". Independent verification of
   ROADMAP. Its "fetch logged-out" advice (Meta v. Bright Data) protects a *tool operator*; in the
   person-present model the person is the user, and whether their own logged-in profile browses is
   their choice (`FEARCH_INCOGNITO=1` exists for the other preference).
+
+## Report D (2026-09-01): "Fearch external-dependency outlook 2026" (`~/.config/google-deep-research/reports/fearch-mcp-server-viability-analysis-20260831-224722.md`)
+
+Commissioned after the general-use refocus to test the external bets: engine access durability,
+Chrome Web Store feasibility for the bridge, MCP distribution channels, elicitation, and the bear
+case on SERP reading. 54 sources. Verification outcomes:
+
+- **Verified against primary sources.** MCP elicitation **URL mode** exists in the 2026-07-28 spec
+  (fetched directly: two modes, `elicitation.url` client capability, `InputRequiredResult`) — the
+  protocol-native handoff notification; roadmapped (#17). Chrome **native messaging** as the
+  sanctioned extension↔local-app channel is longstanding Chrome documentation; the claim that
+  loopback polling + `<all_urls>` invites CWS rejection is consistent with the published review
+  policies (roadmap #15 amended). **MCPB/.mcpb** (ex-DXT) one-click bundles are real (roadmap #16).
+- **Superseded by our own measurements.** The report returned "data unavailable" for every engine's
+  own robots.txt (it honoured the fail-fast clause; its crawler evidently cannot read robots.txt
+  files). Our live census (2026-08-31, via fearch): Mojeek `Disallow: /search`, Ecosia
+  `Disallow: /search` + `Crawl-delay: 10`, Startpage `Disallow: /do/`, Marginalia
+  `Disallow: /search` — all for `User-agent: *`. DuckDuckGo lite remains the only robots-permitted
+  engine, confirming the design assumption and the person-present rule's necessity for diversity.
+- **Directionally credible, community-sourced.** DDG /html endpoint hardened behind bot checks
+  (~Feb 2026) and `vqd` pagination tokens — matches our live observations (we use /lite, one query
+  per call, no pagination, so neither bites). Cloudflare crawl-to-refer collapse (~0.2%) framing is
+  consistent with Cloudflare's published data.
+- **Unverified colour.** The CWS "Purple Potassium" codename and the named example extensions
+  (Halo, Locke, AkuBrowser) were not independently confirmed; nothing rests on them.
+- **Declined.** Keyed official search-API fallbacks (Brave/Mojeek) as a DOM-breakage hedge —
+  contradicts the no-third-party, keyless doctrine; recorded under "Considered and set aside".
