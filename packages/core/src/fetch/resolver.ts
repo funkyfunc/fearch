@@ -87,6 +87,9 @@ export const API_ENDPOINTS: Array<[host: string, pathPrefix: string]> = [
 export function isApiUrl(url: string): boolean {
   try {
     const u = new URL(url);
+    // /robots.txt is the consent file itself — the one path every client is expected to read, and
+    // the one fetch that cannot logically be gated on robots.txt.
+    if (u.pathname === "/robots.txt") return true;
     const host = u.hostname.toLowerCase();
     return API_ENDPOINTS.some(([h, p]) => host === h && u.pathname.startsWith(p));
   } catch {

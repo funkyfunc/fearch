@@ -54,3 +54,13 @@ describe("footer", () => {
     expect(f).toContain('cursor="250@read"');
   });
 });
+
+describe("pattern mode — grep ergonomics", () => {
+  it("anchors ^ and $ to lines, and explains inline flags instead of a bare regex error", () => {
+    const md = "alpha\nDisallow: /search\nomega";
+    const r = findPattern(md, "^disallow.*$", 10);
+    expect(r.total).toBe(1);
+    expect(r.windows[0].text).toContain("Disallow: /search");
+    expect(() => findPattern(md, "(?i)x", 10)).toThrow(/inline flags/);
+  });
+});

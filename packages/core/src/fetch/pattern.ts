@@ -19,9 +19,13 @@ export function findPattern(
 ): { windows: PatternMatch[]; total: number } {
   let re: RegExp;
   try {
-    re = new RegExp(pattern, "gi");
+    // gim: case-insensitive by default, and ^/$ anchor to lines — the way people write grep patterns.
+    re = new RegExp(pattern, "gim");
   } catch (e) {
-    throw new Error(`Invalid pattern ${JSON.stringify(pattern)}: ${(e as Error).message}`);
+    const hint = /\(\?[a-z]+\)/.test(pattern)
+      ? " (inline flags like (?i) are not supported; matching is already case-insensitive and multiline)"
+      : "";
+    throw new Error(`Invalid pattern ${JSON.stringify(pattern)}: ${(e as Error).message}${hint}`);
   }
   const hits: Array<[number, number]> = [];
   for (const m of md.matchAll(re)) {
