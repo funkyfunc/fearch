@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "mcpb": "node scripts/build-mcpb.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

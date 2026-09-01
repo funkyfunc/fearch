@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -171,6 +172,22 @@ describe("stdio", () => {
     const next = () =>
       queue.length ? Promise.resolve(queue.shift()!) : new Promise<string>((res) => waiters.push(res));
     const send = (m: unknown) => proc.stdin.write(JSON.stringify(m) + "\n");
+    // Every stdout line must parse as JSON-RPC; server-initiated messages (the id-0-burning ping)
+    // are answered or skipped the way a real client would, and responses are returned.
+    const nextResponse = async (): Promise<{
+      id: number;
+      result: { serverInfo?: { name: string }; tools?: Array<{ name: string }> };
+    }> => {
+      for (;;) {
+        const m = JSON.parse(await next()); // throws if any non-JSON reached stdout
+        if (m.method === "ping") {
+          send({ jsonrpc: "2.0", id: m.id, result: {} });
+          continue;
+        }
+        if (m.method) continue;
+        return m;
+      }
+    };
     let stderr = "";
     proc.stderr.on("data", (d) => (stderr += d));
     try {
@@ -180,16 +197,64 @@ describe("stdio", () => {
         method: "initialize",
         params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
       });
-      const first = JSON.parse(await next());
+      const first = await nextResponse();
       expect(first.id).toBe(1);
-      expect(first.result.serverInfo.name).toBe("fearch");
+      expect(first.result.serverInfo?.name).toBe("fearch");
       send({ jsonrpc: "2.0", method: "notifications/initialized" });
       send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-      const second = JSON.parse(await next()); // throws if any non-JSON reached stdout
-      expect(second.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(["fetch", "search"]);
+      const second = await nextResponse();
+      expect(second.result.tools?.map((t: { name: string }) => t.name).sort()).toEqual(["fetch", "search"]);
       expect(stderr).toContain("User-Agent: fearch/");
     } finally {
       proc.kill();
     }
   }, 30_000);
+});
+
+describe("handoff elicitation", () => {
+  it("notifies an elicitation-capable client when a challenge is handed to the person, and dismisses it when the handoff ends", async () => {
+    const state = fakeState();
+    const server = buildServer(state);
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
+    const seen: string[] = [];
+    let cancelled = false;
+    c.setRequestHandler(ElicitRequestSchema, async (req, extra) => {
+      seen.push(req.params.message);
+      // Hold the prompt open the way a real client would, until the server cancels it.
+      return await new Promise((resolve) => {
+        extra.signal.addEventListener("abort", () => {
+          cancelled = true;
+          resolve({ action: "cancel" as const });
+        });
+      });
+    });
+    await c.connect(ct);
+
+    state.events.emit("handoff", { url: "https://www.google.com/sorry/x", where: "a browser window on your screen" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toContain("www.google.com");
+    expect(seen[0]).toContain("a browser window on your screen");
+
+    state.events.emit("handoff-end", { url: "https://www.google.com/sorry/x", passed: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cancelled).toBe(true);
+    await c.close();
+  });
+
+  it("stays silent for clients without the elicitation capability", async () => {
+    const state = fakeState();
+    const server = buildServer(state);
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c = new Client({ name: "test", version: "0" });
+    await c.connect(ct);
+    // No handler registered: if the server sent elicitation/create anyway, the client would error.
+    state.events.emit("handoff", { url: "https://x.test/", where: "a window" });
+    await new Promise((r) => setTimeout(r, 50));
+    state.events.emit("handoff-end", { url: "https://x.test/", passed: false });
+    await c.close();
+  });
 });

@@ -24,6 +24,7 @@ import { isIP } from "node:net";
 import { dirname } from "node:path";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
 import type { Audit } from "../audit.js";
+import type { AppEvents } from "../app.js";
 import { acceptLanguage, type Settings } from "../config.js";
 import { isChallengePage } from "./diagnose.js";
 import { BlockedURL, isBlockedHostname, isPrivateAddress, normalizeUrl } from "./guard.js";
@@ -135,6 +136,7 @@ export class BrowserRenderer implements BrowserTier {
   constructor(
     private readonly settings: Settings,
     private readonly audit: Audit,
+    private readonly events?: AppEvents,
   ) {}
 
   enabled(): boolean {
@@ -387,6 +389,7 @@ export class BrowserRenderer implements BrowserTier {
           "warn",
           `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
         );
+        this.events?.emit("handoff", { url: target, where: "a browser window on your screen" });
         await page.bringToFront().catch(() => {});
         const p = page;
         const r = await waitForHuman(
@@ -406,6 +409,7 @@ export class BrowserRenderer implements BrowserTier {
         } else {
           this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
         }
+        this.events?.emit("handoff-end", { url: target, passed: r.passed });
       }
       const finalUrl = page.url();
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
@@ -474,7 +478,8 @@ export class EscalatingRenderer implements BrowserTier {
     private readonly audit: Audit,
     private readonly routine: BrowserTier,
     private readonly makeEscalation: () => BrowserTier = () =>
-      new BrowserRenderer({ ...settings, browser: "headed" }, audit),
+      new BrowserRenderer({ ...settings, browser: "headed" }, audit, events),
+    private readonly events?: AppEvents,
   ) {}
 
   enabled(): boolean {
@@ -522,6 +527,10 @@ export class EscalatingRenderer implements BrowserTier {
         "warn",
         `the window went unanswered; not opening another for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
       );
+      // Close the window rather than orphan it: a dead page must not sit there collecting a click
+      // whose request has already given up.
+      await this.escalation?.close().catch(() => {});
+      this.escalation = null;
     }
     return second;
   }

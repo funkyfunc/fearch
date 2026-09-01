@@ -20,6 +20,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Audit } from "../audit.js";
+import type { AppEvents } from "../app.js";
 import type { Settings } from "../config.js";
 import { BrowserUnavailable, waitForHuman, type BrowserTier, type Rendered, type RenderOptions } from "./browser.js";
 import { isChallengePage } from "./diagnose.js";
@@ -327,6 +328,7 @@ export class ExtensionRenderer implements BrowserTier {
     private readonly audit: Audit,
     readonly bridge: ExtensionBridge,
     private readonly fallback?: BrowserTier,
+    private readonly events?: AppEvents,
   ) {
     this.installedHint = existsSync(extensionInstalledMarker(settings.cacheDir));
   }
@@ -415,6 +417,7 @@ export class ExtensionRenderer implements BrowserTier {
           "warn",
           `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
         );
+        this.events?.emit("handoff", { url: target, where: "a tab in your Chrome" });
         await this.bridge.request({ op: "activate", tabId });
         const r = await waitForHuman(
           async () => {
@@ -430,6 +433,7 @@ export class ExtensionRenderer implements BrowserTier {
           handedOff = true;
           this.audit.log("info", `challenge on ${target} passed by you; continuing`);
         } else this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
+        this.events?.emit("handoff-end", { url: target, passed: r.passed });
       }
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
       if (

@@ -1,5 +1,6 @@
 import eslint from "@eslint/js";
 import prettier from "eslint-config-prettier";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -7,6 +8,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
+  { files: ["scripts/**/*.mjs", "evals/**/*.mts"], languageOptions: { globals: globals.node } },
   {
     rules: {
       // `?? []` / `?.` chains read better than the rule's alternatives in parser code.

@@ -72,6 +72,7 @@ describe("EscalatingRenderer", () => {
     const r = new EscalatingRenderer(settings(), audit(), routine, () => escalation);
     const first = await r.render("https://x.test/", { isChallenge });
     expect(isChallenge(first.html)).toBe(true);
+    expect(escalation.closes).toBe(1); // the unanswered window is closed, never orphaned
     await r.render("https://x.test/", { isChallenge });
     expect(escalation.calls).toBe(1); // away cooldown: no second window
     expect(routine.calls).toBe(2);

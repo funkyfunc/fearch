@@ -1,6 +1,7 @@
 /** The MCP server: two tools, `search` and `fetch`, over the app. stdio framing lives in cli.ts. */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ElicitResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { App } from "./app.js";
 import { personPresent, type Settings } from "./config.js";
@@ -95,6 +96,58 @@ type ToolResult = { content: [{ type: "text"; text: string }]; isError?: true };
 const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
 const failure = (t: string): ToolResult => ({ content: [{ type: "text", text: t }], isError: true });
 
+/**
+ * When a challenge is handed to the person (a window opens, a Chrome tab activates), tell them
+ * through their MCP client too — a form-mode elicitation used purely as a notification. The handoff
+ * itself never depends on the answer (the page is polled for the check clearing); the prompt is
+ * aborted the moment the handoff resolves so it cannot go stale. URL-mode elicitation is deliberately
+ * NOT used: it would navigate the person to a fresh copy of the page in their default browser, whose
+ * cookie jar is not the one the render is waiting on. Clients without elicitation lose nothing.
+ */
+function wireHandoffElicitation(app: App, server: McpServer): void {
+  const pending = new Map<string, AbortController>();
+  // Burn outgoing request id 0 on a ping: the SDK's cancellation handler treats `requestId: 0` as
+  // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
+  // and the first handoff elicitation would otherwise be exactly that request.
+  server.server.oninitialized = () => {
+    void server.server.ping().catch(() => {});
+  };
+  app.events.on("handoff", ({ url, where }) => {
+    if (!server.server.getClientCapabilities()?.elicitation) return;
+    let host = url;
+    try {
+      host = new URL(url).host;
+    } catch {
+      // keep the raw url
+    }
+    const ac = new AbortController();
+    pending.get(url)?.abort();
+    pending.set(url, ac);
+    // Raw request rather than elicitInput(): clients predating the form/url split declare the
+    // legacy empty `elicitation: {}` capability (spec: equivalent to form-only), which the SDK's
+    // helper would reject.
+    void server.server
+      .request(
+        {
+          method: "elicitation/create",
+          params: {
+            message: `A bot-check appeared while opening ${host}. It is waiting in ${where} — complete it there and this request continues by itself (this prompt dismisses on its own).`,
+            requestedSchema: { type: "object", properties: {} },
+          },
+        },
+        ElicitResultSchema,
+        { signal: ac.signal },
+      )
+      .catch(() => {
+        // declined, unsupported, or aborted — the notification already did its job
+      })
+      .finally(() => {
+        if (pending.get(url) === ac) pending.delete(url);
+      });
+  });
+  app.events.on("handoff-end", ({ url }) => pending.get(url)?.abort());
+}
+
 /** MCP progress notifications, when the client asked for them (`_meta.progressToken`). Never throws. */
 type ToolExtra = { _meta?: { progressToken?: string | number }; sendNotification?: (n: never) => Promise<void> };
 function progressReporter(extra: ToolExtra, total: number): (progress: number, message: string) => Promise<void> {
@@ -115,6 +168,7 @@ function progressReporter(extra: ToolExtra, total: number): (progress: number, m
 
 export function buildServer(app: App): McpServer {
   const server = new McpServer({ name: "fearch", version: app.settings.version });
+  wireHandoffElicitation(app, server);
 
   server.registerTool(
     "search",
