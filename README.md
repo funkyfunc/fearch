@@ -27,13 +27,14 @@ actually needed — installing fearch costs you nothing extra.
 MCP (any stdio client):
 
 ```json
-{ "mcpServers": { "fearch": { "command": "npx", "args": ["-y", "@funkyfunc/fearch"] } } }
+{ "mcpServers": { "fearch": { "command": "npx", "args": ["-y", "fearch-mcp"] } } }
 ```
 
-Claude Code: `claude mcp add fearch -- npx -y @funkyfunc/fearch`
+Claude Code: `claude mcp add fearch -- npx -y fearch-mcp`
 
-Or globally: `npm install -g @funkyfunc/fearch`, then the `fearch` CLI is on your PATH.
-(The package is scoped because npm reserves names this close to `fetch`; the command is still `fearch`.) From source:
+Or globally: `npm install -g fearch-mcp`, then the `fearch` CLI is on your PATH. (The package
+carries the `-mcp` suffix because npm reserves bare names this close to `fetch`; the command is
+still `fearch`.) From source:
 `git clone https://github.com/funkyfunc/fearch && cd fearch && npm install && npm run build`
 (the server is then `node packages/core/dist/cli.js`).
 

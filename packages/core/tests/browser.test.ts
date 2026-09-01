@@ -121,6 +121,33 @@ describe("browser ladder (fake renderer)", () => {
     expect(calls.filter((c) => c.endsWith("/challenge")).length).toBe(2);
   });
 
+  it("raw mode returns the rendered DOM when the page needs a browser, and the plain body when it doesn't", async () => {
+    const fake = {
+      enabled: () => true,
+      async render(u: string) {
+        return {
+          html: "<html><body><main>DOM after JavaScript ran</main></body></html>",
+          finalUrl: u,
+          status: 200,
+          salvaged: false,
+          usedSession: false,
+          handedOff: false,
+        };
+      },
+    };
+    const { fetcher } = makeFetcher({ renderer: fake });
+    const shell = await fetcher.fetch(`${base}/shell`, { raw: true });
+    expect(shell.source).toContain("raw (browser DOM)");
+    expect(shell.markdown).toContain("DOM after JavaScript ran");
+    // a page that renders fine over plain HTTP costs no browser and returns its bytes as-is
+    const plain = await fetcher.fetch(`${base}/browsers-only`, { raw: true });
+    expect(plain.source).toContain("raw (browser DOM)"); // 403 to the plain client → browser DOM
+    const { fetcher: f2 } = makeFetcher({ renderer: fake });
+    const target = await f2.fetch(`${base}/robots.txt`, { raw: true });
+    expect(target.source).toContain("raw (");
+    expect(target.source).not.toContain("browser DOM");
+  });
+
   it("never re-classifies a page the person unlocked as a refusal — their pass is the final word", async () => {
     // Behind the gate is an almost-empty demo page; without the handoff this would be js_required.
     const tiny = `<html><head><title>Demo</title></head><body><h1>Success!</h1></body></html>`;

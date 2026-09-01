@@ -77,7 +77,7 @@ const FETCH_INPUT = {
     .enum(READ_MODES as [string, ...string[]])
     .default("read")
     .describe(
-      "read: the page from the start. focus: only sections relevant to `query`. section: the heading named by `query`. pattern: regex matches with context. raw: unprocessed body.",
+      "read: the page from the start. focus: only sections relevant to `query`. section: the heading named by `query`. pattern: regex matches with context. raw: the page's raw HTML/text (the rendered DOM when a browser was needed).",
     ),
   query: z.string().optional().describe("For focus (a phrase), section (a heading), or pattern (a regex)."),
   max_chars: z.number().int().min(500).max(100_000).optional().describe("Character budget (default 12000)."),

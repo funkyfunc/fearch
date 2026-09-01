@@ -293,11 +293,45 @@ export class Fetcher {
   private async fetchRaw(url: string): Promise<PageDoc> {
     const decision = await this.checkRobots(url);
     this.charge(url);
+    const host = new URL(url).host;
     const r = await this.politeness.run(
-      new URL(url).host,
+      host,
       () => this.transport.get(url, { source: "direct" }),
       decision.crawlDelayMs,
     );
+    // Raw follows the same ladder as read: a JS shell or a refusal earns the one browser attempt,
+    // and the agent gets the rendered DOM — the HTML they asked for, not an empty scaffold. A page
+    // that renders fine over plain HTTP costs no browser.
+    const dx = diagnose(r, { isShell: r.kind === "html" && detectShell(fetchedText(r)) });
+    if (dx && BROWSER_RETRY_KINDS.has(dx.kind) && (this.browser?.enabled() ?? false)) {
+      this.charge(url, 1); // browser renders cost two units total, same as read mode
+      try {
+        const rendered = await this.politeness.run(
+          host,
+          () => this.browser!.render(url, { session: this.settings.browserSession, handoff: true }),
+          decision.crawlDelayMs,
+        );
+        this.cache.setNeedsBrowser(host);
+        const provenance = [
+          "raw (browser DOM)",
+          rendered.label,
+          rendered.handedOff && "challenge passed by you",
+          rendered.usedSession && "your session",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        return this.document(url, rendered.finalUrl, {
+          title: "",
+          source: provenance,
+          markdown: rendered.html,
+          robots: robotsLabel(decision),
+          licence: [],
+        });
+      } catch (e) {
+        if (e instanceof BlockedURL || e instanceof DiagnosedError) throw e;
+        // Browser unavailable or broken: the plain body below is still an honest raw answer.
+      }
+    }
     return this.document(url, r.finalUrl, {
       title: "",
       source: `raw (${r.kind}, HTTP ${r.status})`,
