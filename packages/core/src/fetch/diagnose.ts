@@ -48,10 +48,11 @@ const PAYWALL_RE = /("isAccessibleForFree"\s*:\s*false|subscribe to continue|sub
 // DOM snapshot, and only the loader script or its container betrays them in the outer page.
 const TURNSTILE_RE = /(challenges\.cloudflare\.com|cf-turnstile)/i;
 
-export function isChallengePage(html: string, status = 200, _url = ""): boolean {
+export function isChallengePage(html: string, status = 200, url = ""): boolean {
   if (
     CHALLENGE_RE.test(html) ||
-    /unusual traffic|not a robot|verify you are|are you a human/i.test(html) ||
+    /unusual traffic|not a robot|verify you are|are you a human|verify your session/i.test(html) ||
+    /\/sorry\//.test(url) ||
     status === 429
   ) {
     return true;
@@ -81,6 +82,34 @@ export function finalizeAfterBrowser(d: Diagnosis, attempts: string[]): Diagnosi
       "The site does not serve automated readers, even browsers. Use a different source, an official API, or ask the user to open the page. " +
       BOOK,
   };
+}
+
+/**
+ * The rendered page is still a bot check. If it was handed to the person and they did not pass it in
+ * time, the next step is theirs — the same URL, retried once they are there, is the one retry that is
+ * correct. Without a handoff the refusal is final as for any other challenge.
+ */
+export function diagnoseUnpassedChallenge(attempts: string[], handoffWhere?: string): Diagnosis {
+  if (handoffWhere) {
+    return {
+      kind: "captcha_or_challenge",
+      retryable: true,
+      attempts,
+      message: `The site showed a bot check; it was opened in ${handoffWhere} but not passed in time.`,
+      nextAction:
+        "Tell the user the check is waiting for them. When they are at the screen, call fetch again on this same URL — the tab reappears and their pass is remembered. The tool never solves checks itself. " +
+        BOOK,
+    };
+  }
+  return finalizeAfterBrowser(
+    {
+      kind: "captcha_or_challenge",
+      retryable: false,
+      message: "The page is a bot-challenge interstitial.",
+      nextAction: "",
+    },
+    attempts,
+  );
 }
 
 export function renderDiagnosis(d: Diagnosis): string {

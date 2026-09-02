@@ -82,7 +82,12 @@ const MDX_COMMENT_RE = /\s*\{\/\*[\s\S]*?\*\/\}/g;
 const ZERO_WIDTH_RE = /\u200b|\u200c|\u200d|\u2060|\ufeff/g;
 const SKIP_LINE_RE = /^\s*(\[?Skip to (main )?content(\]\([^)]*\))?|\[?Skip to main(\]\([^)]*\))?|\s*)$/i;
 const SHELL_PATTERNS =
-  /(You need to enable JavaScript to run this app|This site requires JavaScript|Please enable JavaScript|JavaScript is disabled|Loading\.\.\.$)/i;
+  /(You need to enable JavaScript to run this app|This site requires JavaScript|Please (enable|ensure) JavaScript|JavaScript is (disabled|required)|enable JavaScript (to|and)|^\s*Loading(\.\.\.|…)?\s*$)/im;
+/** Below this much visible text, a page whose bytes are mostly script is a client-rendered shell. */
+const SHELL_MAX_TEXT = 600;
+const SHELL_SCRIPT_SHARE = 0.5;
+/** Interactive chrome that must be *unwrapped*, not removed, when it sits inside code (Twoslash hovers, copy buttons). */
+const CODE_CONTAINERS = "pre, code";
 
 // --- turndown ------------------------------------------------------------------
 
@@ -152,22 +157,31 @@ export function visibleText($el: Cheerio<AnyNode>): string {
   return $el.text().replace(/\s+/g, " ").trim();
 }
 
-/** True when the HTML is an empty client-rendered shell or a JS-required stub. */
+/**
+ * True when the HTML is an empty client-rendered shell or a JS-required stub. Three signals, any of
+ * which decides: a "turn on JavaScript" / "Loading…" stub with little text; an empty client-side mount
+ * point (React/Vue/Next/Nuxt/Angular); or a page whose bytes are mostly script and whose visible text
+ * is a few lines (diagrams.net-style shells that say nothing recognisable). A short static page with
+ * no scripts (example.com) is just a short page.
+ */
 export function detectShell(html: string): boolean {
   const $ = cheerio.load(html);
   const scripts = $("script[src], script:not([type])").length;
-  // An empty client-side mount point (React/Vue/Next/Nuxt/Angular) is the signature of a shell.
+  let scriptBytes = 0;
+  $("script").each((_, e) => {
+    scriptBytes += ($(e).html() ?? "").length + ($(e).attr("src") ?? "").length;
+  });
   const emptyMount =
     $("#app, #root, #__next, #__nuxt, #___gatsby, [data-reactroot], [ng-version], app-root").filter(
       (_, e) => !$(e).text().trim(),
     ).length > 0;
   $("script, style, noscript").remove();
   const text = visibleText($("body").length ? $("body") : $.root());
-  // A short page is only a shell if scripts are doing the rendering; a short static page
-  // (example.com is 200-odd characters) is just a short page.
   if (SHELL_PATTERNS.test(text.slice(0, 3000)) && text.length < 1500) return true;
   if (text.length < 50) return scripts > 0;
   if (text.length < 200) return scripts > 0 && emptyMount;
+  if (text.length < SHELL_MAX_TEXT && scripts > 0 && html.length > 0 && scriptBytes / html.length > SHELL_SCRIPT_SHARE)
+    return true;
   return false;
 }
 
@@ -179,18 +193,34 @@ function pageTitle($: CheerioAPI): string {
   return $("h1").first().text().replace(/\s+/g, " ").trim();
 }
 
+/** The page's title from raw HTML (for raw-mode headers). */
+export function htmlTitle(html: string): string {
+  try {
+    return pageTitle(cheerio.load(html.slice(0, 200_000)));
+  } catch {
+    return "";
+  }
+}
+
 function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
-  $root.find(REMOVE_SELECTORS).remove();
+  // Nothing inside a code block is boilerplate: Twoslash wraps identifiers in <button>, copy buttons
+  // and line anchors sit inside <pre>. Removing them would hollow the code out while leaving the
+  // fence in place (the fence-count guard cannot see that). Inside code, only the tag goes.
+  const inCode = (el: AnyNode) => $(el).parents(CODE_CONTAINERS).length > 0;
+  $root.find(REMOVE_SELECTORS).each((_, el) => {
+    if (inCode(el)) $(el).replaceWith($(el).contents());
+    else $(el).remove();
+  });
   // headers: keep article headers (title), drop site headers (nav-like)
   $root.find("header").each((_, el) => {
     const $h = $(el);
     if ($h.find("nav").length || $h.find("a").length >= 3) $h.remove();
   });
   // Class/id-based noise removal applies to block containers only — never inside a heading
-  // (Sphinx wraps heading text in <a class="toc-backref">).
+  // (Sphinx wraps heading text in <a class="toc-backref">) and never inside code.
   $root.find(BLOCK_TAGS).each((_, el) => {
     const $el = $(el);
-    if ($el.closest(HEADING_TAGS).length) return;
+    if ($el.closest(HEADING_TAGS).length || inCode(el)) return;
     const ident = `${$el.attr("class") ?? ""} ${$el.attr("id") ?? ""}`.trim();
     if (ident && NOISE_CLASS_RE.test(ident)) $el.remove();
   });
@@ -198,7 +228,7 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
   // Permalink anchors (¶, #, "Link to this heading") add nothing but noise.
   $root.find("a").each((_, el) => {
     const $a = $(el);
-    if (PERMALINK_TEXT.has($a.text().trim()) && !$a.find("img").length) $a.remove();
+    if (PERMALINK_TEXT.has($a.text().trim()) && !$a.find("img").length && !inCode(el)) $a.remove();
   });
   // Links inside headings become plain heading text.
   $root
@@ -208,20 +238,32 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
       const $a = $(el);
       $a.replaceWith($a.contents());
     });
-  // Layout tables (no header row) — Hacker News, old forums, email-style pages — would otherwise pass
-  // through Turndown as raw HTML. Unwrap them into block elements so their text converts normally.
+  // Tables the GFM plugin will not convert — it only handles a table whose *first row* is a header
+  // row — would pass through Turndown as raw HTML: Hacker News layout tables, old forums, and
+  // Wikipedia infoboxes (row headers in <th scope="row">, image in the first row). Unwrap those
+  // into block elements so their text converts normally; data tables are left to GFM.
   $root.find("table").each((_, el) => {
-    const $t = $(el);
-    // A data table has a header row belonging to *this* table (not a nested one): leave it to GFM.
-    const ownHeader =
-      $t.children("thead").length > 0 ||
-      $t
-        .find("th")
-        .toArray()
-        .some((th) => $(th).closest("table")[0] === el);
-    if (ownHeader) return;
-    for (const node of [el, ...$t.find("tr, td, tbody, thead, tfoot").toArray()]) (node as DomElement).tagName = "div";
+    if (isDataTable($, el)) return;
+    // Only this table's own rows and cells: a data table nested inside a layout table keeps its shape.
+    const own = $(el)
+      .find("tr, td, th, tbody, thead, tfoot, caption")
+      .toArray()
+      .filter((n) => $(n).closest("table")[0] === el);
+    for (const node of [el, ...own]) (node as DomElement).tagName = "div";
   });
+}
+
+/** A table turndown-plugin-gfm will convert: a <thead>, or a first row made only of <th> cells. */
+function isDataTable($: CheerioAPI, table: AnyNode): boolean {
+  const $t = $(table);
+  if ($t.children("thead").length) return true;
+  const firstRow = $t
+    .find("tr")
+    .toArray()
+    .find((tr) => $(tr).closest("table")[0] === table);
+  if (!firstRow) return false;
+  const cells = $(firstRow).children("td, th").toArray();
+  return cells.length > 0 && cells.every((c) => (c as DomElement).tagName === "th");
 }
 
 /**
@@ -327,33 +369,26 @@ export function htmlSnippetToMarkdown(html: string): string {
 /**
  * Content is never dropped by mistake: a container that holds less than half of the page's
  * de-noised text is a sidebar or a summary, not the article — fall through to the other methods.
+ * The page's de-noised length is computed once per page (it means a second full parse).
  */
-function holdsMostText($: CheerioAPI, candidate: Cheerio<AnyNode>): boolean {
-  const $page = cheerio.load($.html());
+function deNoisedPageLength(html: string): number {
+  const $page = cheerio.load(html);
   const body = $page("body").length ? $page("body") : $page.root();
   stripBoilerplate($page, body);
-  const pageText = visibleText(body).length;
-  return pageText === 0 || visibleText(candidate).length >= pageText * MIN_CONTENT_SHARE;
+  return visibleText(body).length;
 }
 
 export function htmlToMarkdown(html: string): Extracted {
   const $ = cheerio.load(html);
   const title = pageTitle($);
   const preTotal = $("pre").length;
-  // Data tables (with a header row belonging to that table) must survive too. Counted on the
-  // *cleaned* candidate, so navboxes and other chrome removed as boilerplate don't count.
+  // Data tables must survive too. Counted on the *cleaned* candidate, so navboxes and other chrome
+  // removed as boilerplate don't count, and with the same definition the converter uses.
   const dataTables = ($x: CheerioAPI, root: Cheerio<AnyNode>) =>
     root
       .find("table")
       .toArray()
-      .filter(
-        (t) =>
-          $x(t).children("thead").length ||
-          $x(t)
-            .find("th")
-            .toArray()
-            .some((th) => $x(th).closest("table")[0] === t),
-      ).length;
+      .filter((t) => isDataTable($x, t)).length;
   const tableCount = (md: string) => (md.match(/^\s*\|?\s*:?-{3,}/gm) ?? []).length;
   const guardOk = (md: string, tableTotal: number) =>
     md.trim().length >= 200 &&
@@ -365,7 +400,11 @@ export function htmlToMarkdown(html: string): Extracted {
   if (main) {
     stripBoilerplate($, main);
     const md = cleanMarkdownSource(turndown().turndown($.html(main)));
-    if (guardOk(md, dataTables($, main)) && holdsMostText($, main)) return { title, markdown: md, method: "main" };
+    if (guardOk(md, dataTables($, main))) {
+      const pageText = deNoisedPageLength(html);
+      if (pageText === 0 || visibleText(main).length >= pageText * MIN_CONTENT_SHARE)
+        return { title, markdown: md, method: "main" };
+    }
   }
 
   // No usable container: let Readability find the content block.

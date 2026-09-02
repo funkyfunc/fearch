@@ -15,9 +15,10 @@ import {
   parseGoogle,
   parseGoogleOverview,
   parseLite,
+  redactAccount,
   unwrapBing,
 } from "../src/search/engines.js";
-import { SearchError } from "../src/search/provider.js";
+import { RateLimited } from "../src/search/provider.js";
 import { renderResults } from "../src/search/render.js";
 import { SearchRegistry } from "../src/search/registry.js";
 import { Audit } from "../src/audit.js";
@@ -103,8 +104,8 @@ describe("engine parsers", () => {
       "https://www.npmjs.com/package/turndown-plugin-gfm",
     ]);
     expect(r[0].snippet).toContain("GitHub Flavored");
-    expect(ddgChallenge(202, "")).toBe(true);
-    expect(ddgChallenge(200, BOTCHECK)).toBe(true);
+    expect(ddgChallenge("", 202)).toBe(true);
+    expect(ddgChallenge(BOTCHECK, 200)).toBe(true);
   });
   it("Bing: decodes /ck/a?u=a1<base64url> links, skips Bing's own", () => {
     expect(unwrapBing(`https://www.bing.com/ck/a?u=a1${b64("https://example.com/x?y=1")}`)).toBe(
@@ -117,11 +118,11 @@ describe("engine parsers", () => {
     ]);
     expect(r[0].snippet).toContain("GitHub Flavored");
     // a normal results page mentioning "challenge" in a script is not a challenge
-    expect(ENGINE_SPECS.bing.isChallenge(200, BING.replace("</body>", "<script>var challenge=1</script></body>"))).toBe(
+    expect(ENGINE_SPECS.bing.isChallenge(BING.replace("</body>", "<script>var challenge=1</script></body>"), 200)).toBe(
       false,
     );
-    expect(ENGINE_SPECS.bing.isChallenge(200, "<html><body>Please verify you are a human</body></html>")).toBe(true);
-    expect(ENGINE_SPECS.bing.isChallenge(403, "")).toBe(true);
+    expect(ENGINE_SPECS.bing.isChallenge("<html><body>Please verify you are a human</body></html>", 200)).toBe(true);
+    expect(ENGINE_SPECS.bing.isChallenge("", 403)).toBe(true);
   });
   it("Google: a:has(h3) results, /url?q= unwrapped, Google's own links skipped, challenge recognised", () => {
     const r = parseGoogle(GOOGLE, "google");
@@ -139,16 +140,16 @@ describe("engine parsers", () => {
     ]);
     expect(g[0].snippet).toBe("The browser state file may contain sensitive cookies.");
     expect(g[1].snippet).toBe("Learn how to manage cookies & sessions.");
-    expect(ENGINE_SPECS.google.isChallenge(200, GOOGLE_SORRY, "https://www.google.com/sorry/index?continue=x")).toBe(
+    expect(ENGINE_SPECS.google.isChallenge(GOOGLE_SORRY, 200, "https://www.google.com/sorry/index?continue=x")).toBe(
       true,
     );
-    expect(ENGINE_SPECS.google.isChallenge(200, GOOGLE_SORRY)).toBe(true);
-    expect(ENGINE_SPECS.google.isChallenge(200, GOOGLE, "https://www.google.com/search?q=x&sei=abc")).toBe(false);
+    expect(ENGINE_SPECS.google.isChallenge(GOOGLE_SORRY, 200)).toBe(true);
+    expect(ENGINE_SPECS.google.isChallenge(GOOGLE, 200, "https://www.google.com/search?q=x&sei=abc")).toBe(false);
     // a results page whose scripts mention "sorry"/"recaptcha" is still a results page
     expect(
       ENGINE_SPECS.google.isChallenge(
-        200,
         GOOGLE + "<script>var u='/sorry/index';var r='recaptcha'</script>",
+        200,
         "https://www.google.com/search?q=x",
       ),
     ).toBe(false);
@@ -272,7 +273,31 @@ describe("engine eligibility — the dials play together", () => {
       /rate-limited.*no browser window can be shown/,
     );
     expect(calls).toBe(1);
-    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(SearchError);
+    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(RateLimited);
+  });
+
+  it("tells an empty results page from a parser failure, and never writes a page to disk unless debugging", async () => {
+    const empty = provider("google", async () => ({
+      html: `<html><body><div id="search"><p>Your search - xqzv - did not match any documents.</p></div></body></html>`,
+      status: 200,
+    }));
+    await expect(empty.search({ query: "xqzv", maxResults: 5 })).rejects.toThrow(/no results for this query/);
+    const odd = provider("google", async () => ({
+      html: `<html><body><div id="search">${"<p>x</p>".repeat(40)}</div></body></html>`,
+      status: 200,
+    }));
+    await expect(odd.search({ query: "x", maxResults: 5 })).rejects.toThrow(
+      /markup may have changed; run with FEARCH_LOG_LEVEL=debug/,
+    );
+  });
+
+  it("redacts the signed-in account chrome and e-mail addresses from debug dumps", () => {
+    const page = `<html><body><header><a href="https://accounts.google.com">Google Account: Pat (pat@example.com)</a></header><div id="search">results</div><span>pat.smith+tag@example.co.uk</span></body></html>`;
+    const out = redactAccount(page);
+    expect(out).not.toContain("pat@example.com");
+    expect(out).not.toContain("pat.smith");
+    expect(out).not.toContain("Google Account");
+    expect(out).toContain("results");
   });
 });
 
@@ -450,6 +475,8 @@ describe("locale", () => {
     expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
     expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&num=10&tbs=qdr:m");
     expect(ENGINE_SPECS.bing.url("q", undefined, "de-DE")).toContain("setlang=de&cc=DE");
+    expect(ENGINE_SPECS.bing.url("q", "w", "en-US")).toContain('filters=ex1:"ez2"');
+    expect(ENGINE_SPECS.bing.url("q", "y", "en-US")).not.toContain("filters="); // Bing has no year filter
     expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");
     expect(acceptLanguage("en-US")).toBe("en-US,en;q=0.8");
   });

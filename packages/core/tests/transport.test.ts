@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Audit } from "../src/audit.js";
 import { settingsFromEnv } from "../src/config.js";
+import { BlockedURL } from "../src/fetch/guard.js";
 import { describeNetworkError, FetchError, isTlsError, parseRetryAfter, Transport } from "../src/fetch/transport.js";
 
 describe("transport", () => {
@@ -78,6 +79,28 @@ describe("transport", () => {
     const long = await t().get(`http://127.0.0.1:${port}/slow`);
     expect(long.status).toBe(429);
     expect(slowHits).toBe(1);
+  });
+
+  it("refuses at connection time a name that resolves to a private address (rebinding), even after the pre-check", async () => {
+    // The pre-check is bypassed by giving the transport a resolver that answers "public" to the guard's
+    // promise lookup only implicitly: here the socket-layer lookup itself returns loopback.
+    const s = settingsFromEnv({ FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" });
+    const rebinding = new Transport(s, new Audit(s), (_host, opts, cb) =>
+      (opts as { all?: boolean }).all
+        ? (cb as unknown as (e: null, a: Array<{ address: string; family: number }>) => void)(null, [
+            { address: "127.0.0.1", family: 4 },
+          ])
+        : cb(null, "127.0.0.1", 4),
+    );
+    await expect(rebinding.get(`http://example.com:${port}/target`)).rejects.toThrow(BlockedURL);
+  });
+
+  it("falls back from https to http only when the URL was upgraded, never for an explicit https", async () => {
+    // The test server speaks plain http; https on its port fails the handshake.
+    const upgraded = await t().get(`https://127.0.0.1:${port}/target`, { httpFallback: true });
+    expect(upgraded.status).toBe(200);
+    expect(upgraded.finalUrl).toBe(`http://127.0.0.1:${port}/target`);
+    await expect(t().get(`https://127.0.0.1:${port}/target`)).rejects.toThrow(FetchError);
   });
 
   it("parses Retry-After as delay-seconds or an HTTP-date", () => {

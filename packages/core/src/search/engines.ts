@@ -24,6 +24,7 @@ import type { Politeness } from "../politeness.js";
 import {
   dedupe,
   filterDomains,
+  RateLimited,
   SearchError,
   type EngineSummary,
   type Recency,
@@ -43,7 +44,10 @@ export interface EngineSpec {
   privacy: string;
   url(query: string, recency?: Recency, locale?: string): string;
   parse(html: string, provider: string): SearchResult[];
-  isChallenge(status: number, html: string, url?: string): boolean;
+  /** Same shape as the generic `isChallengePage`, so the browser tier can take it as-is. */
+  isChallenge(html: string, status: number, url?: string): boolean;
+  /** The engine's own "nothing matched" page — an answer, not a parser failure. */
+  noResults: RegExp;
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
   /** Extract the engine's own generated answer box, if the page carries one. */
@@ -101,13 +105,13 @@ export function parseLite(html: string, provider: string): SearchResult[] {
  * "challenge"; a false positive would hand a good page to the person and wait). Rule: a definitive
  * status, or a challenge marker *and* no parsed results.
  */
-export function ddgChallenge(status: number, html: string): boolean {
+export function ddgChallenge(html: string, status: number): boolean {
   return (
     status === 202 || (!/class="result-link"/.test(html) && /anomaly|challenge|captcha|unusual traffic/i.test(html))
   );
 }
 
-const bingChallenge = (status: number, html: string): boolean =>
+const bingChallenge = (html: string, status: number): boolean =>
   status === 403 || status === 429 || (!/class="b_algo"/.test(html) && /verify you|not a robot|captcha/i.test(html));
 
 /**
@@ -116,7 +120,7 @@ const bingChallenge = (status: number, html: string): boolean =>
  * decide, not strings in the source (a real results page must never count as a challenge, or the
  * handoff would wait forever after the person has passed it).
  */
-const googleChallenge = (status: number, html: string, url = ""): boolean => {
+const googleChallenge = (html: string, status: number, url = ""): boolean => {
   if (/\/sorry\//.test(url)) return true;
   if (/<h3/.test(html)) return false;
   return status === 429 || /unusual traffic from your computer network|not a robot|recaptcha/i.test(html);
@@ -295,6 +299,9 @@ export function parseGoogleOverview(html: string): Omit<EngineSummary, "provider
   const text = spaced
     .replace(/\s+/g, " ")
     .replace(/^(\s*AI (Overview\b|Mode reply for [^A-Z]*))+\s*/, "")
+    // Everything from the disclaimer on is Google's UI (export buttons, dialogs), not the answer.
+    .replace(/\s*AI can make mistakes[\s\S]*$/, "")
+    .replace(/\s*(Save to Google (Drive|Gmail)|When you export,[^.]*\.|Got it|Transcribing\.\.\.)/g, "")
     .replace(/Shared?\s*\d+\s*files?\s*$/, "")
     .replace(/Show (more|all)\s*$/i, "")
     .trim();
@@ -314,6 +321,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     url: (q, r, loc) => `${DDG_LITE}?q=${encodeURIComponent(q)}&kl=${ddgRegion(loc)}${r ? `&df=${r}` : ""}`,
     parse: parseLite,
     isChallenge: ddgChallenge,
+    noResults: /No (more )?results\./i,
     resultsSelector: "a.result-link",
   },
   bing: {
@@ -322,12 +330,15 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.bing.com",
     robotsPermitted: false,
     privacy: "queries are logged by Microsoft",
-    url: (q, _r, loc = "en-US") => {
+    // Bing's date filter knows day/week/month (ez1/ez2/ez3); a year restriction has no equivalent and is ignored.
+    url: (q, r, loc = "en-US") => {
       const { lang, region } = localeParts(loc);
-      return `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=${lang}${region ? `&cc=${region}` : ""}`;
+      const ez = r ? { d: "ez1", w: "ez2", m: "ez3" }[r as "d" | "w" | "m"] : undefined;
+      return `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=${lang}${region ? `&cc=${region}` : ""}${ez ? `&filters=ex1:"${ez}"` : ""}`;
     },
     parse: parseBing,
     isChallenge: bingChallenge,
+    noResults: /There are no results for/i,
     resultsSelector: "li.b_algo",
   },
   google: {
@@ -342,6 +353,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     },
     parse: parseGoogle,
     isChallenge: googleChallenge,
+    noResults: /did not match any documents|No results found for/i,
     resultsSelector: "a h3",
     overview: parseGoogleOverview,
   },
@@ -362,22 +374,25 @@ export class EngineProvider implements SearchProvider {
     this.name = spec.name;
   }
 
+  /** One line, once per response: which browser opened the page, on whose authority, and who logs it. */
   get disclosure(): string {
     const ch = this.browser.browserChannel;
     const how =
       ch === "extension"
-        ? "your own Chrome (fearch bridge extension)"
+        ? this.settings.incognito
+          ? "your own Chrome, incognito"
+          : "your own Chrome, your profile"
         : ch === "auto"
-          ? "the self-identified headless browser — any check is opened in a window for you"
+          ? "a self-identified headless browser (checks open in a window for you)"
           : this.settings.browser === "headed"
             ? "the visible browser window"
-            : "the self-identified headless browser";
+            : "a self-identified headless browser";
     const robots = this.spec.robotsPermitted
-      ? "robots.txt allows this page"
+      ? "robots.txt permits"
       : personPresent(this.settings)
-        ? "opened as your own browsing — you oversee this browser and are handed any challenge"
-        : "robots.txt disallows result pages; opened because robots is off";
-    return `${this.spec.label} via ${how} (${robots}; ${this.spec.privacy})`;
+        ? "your own browsing, not a crawl"
+        : "robots is off";
+    return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
   }
 
   /** Listed in --engines, browser on, and robots-eligible. */
@@ -421,7 +436,7 @@ export class EngineProvider implements SearchProvider {
           this.browser.render(url, {
             session: true,
             handoff: true,
-            isChallenge: (h, s, u) => this.spec.isChallenge(s, h, u),
+            isChallenge: this.spec.isChallenge,
             settleSelector: this.spec.resultsSelector,
             // Generated answer boxes stream in after the results; wait briefly for one that is coming,
             // never for one that isn't (no marker on the page).
@@ -435,24 +450,30 @@ export class EngineProvider implements SearchProvider {
     } catch (e) {
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
-    if (this.spec.isChallenge(rendered.status, rendered.html, rendered.finalUrl)) {
-      // The engine's "no". Stop and cool down (the registry treats "rate-limited" as such).
+    if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
+      // The engine's "no". Stop and cool down (the registry treats RateLimited as such).
       const hint = !this.settings.handoff
         ? "handoff is disabled (FEARCH_HANDOFF=0); with it on you would be handed the page to pass yourself"
-        : this.settings.canSurface
-          ? "it was opened in a window for you but not passed in time"
-          : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
-      throw new SearchError(
+        : rendered.handoffWhere
+          ? `it was opened in ${rendered.handoffWhere} but not passed in time — pass it there and search again`
+          : this.settings.canSurface
+            ? "the last check went unanswered, so it was not handed to you again yet"
+            : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
+      throw new RateLimited(
         `${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`,
       );
     }
-    const results = filterDomains(dedupe(this.spec.parse(rendered.html, this.name)), q);
-    if (!results.length) {
+    const parsed = this.spec.parse(rendered.html, this.name);
+    const results = filterDomains(dedupe(parsed), q);
+    if (!parsed.length) {
+      // An empty results page is an answer; a page with results we cannot read is a parser problem.
+      if (this.spec.noResults.test(rendered.html)) throw new SearchError(`${this.name}: no results for this query`);
       const dump = this.dumpUnparsed(rendered.html);
       throw new SearchError(
-        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : ""})`,
+        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : "; run with FEARCH_LOG_LEVEL=debug to save the page"})`,
       );
     }
+    if (!results.length) throw new SearchError(`${this.name}: no results matched the domain filters`);
     const overview = this.spec.overview?.(rendered.html);
     return {
       results: results.slice(0, q.maxResults),
@@ -460,8 +481,13 @@ export class EngineProvider implements SearchProvider {
     };
   }
 
-  /** Keep the last few pages that produced no results, so a markup change can be diagnosed from disk. */
+  /**
+   * Keep the last few pages that produced no results, so a markup change can be diagnosed from disk.
+   * Only at debug level: an engine page opened in the person's own profile carries their account
+   * chrome, so it is never written by default and the account header and any e-mail are removed.
+   */
   private dumpUnparsed(html: string): string | null {
+    if (this.settings.logLevel !== "debug") return null;
     try {
       const dir = join(this.settings.cacheDir, "debug");
       mkdirSync(dir, { recursive: true });
@@ -470,12 +496,19 @@ export class EngineProvider implements SearchProvider {
         .sort();
       for (const f of old.slice(0, Math.max(0, old.length - 2))) rmSync(join(dir, f), { force: true });
       const path = join(dir, `${this.name}-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
-      writeFileSync(path, html);
+      writeFileSync(path, redactAccount(html));
       return path;
     } catch {
       return null;
     }
   }
+}
+
+/** Strip the signed-in account chrome and any e-mail addresses from an engine page before it touches disk. */
+export function redactAccount(html: string): string {
+  return html
+    .replace(/<header[\s\S]*?<\/header>/gi, "<!-- header removed -->")
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[redacted-email]");
 }
 
 /** All known engines, in --engines order first, then the rest (unlisted ones are never available). */

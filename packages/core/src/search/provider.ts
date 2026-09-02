@@ -63,6 +63,14 @@ export class SearchError extends Error {
   }
 }
 
+/** The engine said "slow down" or showed its bot check: the registry cools that engine down. */
+export class RateLimited extends SearchError {
+  constructor(message: string) {
+    super(message);
+    this.name = "RateLimited";
+  }
+}
+
 const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|mc_cid|mc_eid|ref|ref_src|_hsenc|_hsmi|yclid)$/i;
 
 export function canonicalize(url: string): string {

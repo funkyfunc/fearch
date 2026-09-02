@@ -151,7 +151,6 @@ describe("server", () => {
   it("search with no providers explains itself", async () => {
     const state = fakeState();
     (state.search as unknown as { web: unknown[] }).web = [];
-    (state.search as unknown as { federation: unknown[] }).federation = [];
     const c = await client(state);
     const r = await c.callTool({ name: "search", arguments: { query: "anything" } });
     expect(r.isError).toBe(true);

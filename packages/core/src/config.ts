@@ -218,7 +218,9 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     handoff,
     incognito: browser === "extension" && envBool(env, "FEARCH_INCOGNITO"),
     extensionConnectMs: envInt(env, "FEARCH_EXTENSION_CONNECT_MS", 4_000),
-    handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 180_000),
+    // Long enough for a person at the screen to pass a check, short enough that an unattended agent
+    // gets its answer ("waiting for you; call again") instead of a hung tool call.
+    handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 45_000),
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
     // Derived default: DuckDuckGo (the robots-permitted engine); with a person on call to pass
     // Google's check when it appears, Google first. Bing is opt-in (it has served decoy results to

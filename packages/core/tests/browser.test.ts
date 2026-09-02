@@ -148,6 +148,49 @@ describe("browser ladder (fake renderer)", () => {
     expect(target.source).not.toContain("browser DOM");
   });
 
+  it("a bot check the browser still shows is a refusal, not content — with 'call again' when it was handed to the person", async () => {
+    // A Cloudflare interstitial has text and no empty mount point: the shell heuristic alone waves it through.
+    const interstitial = `<html><head><title>Just a moment...</title></head><body><div class="main-content"><h1>www.example.test</h1><p>We must verify your session before you can proceed</p><p>Verification successful. Waiting for www.example.test to respond</p></div><script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script></body></html>`;
+    const unattended = {
+      enabled: () => true,
+      async render(u: string) {
+        return { html: interstitial, finalUrl: u, status: 200, salvaged: false, usedSession: false, handedOff: false };
+      },
+    };
+    const { fetcher } = makeFetcher({ renderer: unattended });
+    await expect(fetcher.fetch(`${base}/challenge`)).rejects.toMatchObject({
+      diagnosis: { kind: "captcha_or_challenge", retryable: false },
+    });
+    const handed = {
+      enabled: () => true,
+      async render(u: string) {
+        return {
+          html: interstitial,
+          finalUrl: u,
+          status: 200,
+          salvaged: false,
+          usedSession: true,
+          handedOff: false,
+          handoffWhere: "a tab in your Chrome",
+        };
+      },
+    };
+    const { fetcher: f2 } = makeFetcher({ renderer: handed });
+    try {
+      await f2.fetch(`${base}/challenge`);
+      expect.unreachable();
+    } catch (e) {
+      const d = (e as DiagnosedError).diagnosis;
+      expect(d.kind).toBe("captcha_or_challenge");
+      expect(d.retryable).toBe(true);
+      expect(d.message).toContain("a tab in your Chrome");
+      expect(d.nextAction).toMatch(/call fetch again on this same URL/);
+    }
+    // raw mode is no exception: the interstitial DOM is not "the page's raw HTML"
+    const { fetcher: f3 } = makeFetcher({ renderer: unattended });
+    await expect(f3.fetch(`${base}/challenge`, { raw: true })).rejects.toThrow(DiagnosedError);
+  });
+
   it("never re-classifies a page the person unlocked as a refusal — their pass is the final word", async () => {
     // Behind the gate is an almost-empty demo page; without the handoff this would be js_required.
     const tiny = `<html><head><title>Demo</title></head><body><h1>Success!</h1></body></html>`;
@@ -247,7 +290,7 @@ describe("browser tier (real Chromium)", () => {
     });
     renderer = new BrowserRenderer(settings, new Audit(settings));
     try {
-      await renderer.render(`${base}/ua`);
+      await renderer.render(`${base}/ua`, { httpFallback: true });
     } catch (e) {
       if (!(e instanceof BrowserUnavailable)) throw e;
       available = false;
@@ -262,10 +305,10 @@ describe("browser tier (real Chromium)", () => {
 
   it("renders a JS-only page and identifies itself honestly", async (t) => {
     if (!available) return t.skip(); // Chromium not installed on this machine
-    const r = await renderer.render(`${base}/shell`);
+    const r = await renderer.render(`${base}/shell`, { httpFallback: true });
     expect(r.html).toContain("Rendered Guide");
     expect(r.html).toContain("npm install rendered-guide");
-    const ua = await renderer.render(`${base}/ua`);
+    const ua = await renderer.render(`${base}/ua`, { httpFallback: true });
     // default identity=header: stock Chrome UA, tool named in From / X-Agent on every request
     expect(renderer.browserUserAgent).toMatch(/Chrome\//);
     expect(renderer.browserUserAgent).not.toContain("HeadlessChrome");
@@ -285,7 +328,7 @@ describe("browser tier (real Chromium)", () => {
       new Audit({ auditLog: "off", logLevel: "error" }),
     );
     try {
-      const r3 = await none.render(`${base}/ua`);
+      const r3 = await none.render(`${base}/ua`, { httpFallback: true });
       expect(r3.html).toMatch(/From: undefined/);
       expect(r3.html).toMatch(/X-Agent: undefined/);
       expect(r3.html).not.toContain("fearch/");

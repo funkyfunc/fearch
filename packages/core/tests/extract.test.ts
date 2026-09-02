@@ -109,6 +109,32 @@ describe("extract", () => {
   });
 });
 
+describe("code blocks survive interactive chrome", () => {
+  it("keeps identifiers wrapped in Twoslash hover <button>s and copy buttons inside <pre>", () => {
+    // nodejs.org/en/about, 2026-09: Shiki + Twoslash wrap every identifier in <button class="twoslash-hover">
+    const pre = `<pre class="shiki twoslash language-cjs"><code><span class="line"><span>const</span><span> {</span><span> </span><span><button data-state="closed" class="twoslash-hover">createServer</button></span><span> }</span><span> =</span><span> </span><span><button class="twoslash-hover">require</button></span><span>(</span><span>'node:http'</span><span>);</span></span>
+<span class="line"><span><button class="twoslash-hover">server</button></span><span>.</span><span><button class="twoslash-hover">listen</button></span><span>(</span><span><button class="twoslash-hover">port</button></span><span>);</span></span></code><button class="copy" aria-hidden="true"><svg></svg></button></pre>`;
+    const html = `<html><head><title>About</title></head><body><main><h1>About</h1><p>${"Prose about the runtime. ".repeat(12)}</p>${pre}<p>${"More prose. ".repeat(20)}</p></main></body></html>`;
+    const md = htmlToMarkdown(html).markdown;
+    expect(md).toContain("const { createServer } = require('node:http');");
+    expect(md).toContain("server.listen(port);");
+    expect(md).not.toContain("<button");
+  });
+
+  it("converts a header-first table with GFM and unwraps a row-header infobox instead of leaking its HTML", () => {
+    // MediaWiki infobox: image row first, <th scope="row"> on later rows — not a table the GFM plugin converts.
+    const infobox = `<table class="infobox"><caption>Sourdough bread</caption><tbody><tr><td colspan="2"><img src="/x.jpg" srcset="/x2.jpg 2x"></td></tr><tr><th scope="row">Type</th><td>Bread</td></tr><tr><th scope="row">Main ingredients</th><td>Flour, water, salt</td></tr></tbody></table>`;
+    const data = `<table><tbody><tr><th>Name</th><th>Value</th></tr><tr><td>a</td><td>1</td></tr></tbody></table>`;
+    const html = `<html><head><title>Sourdough</title></head><body><main>${infobox}<p>${"Sourdough is a leavening agent. ".repeat(15)}</p>${data}<p>${"More prose here. ".repeat(15)}</p></main></body></html>`;
+    const md = htmlToMarkdown(html).markdown;
+    expect(md).not.toContain("<table");
+    expect(md).not.toContain("srcset");
+    expect(md).toContain("Main ingredients");
+    expect(md).toContain("Flour, water, salt");
+    expect(md).toMatch(/\| Name \| Value \|/);
+  });
+});
+
 describe("detectShell", () => {
   it("does not mistake a short static page for a JS shell, but still catches empty mount points", () => {
     const tiny = `<html><head><title>Example Domain</title></head><body><div><h1>Example Domain</h1><p>This domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.</p><p><a href="https://www.iana.org/domains/example">More information...</a></p></div></body></html>`;
@@ -117,6 +143,25 @@ describe("detectShell", () => {
     expect(detectShell(`<html><body><div id="app"></div><script>render()</script></body></html>`)).toBe(true);
     expect(detectShell(`<html><body><p>Loading...</p><script src="/bundle.js"></script></body></html>`)).toBe(true);
     expect(detectShell(`<html><body><p>ok</p></body></html>`)).toBe(false);
+  });
+
+  it("recognises a mostly-script page with a few lines of text as a shell even when it says nothing familiar", () => {
+    // app.diagrams.net: 347 chars of marketing + "Please ensure JavaScript is enabled", the rest is script.
+    const blurb =
+      "draw.io is free online diagram software. You can use it as a flowchart maker, network diagram software, to create UML online, as an ER diagram tool, to design database schema, to build BPMN online, as a circuit diagram maker, and more. draw.io can import .vsdx, Gliffy and Lucidchart files.";
+    const script = `<script>${"var a = 1; ".repeat(400)}</script>`;
+    expect(
+      detectShell(
+        `<html><body><p>${blurb}</p><h2>Loading...</h2><p>Please ensure JavaScript is enabled.</p>${script}</body></html>`,
+      ),
+    ).toBe(true);
+    expect(detectShell(`<html><body><p>${blurb}</p>${script}</body></html>`)).toBe(true);
+    // the same blurb with a real article behind it is content, scripts or not
+    expect(
+      detectShell(
+        `<html><body><p>${blurb}</p><article>${"Real paragraph text. ".repeat(60)}</article>${script}</body></html>`,
+      ),
+    ).toBe(false);
   });
 });
 

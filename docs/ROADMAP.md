@@ -124,6 +124,7 @@ is not a goal to get through them.
 
 ## Measures of success
 
-- `npm test` fixture suite stays at 100% code-block retention; eval harness recall doesn't regress.
+- `npm test` fixture suite stays at 100% code-block retention — fences *and* their contents (a hollow
+  fence counts as lost; see the Twoslash test); eval harness recall doesn't regress.
 - Live suite: honest UA visible; robots-disallowed URL never requested; blocked page → exactly one request.
 - Median `fetch` under 2 s for docs pages; `search` under 3 s keyless.

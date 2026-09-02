@@ -63,15 +63,18 @@ Every rule below is enforced in code and covered by tests.
   (`Claude-User`, `ChatGPT-User`); Content Signals (`ai-input=no`) and `Crawl-delay` honoured;
   fail-closed; re-checked on cross-host redirects.
 - **One browser attempt** — a JS shell or a refusal gets one try in a real Chromium that names the
-  tool in `From:`/`X-Agent:` headers. No stealth, no fingerprint changes, `navigator.webdriver` left
-  true, no CAPTCHA solving, no credentials.
+  tool in `From:`/`X-Agent:` headers (through the bridge extension it is your own Chrome, with no
+  identifying headers — the result header says which). No stealth, no fingerprint changes,
+  `navigator.webdriver` left true, no CAPTCHA solving, no credentials. A bot check the browser still
+  shows is a refusal, never returned as content.
 - **Refusals are final** — a CAPTCHA/paywall/login/WAF page comes back as a structured Diagnosis
   (kind, attempts, what to do instead). Never retried with different headers, IPs, proxies, or cookies.
 - **Pace** — one connection per host, ≥1 s apart, `Retry-After` obeyed, conditional GETs, a
   per-session budget that refuses with an explanation.
 - **Egress** — fetches go direct (via `HTTPS_PROXY` if set). No reader proxies; Wayback only via
   explicit `archive=true` for pages that are _gone_. No telemetry.
-- **Safety** — SSRF guard (private/loopback/metadata/DNS-rebinding, re-validated per redirect hop),
+- **Safety** — SSRF guard (private/loopback/metadata; the address is re-checked at connection time
+  against DNS rebinding, and per redirect hop), an explicit `https://` is never downgraded,
   10 MB / 30 s / 6-hop caps, domain allow/deny lists, JSON audit log.
 
 There is no stealth mode and no "personal mode" that adds one. The one way to reach engines that
@@ -161,7 +164,8 @@ pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_
 `FEARCH_LOG_LEVEL`, `FEARCH_LOG_FILE`, `FEARCH_CACHE_DIR`, `FEARCH_MAX_CHARS` (12000),
 `FEARCH_LOCALE` (defaults to the machine's `LANG` — engines answer in your language and region),
 `FEARCH_TIMEOUT_MS` (30000), `FEARCH_MAX_BYTES` (10 MB), `FEARCH_PER_HOST_DELAY_MS` (1000),
-`FEARCH_BUDGET_COUNT`/`_WINDOW_MS` (60 / 10 min), `FEARCH_HANDOFF_TIMEOUT_MS` (180 s),
+`FEARCH_BUDGET_COUNT`/`_WINDOW_MS` (60 / 10 min), `FEARCH_HANDOFF_TIMEOUT_MS` (45 s — after that the
+tool answers "the check is waiting for you; call again" instead of hanging),
 `FEARCH_BROWSER_TIMEOUT_MS` (20 s), `FEARCH_UA_INFO_URL` (your org's bot page), `FEARCH_UA_CONTACT`,
 `FEARCH_ALLOW_PRIVATE`, `FEARCH_NO_CACHE`, `GITHUB_TOKEN` (higher GitHub limits + code search).
 
@@ -186,7 +190,7 @@ that is about reading those pages well, and queries never go there.)
 If you operate a website and see this agent in your logs:
 
 - **User-Agent:** `fearch/<version> (+https://github.com/funkyfunc/fearch#bot-info)`
-- **What it is:** a locally-run tool fetching individual pages a developer's coding assistant asked
+- **What it is:** a locally-run tool fetching individual pages a person's AI assistant asked
   for. In the search/agent/training taxonomy it is **agent traffic**: it does not crawl, does not
   follow links on its own, and does not train models.
 - **Volume:** one request at a time per host, ≥ 1 s apart, capped per session.

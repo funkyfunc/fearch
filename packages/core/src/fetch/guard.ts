@@ -3,8 +3,9 @@
  * DNS is resolved before connecting and every redirect hop is re-validated by the transport.
  */
 
+import { lookup as lookupCb } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 
 export class BlockedURL extends Error {
   constructor(message: string) {
@@ -104,6 +105,31 @@ export interface GuardOptions {
   allowPrivate?: boolean;
   /** Keep http:// as given (used for redirect targets, where the server chose the scheme). */
   keepScheme?: boolean;
+}
+
+export type LookupFn = LookupFunction;
+
+/**
+ * A `lookup` for the socket layer that refuses private results at connection time. The pre-check in
+ * `assertPublicUrl` resolves once; a rebinding host can answer differently a moment later, so the
+ * address the socket actually uses is validated here too.
+ */
+export function guardedLookup(base: LookupFn = lookupCb as unknown as LookupFn): LookupFn {
+  return (hostname, options, callback) => {
+    base(hostname, options, (err, address, family) => {
+      if (err) return callback(err, address, family);
+      const list = Array.isArray(address) ? (address as Array<{ address: string }>) : [{ address: String(address) }];
+      const bad = list.find((a) => isPrivateAddress(a.address));
+      if (bad) {
+        const e = new Error(
+          `Refusing to connect to '${hostname}': resolves to private/internal address ${bad.address}`,
+        ) as NodeJS.ErrnoException;
+        e.code = "EPRIVATEADDR";
+        return callback(e, address, family);
+      }
+      callback(null, address, family);
+    });
+  };
 }
 
 /** Validate and normalize a URL, resolving the host and rejecting private ranges. */

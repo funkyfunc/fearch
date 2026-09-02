@@ -5,6 +5,7 @@
  */
 
 import {
+  Agent,
   EnvHttpProxyAgent,
   fetch as undiciFetch,
   type Dispatcher,
@@ -14,7 +15,7 @@ import {
 import type { Audit } from "../audit.js";
 import type { Settings } from "../config.js";
 import { acceptLanguage } from "../config.js";
-import { assertPublicUrl, BlockedURL } from "./guard.js";
+import { assertPublicUrl, BlockedURL, guardedLookup, type LookupFn } from "./guard.js";
 import type { ContentKind, Fetched } from "./types.js";
 
 export const ACCEPT_HEADER =
@@ -77,6 +78,12 @@ export interface GetOptions {
   body?: string;
   /** Called before following a redirect to a *different host*; throw to refuse (e.g. robots.txt). */
   beforeCrossHostRedirect?: (nextUrl: string) => Promise<void>;
+  /**
+   * The URL was upgraded to https optimistically (the person gave a bare host or http://), so if
+   * https cannot connect at all, plain http may be tried once. Never set for an explicit https URL:
+   * that would send in the clear what was asked for encrypted.
+   */
+  httpFallback?: boolean;
 }
 
 export interface HttpResponse extends Fetched {
@@ -97,19 +104,29 @@ export function classify(contentType: string, body: Uint8Array, url: string): Co
   return "html";
 }
 
-function proxyDispatcher(): Dispatcher | undefined {
+/**
+ * Behind a proxy the proxy resolves names, so the environment agent is used as-is. Otherwise every
+ * socket resolves through the guarded lookup, which refuses a private address at connection time —
+ * the pre-check in the guard is advisory; this is the enforcement.
+ */
+function makeDispatcher(settings: Settings, lookup?: LookupFn): Dispatcher {
   const env = process.env;
   if (env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy) return new EnvHttpProxyAgent();
-  return undefined;
+  if (settings.allowPrivate && !lookup) return new Agent();
+  return new Agent({ connect: { lookup: guardedLookup(lookup) } });
 }
 
 export class Transport {
-  private readonly dispatcher = proxyDispatcher();
+  private readonly dispatcher: Dispatcher;
 
   constructor(
     private readonly settings: Settings,
     private readonly audit: Audit,
-  ) {}
+    /** Test seam: the name resolver the sockets use. */
+    lookup?: LookupFn,
+  ) {
+    this.dispatcher = makeDispatcher(settings, lookup);
+  }
 
   async get(url: string, opts: GetOptions = {}): Promise<HttpResponse> {
     const started = Date.now();
@@ -144,10 +161,11 @@ export class Transport {
           (e as Error).name === "TimeoutError"
             ? `timed out after ${this.settings.timeoutMs / 1000}s`
             : describeNetworkError(e);
-        // We upgrade http→https optimistically; if https cannot connect at all, try plain http once.
-        // Never on a certificate error: the host does speak TLS, and silently downgrading to http
-        // would hide a TLS-interception problem (and send the request in the clear).
+        // http→https was upgraded optimistically; if https cannot connect at all, try plain http once.
+        // Never for an explicit https URL, and never on a certificate error: the host does speak TLS,
+        // and silently downgrading would hide a TLS-interception problem (and send the request in the clear).
         if (
+          opts.httpFallback &&
           current.startsWith("https://") &&
           hop === 0 &&
           !httpRetried &&
@@ -172,6 +190,10 @@ export class Transport {
           ms: Date.now() - started,
           provider: opts.source,
         });
+        if (/EPRIVATEADDR/.test(`${(e as { cause?: { code?: string } }).cause?.code ?? ""}`))
+          throw new BlockedURL(
+            `Refusing to fetch ${current}: the host resolved to a private/internal address at connection time.`,
+          );
         throw new FetchError(`Connection failed for ${current}: ${msg}`);
       }
 

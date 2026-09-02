@@ -76,10 +76,14 @@ export async function doctor(app: App): Promise<number> {
   else {
     try {
       const r = await app.browser.render("https://example.com/");
+      // Say what the tier that actually rendered sends. The bridge extension is the person's own
+      // Chrome and adds no headers at all; only the Playwright tiers carry From/X-Agent.
       const identity =
-        s.browserIdentity === "none"
-          ? "none (plain Chrome, no identifying headers)"
-          : "header (From/X-Agent name the tool)";
+        app.browser.browserChannel === "extension"
+          ? `none — your own Chrome, no identifying headers; ${s.incognito ? "incognito, your logins stay out" : "your logins ride along (FEARCH_INCOGNITO=1 to keep them out)"}`
+          : s.browserIdentity === "none"
+            ? "none (plain Chrome, no identifying headers)"
+            : "header (From/X-Agent name the tool)";
       const headed =
         s.browser === "headed"
           ? `; handoff=${s.handoff ? "on" : "off"}; session=${s.browserSession ? "on" : "off"}; profile: ${s.browserStatePath}`

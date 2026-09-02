@@ -38,6 +38,8 @@ export interface Rendered {
   usedSession: boolean;
   /** A challenge was shown and the person dealt with it in the visible window. */
   handedOff: boolean;
+  /** Where a challenge was handed to the person (whether or not they passed it), e.g. "a tab in your Chrome". */
+  handoffWhere?: string;
   /** Extra provenance shown in the result header (e.g. "your Chrome"). */
   label?: string;
 }
@@ -57,6 +59,8 @@ export interface RenderOptions {
   session?: boolean;
   /** Allow the human handoff on a challenge (visible browser, handoff on). Default true. */
   handoff?: boolean;
+  /** The URL was upgraded to https optimistically; plain http may be tried if https cannot connect. */
+  httpFallback?: boolean;
   /** Engine-specific challenge detector (gets the current URL too); default is the generic one. */
   isChallenge?: (html: string, status: number, url: string) => boolean;
   /** Wait (bounded) for this selector before judging the page, so a half-rendered page isn't mistaken for a challenge. */
@@ -356,9 +360,15 @@ export class BrowserRenderer implements BrowserTier {
         if (/Timeout|ERR_ABORTED/i.test(msg)) {
           // Navigation timed out or was interrupted: harvest whatever rendered (fetcher-mcp's "timeout salvage").
           salvaged = true;
-        } else if (target.startsWith("https://") && /ERR_SSL|ERR_CONNECTION|ERR_CERT|net::/i.test(msg)) {
+        } else if (
+          opts.httpFallback &&
+          target.startsWith("https://") &&
+          /ERR_CONNECTION|ERR_SSL_PROTOCOL_ERROR|ERR_SSL_VERSION|net::ERR_(ADDRESS|NAME|SOCKET)/i.test(msg) &&
+          !/ERR_CERT/i.test(msg)
+        ) {
           // Optimistic https upgrade failed to connect; try plain http once, on a fresh page
-          // (the failed navigation leaves the old page heading to chrome-error://).
+          // (the failed navigation leaves the old page heading to chrome-error://). Never for an
+          // explicit https URL, never on a certificate error (same rule as the plain transport).
           await page.close().catch(() => {});
           page = await ctx.newPage();
           await goto("http://" + target.slice("https://".length));
@@ -381,15 +391,17 @@ export class BrowserRenderer implements BrowserTier {
         }
       }
       let handedOff = false;
+      let handoffWhere: string | undefined;
       const isChallenge = opts.isChallenge ?? isChallengePage;
       if (this.headed && this.settings.handoff && opts.handoff !== false && isChallenge(html, status, page.url())) {
+        handoffWhere = "a browser window on your screen";
         // The human handoff: bring the tab forward and wait for the person. Nothing is clicked, typed
         // or solved by the tool; it only watches for the page to stop being a challenge.
         this.audit.log(
           "warn",
           `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
         );
-        this.events?.emit("handoff", { url: target, where: "a browser window on your screen" });
+        this.events?.emit("handoff", { url: target, where: handoffWhere });
         await page.bringToFront().catch(() => {});
         const p = page;
         const r = await waitForHuman(
@@ -434,7 +446,7 @@ export class BrowserRenderer implements BrowserTier {
             .filter(Boolean)
             .join("; ") || undefined,
       });
-      return { html, finalUrl, status: status || 200, salvaged, usedSession, handedOff };
+      return { html, finalUrl, status: status || 200, salvaged, usedSession, handedOff, handoffWhere };
     } finally {
       this.inFlight--;
       await page?.close().catch(() => {});
@@ -456,8 +468,8 @@ export class BrowserRenderer implements BrowserTier {
   }
 }
 
-/** How long to stop opening windows after one goes unanswered — the person is evidently away. */
-const AWAY_COOLDOWN_MS = 10 * 60_000;
+/** How long to stop opening windows (or activating tabs) after one goes unanswered — the person is evidently away. */
+export const AWAY_COOLDOWN_MS = 10 * 60_000;
 
 /**
  * The `auto` tier: headless until it matters. Routine renders happen invisibly (with the tool

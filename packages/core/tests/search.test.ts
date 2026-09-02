@@ -6,6 +6,7 @@ import {
   canonicalize,
   dedupe,
   filterDomains,
+  RateLimited,
   SearchError,
   type SearchProvider,
   type SearchResult,
@@ -32,7 +33,12 @@ describe("provider helpers", () => {
 });
 
 describe("registry", () => {
-  const stub = (name: string, results: SearchResult[] = [], error?: string): SearchProvider & { calls: number } => ({
+  const stub = (
+    name: string,
+    results: SearchResult[] = [],
+    error?: string,
+    limited = false,
+  ): SearchProvider & { calls: number } => ({
     name,
     disclosure: `${name} disclosure`,
     posture: "official",
@@ -40,7 +46,7 @@ describe("registry", () => {
     available: () => true,
     async search() {
       this.calls++;
-      if (error) throw new SearchError(error);
+      if (error) throw limited ? new RateLimited(error) : new SearchError(error);
       return { results };
     },
   });
@@ -72,7 +78,7 @@ describe("registry", () => {
   });
 
   it("cools down a rate-limited engine and says so; other failures are surfaced as notes", async () => {
-    const limited = stub("slowpoke", [], "slowpoke: rate-limited (HTTP 429); waiting a few minutes lifts it.");
+    const limited = stub("slowpoke", [], "slowpoke: rate-limited (HTTP 429); waiting a few minutes lifts it.", true);
     const ddg = stub("duckduckgo", [r("https://x.com/1")]);
     const reg = registry([limited, ddg]);
     const first = await reg.search({ query: "q1", maxResults: 2 });

@@ -22,7 +22,14 @@ import { join } from "node:path";
 import type { Audit } from "../audit.js";
 import type { AppEvents } from "../app.js";
 import type { Settings } from "../config.js";
-import { BrowserUnavailable, waitForHuman, type BrowserTier, type Rendered, type RenderOptions } from "./browser.js";
+import {
+  AWAY_COOLDOWN_MS,
+  BrowserUnavailable,
+  waitForHuman,
+  type BrowserTier,
+  type Rendered,
+  type RenderOptions,
+} from "./browser.js";
 import { isChallengePage } from "./diagnose.js";
 import { BlockedURL, isBlockedHostname, isPrivateAddress, normalizeUrl } from "./guard.js";
 import { isIP } from "node:net";
@@ -315,6 +322,8 @@ export class ExtensionRenderer implements BrowserTier {
   readonly headed = true;
   private warnedFallback = false;
   private everConnected = false;
+  /** After a handed-off tab went unanswered, no more tabs are activated until this time. */
+  private awayUntil = 0;
   /** `fearch extension install` leaves this marker; with it, auto's first render waits properly. */
   private readonly installedHint: boolean;
 
@@ -399,6 +408,7 @@ export class ExtensionRenderer implements BrowserTier {
     let html = opened.html ?? "";
     let finalUrl = opened.url ?? target;
     let handedOff = false;
+    let handoffWhere: string | undefined;
     try {
       if (opts.settleUntil) {
         const deadline = Date.now() + (opts.settleUntilMs ?? 2500);
@@ -412,12 +422,19 @@ export class ExtensionRenderer implements BrowserTier {
         }
       }
       const isChallenge = opts.isChallenge ?? isChallengePage;
-      if (this.settings.handoff && opts.handoff !== false && isChallenge(html, 200, finalUrl)) {
+      const challenged = this.settings.handoff && opts.handoff !== false && isChallenge(html, 200, finalUrl);
+      if (challenged && Date.now() < this.awayUntil) {
+        this.audit.log(
+          "warn",
+          `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,
+        );
+      } else if (challenged) {
+        handoffWhere = "a tab in your Chrome";
         this.audit.log(
           "warn",
           `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
         );
-        this.events?.emit("handoff", { url: target, where: "a tab in your Chrome" });
+        this.events?.emit("handoff", { url: target, where: handoffWhere });
         await this.bridge.request({ op: "activate", tabId });
         const r = await waitForHuman(
           async () => {
@@ -431,8 +448,15 @@ export class ExtensionRenderer implements BrowserTier {
           html = r.html;
           finalUrl = r.url;
           handedOff = true;
+          this.awayUntil = 0;
           this.audit.log("info", `challenge on ${target} passed by you; continuing`);
-        } else this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
+        } else {
+          this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
+          this.audit.log(
+            "warn",
+            `challenge on ${target} not passed within the handoff window; not activating another tab for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
+          );
+        }
         this.events?.emit("handoff-end", { url: target, passed: r.passed });
       }
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
@@ -448,7 +472,17 @@ export class ExtensionRenderer implements BrowserTier {
         bytes: html.length,
         provider: this.settings.incognito ? "extension (incognito)" : "extension",
         ms: Date.now() - started,
-        note: handedOff ? "challenge handed to the person" : undefined,
+        note:
+          [
+            handoffWhere
+              ? handedOff
+                ? "challenge passed by the person"
+                : "challenge handed to the person, not passed"
+              : "",
+            this.settings.incognito ? "" : "sent the person's session cookies (their Chrome profile)",
+          ]
+            .filter(Boolean)
+            .join("; ") || undefined,
       });
       return {
         html,
@@ -458,6 +492,7 @@ export class ExtensionRenderer implements BrowserTier {
         // A non-incognito tab is the person's own profile — their logins ride along, so say so.
         usedSession: !this.settings.incognito,
         handedOff,
+        handoffWhere,
         label: this.settings.incognito ? "your Chrome, incognito" : "your Chrome",
       };
     } finally {

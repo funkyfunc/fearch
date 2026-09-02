@@ -24,7 +24,7 @@ export function searchDescription(s: Settings): string {
 
 Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
 
-\`site="docs.python.org"\` restricts to a domain; \`recency="w"\` limits to the past week (d/w/m/y). Prefer these parameters over typing \`site:\`/\`before:\` operators — they are translated to each engine's own mechanism (not every engine supports every operator). Quoted phrases and \`-term\` exclusions work as typed. Results carry a date when the engine shows one. Quote exact error strings. If results are poor, rephrase rather than paging.
+\`site="docs.python.org"\` restricts to a domain (sent as the engine's \`site:\` operator and enforced on the results); \`recency="w"\` limits to the past week (d/w/m/y, as the engine's own date filter). Quoted phrases and \`-term\` exclusions work as typed. Results carry a date when the engine shows one. Quote exact error strings. If results are poor, rephrase rather than paging.
 
 ${posture} It never impersonates a browser or hides that it is automated.`;
 }

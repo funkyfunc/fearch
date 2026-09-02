@@ -127,9 +127,11 @@ async function handle(job) {
       return { ok: true, tabId: job.tabId, ...(await snapshot(job.tabId)) };
     }
     case "activate": {
+      // Show the tab and ask for attention (dock/taskbar), but never take focus away from whatever
+      // the person is doing: fearch reports that a check is waiting; the person comes to it.
       if (!ownedTabs.has(job.tabId)) throw new Error("not a fearch tab");
       const tab = await chrome.tabs.update(job.tabId, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+      await chrome.windows.update(tab.windowId, { state: "normal", drawAttention: true });
       return { ok: true };
     }
     case "close": {

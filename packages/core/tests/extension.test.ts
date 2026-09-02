@@ -124,6 +124,59 @@ describe("extension bridge (fake extension client)", () => {
   });
 });
 
+describe("extension tier — the handoff", () => {
+  /** A minimal fake of the extension: answers open/read with the given page, counts activations. */
+  async function fakeExtension(port: number, page: () => string, log: string[]) {
+    const nonce = () => Math.random().toString(16).slice(2);
+    for (let i = 0; i < 200; i++) {
+      const n = nonce();
+      const r = await fetch(`http://127.0.0.1:${port}/fearch/next`, {
+        method: "POST",
+        headers: ORIGIN,
+        body: JSON.stringify({ version: "t", incognitoAllowed: false, nonce: n, auth: sha(`${TOKEN}:poll:${n}`) }),
+      });
+      if (r.status === 204) continue;
+      if (r.status !== 200) return;
+      const job = (await r.json()) as { id: string; op: string; tabId?: number };
+      log.push(job.op);
+      const result =
+        job.op === "open"
+          ? { ok: true, tabId: 7, html: page(), url: "https://x.test/" }
+          : job.op === "read"
+            ? { ok: true, tabId: 7, html: page(), url: "https://x.test/" }
+            : { ok: true };
+      await fetch(`http://127.0.0.1:${port}/fearch/result`, {
+        method: "POST",
+        headers: ORIGIN,
+        body: JSON.stringify({ id: job.id, ...result, auth: sha(`${TOKEN}:result:${job.id}`) }),
+      });
+      if (job.op === "close" && log.filter((o) => o === "close").length >= 2) return;
+    }
+  }
+
+  it("activates the tab once, reports where the check is waiting, and does not activate again while the person is away", async () => {
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47474, 47475]);
+    const port = await bridge.start();
+    const challenge = `<html><head><title>Just a moment...</title></head><body><p>Verify you are human</p></body></html>`;
+    const log: string[] = [];
+    const client = fakeExtension(port, () => challenge, log);
+    const r = new ExtensionRenderer(
+      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "300", FEARCH_ALLOW_PRIVATE: "1" }),
+      audit(),
+      bridge,
+    );
+    const first = await r.render("https://x.test/");
+    expect(first.handedOff).toBe(false);
+    expect(first.handoffWhere).toBe("a tab in your Chrome");
+    expect(first.usedSession).toBe(true); // the person's profile, and it says so
+    const second = await r.render("https://x.test/");
+    expect(second.handoffWhere).toBeUndefined(); // away cooldown: the person was not bothered again
+    await client;
+    expect(log.filter((o) => o === "activate").length).toBe(1);
+    await r.close();
+  }, 20_000);
+});
+
 describe("extension tier (real extension in Playwright Chromium)", () => {
   let site: Server;
   let base = "";

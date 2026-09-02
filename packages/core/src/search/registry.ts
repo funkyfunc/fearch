@@ -13,6 +13,7 @@ import type { Settings } from "../config.js";
 import type { EngineProvider } from "./engines.js";
 import {
   dedupe,
+  RateLimited,
   SearchError,
   type EngineSummary,
   type SearchProvider,
@@ -113,13 +114,14 @@ export class SearchRegistry {
         const msg = (e as Error).message;
         errors.push(msg);
         this.audit.record({ url: `search:${q.query}`, provider: p.name, status: "error", note: msg });
-        if (/rate.?limit|HTTP 429|too many requests/i.test(msg)) {
+        if (e instanceof RateLimited) {
           const why = p.posture === "browser" ? `${p.name} showed its bot-check page` : "rate-limited";
           this.cooldown.set(p.name, { until: now + RATE_LIMIT_COOLDOWN_MS, why });
           notes.push(`${p.name}: ${why}`);
         } else {
           // Say why an answer is missing (a robots.txt timeout, a parse failure) instead of burying it.
-          notes.push(`${p.name}: ${msg.split("\n")[0].slice(0, 160)}`);
+          const line = msg.split("\n")[0].slice(0, 160);
+          notes.push(line.startsWith(`${p.name}:`) ? line : `${p.name}: ${line}`);
         }
         return [];
       }

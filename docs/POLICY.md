@@ -76,7 +76,8 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   (default): renders happen in the bundled headless Chromium; when a page comes back as a challenge
   and a display exists, that one page is opened in a visible window (the installed Chrome) and handed
   to the person — passed, its clearance persists in the tool-owned profile so the window need not
-  reappear; unanswered, no further windows are opened for 10 minutes; where no window can be shown,
+  reappear; unanswered, no further windows are opened (and no further tabs activated in the person's
+  Chrome) for 10 minutes; where no window can be shown,
   the challenge is final. The person's own Chrome via the paired bridge extension is preferred over
   all of this whenever it is connected. `headless`: never a window, no state survives the process
   (Chromium itself is downloaded lazily on first need, never in a postinstall). `headed`: every render
@@ -104,9 +105,13 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   headed, or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
   it is surfaced — the auto tier opens that one page in a visible window; headed brings the tab to
   the front; the extension activates the tab in the person's Chrome — and the tool waits (default
-  180 s) for the person to deal with it, then continues with what they were shown. The tool clicks,
-  types and solves nothing; it only watches for the page to stop being a challenge. Without handoff,
-  or where nothing can be shown, a challenge is final.
+  45 s, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with it, then continues with what they
+  were shown. If the check is still there, the answer is a `captcha_or_challenge` diagnosis marked
+  retryable that says where the check is waiting and that the same URL may be called again once the
+  person has passed it — the one retry of a refused URL that is correct. The tool clicks, types and
+  solves nothing; it only watches for the page to stop being a challenge. The extension activates the
+  tab and asks for attention (dock/taskbar) without taking focus. Without handoff, or where nothing
+  can be shown, a challenge is final.
 - **Session** (`FEARCH_BROWSER_SESSION`, headed only, default off). Cookies the person created in the
   tool profile are sent to engine pages always (a passed check lives there) and to ordinary pages only
   when on; such reads are labelled `your session` in the result header and in the audit log. In auto
@@ -131,10 +136,13 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   not loaded (bandwidth courtesy); headed windows load them because a person is looking. Requests to
   private/internal addresses are blocked at the request gate.
 - The browser attempt is subject to the same robots.txt decision, the same per-host queue, and costs two
-  units of the session budget. It is used only on the URL the model asked for; it never navigates
-  further.
+  units of the session budget in total (the plain attempt paid the first). It is used only on the
+  URL the model asked for; it never navigates further.
 - If the rendered page is a CAPTCHA, challenge, login form, paywall or still a shell, the refusal is
-  **final** and the Diagnosis lists both attempts. The server never solves challenges.
+  **final** and the Diagnosis lists both attempts — the same detector that decides to hand a page to
+  the person decides whether what came back is still a check, so an interstitial is never returned
+  as content. The one exception is a check handed to the person and not yet passed (above). The
+  server never solves challenges.
 - `FEARCH_BROWSER=off` disables the tier entirely.
 
 ## Refusals are final
@@ -169,8 +177,10 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   with the reasons. `FEARCH_SEARCH_MODE=off` disables the search tool entirely. (The fetch tool's
   documented API fast paths — GitHub, PyPI, npm, Stack Overflow, arXiv — are for reading URLs the
   model already has; search queries never reach them.)
-- The browser identifies itself as ordinary Chrome with `From:`/`X-Agent:` naming this tool (new-headless
-  Chromium; see *The browser tier*). Cloudflare's
+- The Playwright tiers (headless, headed) identify themselves as ordinary Chrome with `From:`/`X-Agent:`
+  naming this tool (see *The browser tier*). The bridge extension does **not**: it is the person's own
+  Chrome, sending exactly what their Chrome sends, and every result it produced says `your Chrome`
+  (`doctor` reports the same). Cloudflare's
   Web Bot Auth (signed requests) is **not** used: a locally-run open-source tool cannot hold a private
   signing key without publishing it, which would be extracted and revoked.
 - **Search engines.** With no person present, the only engine result pages this server requests are
@@ -188,8 +198,12 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 
 ## Safety limits
 
-- Private, loopback, link-local, multicast, cloud-metadata and DNS-rebinding hosts are refused, with
-  DNS resolved before connecting and every redirect hop re-validated.
+- Private, loopback, link-local, multicast and cloud-metadata targets are refused. DNS is resolved
+  before connecting *and* the address the socket actually connects to is checked again at connection
+  time (`guardedLookup` in `fetch/guard.ts`, wired into the HTTP client's connector), so a name that
+  rebinds between the two lookups is still refused; every redirect hop is re-validated. An explicit
+  `https://` URL is never retried over plain http; only a bare host or an `http://` URL that was
+  upgraded optimistically may fall back.
 - 10 MB response cap, 30 s request timeout, 6 redirect hops, ≤5 URLs per call.
 - Domain allow list (`FEARCH_ALLOW_DOMAINS`) and deny list (`FEARCH_DENY_DOMAINS`).
 - Every request is written to the audit log (`FEARCH_AUDIT_LOG`, default stderr) as one JSON line:

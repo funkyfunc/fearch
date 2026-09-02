@@ -4,7 +4,16 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/", "**/node_modules/", "docs/", "packages/core/extension/", "packages/core/tests/__golden__/"] },
+  {
+    ignores: [
+      "**/dist/",
+      "dist-mcpb/",
+      "**/node_modules/",
+      "docs/",
+      "packages/core/extension/",
+      "packages/core/tests/__golden__/",
+    ],
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
