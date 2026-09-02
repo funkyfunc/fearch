@@ -58,10 +58,16 @@ distinction in mind.
 
 ### The contract layer (orthogonal to the rungs)
 
-Clickwrap ("I agree") is generally enforceable; browsewrap (a footer link) often isn't. *X Corp. v.
-Bright Data* (N.D. Cal., May 2024) dismissed X's ToS scraping claims as **preempted by the Copyright
-Act**, limiting ToS-as-scraping-ban. These are US district/circuit decisions, not settled law, and none
-are EU/UK law; the UK has no commercial TDM exception.
+Clickwrap ("I agree") is generally enforceable; browsewrap (a footer link) often isn't (*Berman v.
+Freedom Financial*, 9th Cir. 2022). *Meta v. Bright Data* (N.D. Cal., Jan 2024) held that a platform's
+terms bind an account holder using the account and do not reach **logged-off** reading of public pages;
+*X Corp. v. Bright Data* (N.D. Cal., May 2024) dismissed X's ToS scraping claims as **preempted by the
+Copyright Act**, limiting ToS-as-scraping-ban; *hiQ* itself ended with summary judgment for LinkedIn on
+breach of its User Agreement (Nov 2022) and a $500,000 consent judgment — the CFAA point was won, the
+contract point lost. For this tool the practical reading is: whether the person's *account* is in the
+picture is what decides whether an engine's terms bind that query, which is why `--incognito` for engine
+pages is a legal lever as well as a privacy one. These are US district/circuit decisions, not settled law,
+and none are EU/UK law; the UK has no commercial TDM exception.
 
 ## Where this project's versions sit
 

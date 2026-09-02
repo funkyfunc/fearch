@@ -156,3 +156,51 @@ case on SERP reading. 54 sources. Verification outcomes:
   (Halo, Locke, AkuBrowser) were not independently confirmed; nothing rests on them.
 - **Declined.** Keyed official search-API fallbacks (Brave/Mojeek) as a DOM-breakage hedge —
   contradicts the no-third-party, keyless doctrine; recorded under "Considered and set aside".
+
+## Report E (2026-09-02): "Search Automation Tool Legal Exposure" (`docs/research/`)
+
+Commissioned to map the case law on user-directed browser automation and scraping (US/EU/UK) after
+the Ninth Circuit's *Amazon v. Perplexity* opinion turned out to be real. The brief asked for five
+specific case histories with primary-source citations. The report instead wrote a general
+exposure memo, mostly from secondary sources (law-firm alerts, SEO and proxy-vendor blogs, a Scribd
+copy of a contract, Wikipedia). It is useful for its framework and unreliable in its specifics.
+Verification outcomes (each checked with fearch against the primary source on 2026-09-02):
+
+- **Right, and useful.** The two-layer picture — the person's exposure is contractual and
+  administrative (account suspension, CAPTCHAs, rate limits), the author's exposure turns on
+  circumvention and inducement, not on what users do — matches the primary sources. *Meta v.
+  Bright Data* (N.D. Cal. 2024-01-23, Chen, J.): platform terms bind account holders using their
+  accounts; scraping public pages **logged off** is not a breach of those terms. *X Corp. v. Bright
+  Data* (N.D. Cal. 2024-05-09, Alsup, J.): state-law contract/tort claims over public data
+  preempted by the Copyright Act. *Berman v. Freedom Financial* (9th Cir. 2022): browsewrap needs
+  conspicuous notice. *DPP v. Lennon* (implied consent for ordinary requests), CMA s.3A with the
+  CPS dual-use guidance, *Sony* / *Grokster* on tool distribution, *Innoweb* and *CV-Online* on
+  database rights — all correctly characterised as far as checked.
+- **Stale or wrong.** (1) "Google's search-specific policies prohibit automated queries of any
+  sort without express permission" — that wording is from the 2002 terms the report itself cites
+  in its archive link; the live terms (policies.google.com/terms, fetched today) contain only the
+  robots.txt clause and the "services that encourage others" clause already recorded above.
+  (2) "Microsoft Services Agreement prohibits bots, spiders, or meta-search tools" — a stale copy;
+  the live agreement says "don't circumvent any restrictions on access … (e.g. impermissible
+  scraping)" and separately bars scraping *of its AI services*. (3) "DuckDuckGo's terms restrict
+  automated use" — false, for the third time in this corpus, from the same proxy-vendor sources;
+  duckduckgo.com/terms has no such clause. (4) *Freeman v. DirecTV* (9th Cir. 2006) is a Wiretap
+  Act / Stored Communications Act case, not a CFAA one; the "no civil aiding-and-abetting under the
+  CFAA" point may be right but that is not its authority. (5) "Search engine operators do not
+  pursue individual consumers in court" — unsourced; plausible, treat as an observation.
+- **Ignored.** The brief's five sub-questions: no *Amazon v. Perplexity* at all, no mention that
+  hiQ ultimately lost on contract (Nov 2022 summary judgment for LinkedIn; $500,000 consent
+  judgment Dec 2022 — verified today), no *Ryanair v. Booking*, no *Kneschke v. LAION*, no *Getty
+  v. Stability*, and no status for *Google v. SerpApi* (verified today: the DMCA §1201 claims were
+  dismissed 2026-07-20 by Chief Judge Gonzalez Rogers, with leave to amend; the case continues on
+  other claims).
+- **What it changes for fearch — one thing.** The logged-in/logged-out line runs through *Meta v.
+  Bright Data*, *Berman*, and the hiQ contract loss consistently: terms bind an account holder
+  using the account; a logged-off visitor faces only browsewrap, which rarely binds; and there is
+  no account to suspend. That makes `--incognito` for engine pages a *legal* lever, not only a
+  privacy one, and is the strongest argument for making it the default whenever Google or Bing is
+  enabled. It does not change the no-circumvention line (the *SerpApi* complaint's SearchGuard
+  allegations are exactly what fearch does not do), and it does not soften "providing services
+  that encourage others to violate these terms": that clause is the author-side exposure, and
+  "you press search" (`--human-search`) is the design answer to it.
+
