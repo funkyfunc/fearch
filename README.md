@@ -1,5 +1,9 @@
 # fearch
 
+[![CI](https://github.com/funkyfunc/fearch/actions/workflows/ci.yml/badge.svg)](https://github.com/funkyfunc/fearch/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/fearch-mcp)](https://www.npmjs.com/package/fearch-mcp)
+[![license](https://img.shields.io/npm/l/fearch-mcp)](./LICENSE)
+
 Web search and page reading for agents — an MCP server and CLI that are **respectful enough to run
 at work**. It identifies itself honestly, honours `robots.txt`, waits between requests, and treats
 a refusal as final. Free: no keys, no accounts.
