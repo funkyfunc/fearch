@@ -16,9 +16,9 @@ import { SearchRegistry } from "./search/registry.js";
 
 /** In-process signals from the depths of a render to whoever is presenting fearch (the MCP server). */
 export interface AppEvents extends EventEmitter {
-  emit(event: "handoff", info: { url: string; where: string }): boolean;
+  emit(event: "handoff", info: { url: string; where: string; message?: string }): boolean;
   emit(event: "handoff-end", info: { url: string; passed: boolean }): boolean;
-  on(event: "handoff", fn: (info: { url: string; where: string }) => void): this;
+  on(event: "handoff", fn: (info: { url: string; where: string; message?: string }) => void): this;
   on(event: "handoff-end", fn: (info: { url: string; passed: boolean }) => void): this;
 }
 

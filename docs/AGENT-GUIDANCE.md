@@ -22,7 +22,9 @@ You have `search` and `fetch`.
   retry the same URL with different settings; use another source, an official API, or ask the user.
   One exception: a `captcha_or_challenge` marked `retryable: true` means the check is open in the
   user's browser waiting for them — tell them, and call fetch again on the same URL once they say
-  they have passed it.
+  they have passed it. Likewise, a search note saying the query is "filled into Google … press
+  Enter there" means the user submits searches themselves on this server: tell them, then search
+  again.
 - GitHub, PyPI, npm and StackOverflow URLs are read through their APIs — prefer those URLs over
   mirrors. Documentation sites often serve markdown directly; you will see `source: direct (markdown)`.
 - Results and pages show a date when the site declares one. Prefer recent sources for anything

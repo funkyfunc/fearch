@@ -45,18 +45,27 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
   a `robots.txt` line) are honoured under `default` and `strict`: `ai-input=no` means the site does not
   want its pages fed into an AI model, which is exactly what this tool does, so the content is withheld
   and a `content_signal` diagnosis is returned.
-- **Person-present rule.** robots.txt governs the tool fetching on its own. When a person is on call —
-  a window (or their own Chrome via the extension) can reach them and handoff is on, which is the
-  default wherever a display exists — search-engine result pages are that person's own browsing,
-  automated only in the sense that the query is typed and the result read back for them, and every
-  gate a site raises is decided by them personally; those pages are then opened without consulting
-  robots.txt, exactly as their own Chrome would. Ordinary page fetches — the tool acting alone — stay
-  under the robots policy above in every mode, and where no person can be reached (no display,
-  handoff off, explicit headless) the carve-out simply does not apply. This position has published industry
-  precedent: RFC 9309 scopes itself to "automatic clients known as crawlers", and OpenAI's crawler
-  documentation states of its user-initiated `ChatGPT-User` agent that "because these actions are
-  initiated by a user, robots.txt rules may not apply" (verified 2026-08-31 at
-  developers.openai.com/api/docs/bots); see `RESEARCH-RECONCILIATION.md`, Report C.
+- **Person-present rule.** robots.txt governs the tool fetching on its own. Google and Bing result
+  pages are never opened by default: they are used only when the operator lists them in `--engines`
+  *and* a person is on call — a window (or their own Chrome via the extension) can reach them and
+  handoff is on. Those pages are then that person's own browsing, automated only in the sense that
+  the query is typed and the result read back for them, and every gate a site raises is decided by
+  them personally; they are opened without consulting robots.txt, exactly as their own Chrome would.
+  `FEARCH_HUMAN_SEARCH=1` removes even that qualification: the query is filled into the engine's
+  search box and the person submits it. Ordinary page fetches — the tool acting alone — stay under
+  the robots policy above in every mode, and where no person can be reached (no display, handoff
+  off, explicit headless) the carve-out simply does not apply. Two things must be said plainly about
+  this path. First, no disclosure to the engine is possible on it: a declared automated client is
+  exactly what these engines refuse, so the page is opened as the person's Chrome and nothing else,
+  and the result header says so. Second, the precedent is the agent-in-the-user's-browser category
+  (Claude in Chrome, Playwright MCP, computer-use products; and *Amazon v. Perplexity*, 9th Cir.
+  2026-08-04, No. 26-1444, which held that an agent acting at the user's direction from the user's
+  own browser is a tool and the *user* is the one who accesses the site — a CFAA holding that the
+  court expressly limited to that architecture and that leaves a site's terms of service intact), not
+  the declared-agent category: OpenAI's `ChatGPT-User` and Anthropic's `Claude-User` are *fetch*
+  agents that identify themselves, and neither company reads search results by driving a user's
+  browser. RFC 9309 scopes itself to "automatic clients known as crawlers". See
+  `RESEARCH-RECONCILIATION.md`, Report C.
 - If `robots.txt` returns 401/403 or cannot be parsed, the host is treated as disallowed (fail closed).
 - `X-Robots-Tag`, `<meta name="robots">`, `noai`/`noimageai`, RSL and AIPREF headers are recorded and
   shown in the tool output so downstream use can respect them.
@@ -186,10 +195,10 @@ claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
 - **Search engines.** With no person present, the only engine result pages this server requests are
   DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live before
   every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
-  Google and Bing disallow `/search` for crawlers and become eligible only under the person-present
-  rule (a person on call — any check the engine raises opens in a window, or their own Chrome, for
-  them to decide; then Google is on by default) or the explicit `FEARCH_ROBOTS_POLICY=off` user-agent
-  posture, and Bing additionally only when listed in `FEARCH_ENGINES`. `doctor` reports exactly which
+  Google and Bing disallow `/search` for crawlers and are used only when listed in `FEARCH_ENGINES`
+  and eligible under the person-present rule (a person on call — any check the engine raises opens
+  in a window, or their own Chrome, for them to decide) or the explicit `FEARCH_ROBOTS_POLICY=off`
+  user-agent posture; with `FEARCH_HUMAN_SEARCH=1` the person submits each query themselves. `doctor` reports exactly which
   engines are in use and why the rest are not. Engine pages are opened in the same browser tier as
   page reads, one query per search call, at least 3 s apart. A bot-check page is that engine's "no":
   the provider stops and cools down for 10 minutes, unless the person passes it themselves in the

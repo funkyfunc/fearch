@@ -48,6 +48,12 @@ export interface EngineSpec {
   isChallenge(html: string, status: number, url?: string): boolean;
   /** The engine's own "nothing matched" page — an answer, not a parser failure. */
   noResults: RegExp;
+  /**
+   * "You press search": the engine's home page with the query prefilled but not submitted, and how to
+   * recognise the results page the person lands on. Only for engines whose result pages are not
+   * robots-permitted — the ones where the person's own hand on the query is the point.
+   */
+  human?: { homeUrl(query: string, locale?: string): string; resultsUrl: RegExp };
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
   /** Extract the engine's own generated answer box, if the page carries one. */
@@ -340,6 +346,11 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     isChallenge: bingChallenge,
     noResults: /There are no results for/i,
     resultsSelector: "li.b_algo",
+    human: {
+      homeUrl: (q, loc = "en-US") =>
+        `https://www.bing.com/?q=${encodeURIComponent(q)}&setlang=${localeParts(loc).lang}`,
+      resultsUrl: /\/search\?/,
+    },
   },
   google: {
     name: "google",
@@ -356,6 +367,11 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     noResults: /did not match any documents|No results found for/i,
     resultsSelector: "a h3",
     overview: parseGoogleOverview,
+    human: {
+      // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
+      homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
+      resultsUrl: /\/search\?/,
+    },
   },
 };
 
@@ -389,10 +405,17 @@ export class EngineProvider implements SearchProvider {
             : "a self-identified headless browser";
     const robots = this.spec.robotsPermitted
       ? "robots.txt permits"
-      : personPresent(this.settings)
-        ? "your own browsing, not a crawl"
-        : "robots is off";
+      : this.humanSearch
+        ? "query filled in by fearch, submitted by you"
+        : personPresent(this.settings)
+          ? "your own browsing, not a crawl"
+          : "robots is off";
     return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
+  }
+
+  /** "You press search" applies to this engine: opted in, and its result pages are not robots-permitted. */
+  private get humanSearch(): boolean {
+    return this.settings.humanSearch && !this.spec.robotsPermitted && !!this.spec.human;
   }
 
   /** Listed in --engines, browser on, and robots-eligible. */
@@ -415,7 +438,16 @@ export class EngineProvider implements SearchProvider {
 
   async search(q: SearchQuery): Promise<SearchResponse> {
     const query = q.site ? `${q.query} site:${q.site}` : q.query;
-    const url = this.spec.url(query, q.recency, this.settings.locale);
+    const human = this.humanSearch ? this.spec.human! : null;
+    // Human mode opens the engine's home page with the query in the box; the person presses Enter.
+    // (Recency has no place in a query the person submits; it is applied by the engine's UI if at all.)
+    const url = human
+      ? human.homeUrl(query, this.settings.locale)
+      : this.spec.url(query, q.recency, this.settings.locale);
+    const ready = (html: string, at: string) =>
+      human!.resultsUrl.test(at) &&
+      !this.spec.isChallenge(html, 200, at) &&
+      (cheerio.load(html)(this.spec.resultsSelector).length > 0 || this.spec.noResults.test(html));
     // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
     // eligible through the person-present or robots-off posture are the person's own browsing — the
     // crawler rules don't apply, so robots.txt is not consulted for their result pages.
@@ -437,7 +469,13 @@ export class EngineProvider implements SearchProvider {
             session: true,
             handoff: true,
             isChallenge: this.spec.isChallenge,
-            settleSelector: this.spec.resultsSelector,
+            handToPerson: human
+              ? {
+                  message: `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`,
+                  ready,
+                }
+              : undefined,
+            settleSelector: human ? undefined : this.spec.resultsSelector,
             // Generated answer boxes stream in after the results; wait briefly for one that is coming,
             // never for one that isn't (no marker on the page).
             settleUntil: this.spec.overview
@@ -449,6 +487,11 @@ export class EngineProvider implements SearchProvider {
       );
     } catch (e) {
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
+    }
+    if (human && !rendered.handedOff) {
+      throw new SearchError(
+        `${this.name}: the query is filled into ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (FEARCH_HUMAN_SEARCH is on)`,
+      );
     }
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
       // The engine's "no". Stop and cool down (the registry treats RateLimited as such).

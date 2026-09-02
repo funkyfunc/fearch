@@ -98,13 +98,29 @@ framing is "a highly defensible, emerging standard". Independent verification of
   user, robots.txt rules may not apply."* This is the strongest citable industry precedent for the
   person-present rule, and RFC 9309 does scope itself to "automatic clients known as crawlers".
   DuckDuckGo's DuckAssistBot (real-time fetch, no training) is a second vendor on the same line.
-- **Real, but only as a dispute.** Amazon sued Perplexity over the Comet browser's agentic shopping
-  (filed 2025-11-05; Guardian/Verge coverage confirmed via HN). The report's centerpiece — a Ninth
-  Circuit ruling of 2026-08-04 ("Amazon.com Services, LLC v. Perplexity AI", agent = "tool, not a
-  person", access attributed to the human) — **could not be verified anywhere**: no HN, no news, no
-  reachable docket, and the timeline (appellate ruling nine months after filing) is improbable.
-  Treat the "ruling" as unconfirmed at best and likely a hallucinated synthesis. **Do not cite it.**
-  The argument stands on Van Buren / hiQ / Meta v. Bright Data without it.
+- **Real — corrected 2026-09-01.** An earlier version of this note said the Ninth Circuit ruling
+  "could not be verified anywhere" and was "likely a hallucinated synthesis". That was wrong. The
+  opinion exists: *Amazon.com Services, LLC v. Perplexity AI, Inc.*, No. 26-1444 (9th Cir. Aug. 4,
+  2026), Judge M. Smith, published at
+  cdn.ca9.uscourts.gov/datastore/opinions/2026/08/04/26-1444.pdf (fetched through fearch; Reuters
+  and Ropes & Gray coverage the same week). Procedural history: complaint filed November 2025;
+  the district court granted Amazon a preliminary injunction in March 2026 (calling it a close
+  call); the Ninth Circuit stayed and then vacated it. What it holds: the CFAA reaches "whoever …
+  intentionally accesses"; the Assistant, "however advanced", is a tool, not a person; because
+  Perplexity's servers never communicated with Amazon's and the requests came from the *user's*
+  browser, the user — not Perplexity — accessed Amazon's computers, so Amazon was unlikely to show
+  "access" by Perplexity at all. Extending the CFAA there would be "a novel interpretation far
+  afield" of an anti-hacking statute and could expose users themselves to criminal liability. What
+  it does **not** hold: the court says "we do not establish a new legal regime governing agentic AI",
+  ties the result to this architecture (local browser, no vendor server in the request path), and
+  notes in a footnote that terms-of-service enforcement is untouched — the CFAA is simply not the
+  vehicle. Two details matter for fearch: (1) the architecture the court relied on is exactly the
+  extension tier's — the person's own browser, a local tool, no fearch server anywhere; (2) "at the
+  core of the dispute was Perplexity's decision not to use a 'user-agent string'" that would have let
+  Amazon block the agent, and the parties dispute whether Perplexity altered its UA to evade a block
+  once identified. The identification question was not decided; it is precisely the one this
+  project answers by choice (self-identified everywhere it can be; the person's explicit choice where
+  it cannot). Cite it for what it is: a CFAA "access" holding, not a licence.
 - **Directionally consistent, unverified specifics.** Cloudflare's Search/Agent/Training taxonomy and
   its 2026 WAF defaults; the Perplexity stealth-crawling report (2025, real) is characterised fairly.
 - The report's four mitigations (human-passed challenges, one query per action, honest identity,

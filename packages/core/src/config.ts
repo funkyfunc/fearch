@@ -53,8 +53,14 @@ export interface Settings {
    * never surface anything.
    */
   canSurface: boolean;
-  /** Extension only: open pages in an incognito window (no cookies from the person's profile). */
+  /** Extension (also as auto's preferred tier): open pages in an incognito window, not the person's profile. */
   incognito: boolean;
+  /**
+   * "You press search": for engines whose result pages robots.txt disallows (Google, Bing), the query
+   * is filled into the engine's search box in the person's visible browser and *they* submit it —
+   * every such query is unambiguously theirs. DuckDuckGo lite (robots-permitted) stays automatic.
+   */
+  humanSearch: boolean;
   /** Extension only: how long to wait for the extension to show up before falling back (ms). */
   extensionConnectMs: number;
   /**
@@ -216,21 +222,19 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     canSurface,
     browserIdentity: pick(env.FEARCH_BROWSER_IDENTITY, ["header", "none"] as const, "header"),
     handoff,
-    incognito: browser === "extension" && envBool(env, "FEARCH_INCOGNITO"),
+    incognito: (browser === "extension" || browser === "auto") && envBool(env, "FEARCH_INCOGNITO"),
+    humanSearch: envBool(env, "FEARCH_HUMAN_SEARCH"),
     extensionConnectMs: envInt(env, "FEARCH_EXTENSION_CONNECT_MS", 4_000),
     // Long enough for a person at the screen to pass a check, short enough that an unattended agent
     // gets its answer ("waiting for you; call again") instead of a hung tool call.
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 45_000),
     browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
-    // Derived default: DuckDuckGo (the robots-permitted engine); with a person on call to pass
-    // Google's check when it appears, Google first. Bing is opt-in (it has served decoy results to
-    // automated browsers).
-    engines: (env.FEARCH_ENGINES === undefined
-      ? canSurface && handoff
-        ? ["google", "duckduckgo"]
-        : ["duckduckgo"]
-      : envList(env, "FEARCH_ENGINES")
-    ).filter((e) => (KNOWN_ENGINES as readonly string[]).includes(e)),
+    // Default: DuckDuckGo lite, the one engine whose robots.txt permits its result pages. Google and
+    // Bing are opt-in (`--engines google,duckduckgo`) and need a person on call to pass their checks;
+    // Bing has also served decoy results to automated browsers.
+    engines: (env.FEARCH_ENGINES === undefined ? ["duckduckgo"] : envList(env, "FEARCH_ENGINES")).filter((e) =>
+      (KNOWN_ENGINES as readonly string[]).includes(e),
+    ),
     browserStatePath: join(cacheDir, "browser-state.json"),
     browserTimeoutMs: envInt(env, "FEARCH_BROWSER_TIMEOUT_MS", 20_000),
     browserMaxConcurrent: envInt(env, "FEARCH_BROWSER_MAX_CONCURRENT", 2),
@@ -257,7 +261,7 @@ export function domainMatches(host: string, list: string[]): boolean {
  *                                            preferred when connected; graceful with no display);
  *                                            or pin: never visible / always visible / extension / none
  *   --robots default|strict|off            consent dial for the tool's own fetching (default: default)
- *   --engines google,duckduckgo            search-engine order (default derived from --browser)
+ *   --engines google,duckduckgo            search-engine order (default: duckduckgo)
  *   --allow-domains a,b  --deny-domains c  host lists (subdomains included)
  *
  * That is the whole flag surface on purpose. Every other setting is an environment variable

@@ -1,1 +1,1 @@
-npm run typecheck && npx vitest run --exclude "**/browser.test.ts" --exclude "**/extension.test.ts"
+npm run typecheck && npx vitest run

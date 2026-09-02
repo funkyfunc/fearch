@@ -90,6 +90,24 @@ describe("EscalatingRenderer", () => {
     expect(escalation.calls).toBe(1); // permanent: not retried
   });
 
+  it("a page meant for the person's hands skips the headless attempt and goes straight to the window", async () => {
+    const routine = tier(async () => page("<main>never</main>"));
+    const escalation = tier(async (_u, o) => {
+      expect(o?.handToPerson?.message).toBe("press Enter");
+      return page("<main>results</main>", { handedOff: true, handoffWhere: "a browser window on your screen" });
+    });
+    const r = new EscalatingRenderer(settings(), audit(), routine, () => escalation);
+    const out = await r.render("https://x.test/", { handToPerson: { message: "press Enter", ready: () => true } });
+    expect(out.handedOff).toBe(true);
+    expect(routine.calls).toBe(0);
+    // with nothing to show, it is refused rather than attempted headless
+    const none = new EscalatingRenderer(settings({ DISPLAY: "" }), audit(), routine, () => escalation);
+    await expect(none.render("https://x.test/", { handToPerson: { message: "m", ready: () => true } })).rejects.toThrow(
+      /visible window/,
+    );
+    expect(routine.calls).toBe(0);
+  });
+
   it("never escalates when handoff is declined or nothing can be surfaced", async () => {
     const routine = tier(async () => page("<b>captcha</b>"));
     let built = 0;

@@ -14,6 +14,17 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Outside review, batch 1 and 2 (2026-09-01).** An independent fresh-eyes review (dogfood → code →
+  docs) found a challenge interstitial returned as content, Twoslash code blocks hollowed out,
+  Wikipedia infoboxes leaking HTML, shells missed, a DNS-rebinding gap, an https→http downgrade,
+  account-bearing debug dumps, and a 3-minute focus-stealing handoff; all fixed with fixtures.
+  Posture: DuckDuckGo is the default engine everywhere; Google/Bing are `--engines` opt-ins;
+  `FEARCH_INCOGNITO` applies in `auto`; `FEARCH_HUMAN_SEARCH=1` ("you press search") fills the
+  query in and lets the person submit it. The Ninth Circuit's *Amazon v. Perplexity* opinion was
+  confirmed real (RESEARCH-RECONCILIATION corrected). Still open from the review: routing ordinary
+  page reads away from the person's Chrome profile (headless first, the person's Chrome only for a
+  check), and the remove list (Bing, `--robots off`, `identity=none`, headed-as-a-mode).
+
 - **Published + release pipeline (2026-09-01).** npm package `fearch-mcp` (bare `fearch` blocked as
   too similar to `fetch`; the command, UA token, and repo stay `fearch`); v2.0.1 released by the
   GitHub Actions pipeline — tag push → Linux+macOS suite → tag/version guard → `npm publish

@@ -423,7 +423,30 @@ export class ExtensionRenderer implements BrowserTier {
       }
       const isChallenge = opts.isChallenge ?? isChallengePage;
       const challenged = this.settings.handoff && opts.handoff !== false && isChallenge(html, 200, finalUrl);
-      if (challenged && Date.now() < this.awayUntil) {
+      if (opts.handToPerson) {
+        // The person's turn from the start: bring the tab up, say what to do, wait for `ready`.
+        handoffWhere = "a tab in your Chrome";
+        this.audit.log("warn", `${target}: handed to you in your Chrome (${opts.handToPerson.message})`);
+        this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
+        await this.bridge.request({ op: "activate", tabId });
+        const ready = opts.handToPerson.ready;
+        const r = await waitForHuman(
+          async () => {
+            const s = await this.bridge.request({ op: "read", tabId }, 10_000);
+            return { html: s.ok ? (s.html ?? "") : "", status: 200, url: s.url ?? finalUrl };
+          },
+          (h, _s, u) => !h || !ready(h, u),
+          this.settings.handoffTimeoutMs,
+        );
+        html = r.html;
+        finalUrl = r.url;
+        handedOff = r.passed;
+        this.audit.log(
+          r.passed ? "info" : "warn",
+          `${target}: ${r.passed ? "done by you; continuing" : "not done within the handoff window"}`,
+        );
+        this.events?.emit("handoff-end", { url: target, passed: r.passed });
+      } else if (challenged && Date.now() < this.awayUntil) {
         this.audit.log(
           "warn",
           `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,

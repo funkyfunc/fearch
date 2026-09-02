@@ -112,7 +112,7 @@ function wireHandoffElicitation(app: App, server: McpServer): void {
   server.server.oninitialized = () => {
     void server.server.ping().catch(() => {});
   };
-  app.events.on("handoff", ({ url, where }) => {
+  app.events.on("handoff", ({ url, where, message }) => {
     if (!server.server.getClientCapabilities()?.elicitation) return;
     let host = url;
     try {
@@ -131,7 +131,7 @@ function wireHandoffElicitation(app: App, server: McpServer): void {
         {
           method: "elicitation/create",
           params: {
-            message: `A bot-check appeared while opening ${host}. It is waiting in ${where} — complete it there and this request continues by itself (this prompt dismisses on its own).`,
+            message: `${message ?? `A bot-check appeared while opening ${host}.`} It is waiting in ${where} — deal with it there and this request continues by itself (this prompt dismisses on its own).`,
             requestedSchema: { type: "object", properties: {} },
           },
         },

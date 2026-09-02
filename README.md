@@ -10,9 +10,10 @@ a refusal as final. Free: no keys, no accounts.
 
 Two tools:
 
-- **`search`** — real search engines, honestly: Google and DuckDuckGo by default when a person is on
-  call (Bing opt-in), DuckDuckGo lite alone where nothing can reach you. `fetch_top=N` inlines
-  excerpts of the top results so one call replaces search-then-fetch. Every result names its
+- **`search`** — real search engines, honestly: DuckDuckGo lite by default (the one engine whose
+  robots.txt permits its result pages); Google and Bing when you list them, with you on call to pass
+  any check — or, with `FEARCH_HUMAN_SEARCH=1`, with you pressing search yourself. `fetch_top=N`
+  inlines excerpts of the top results so one call replaces search-then-fetch. Every result names its
   provider. Searches through Google include the page's AI Overview when present — labelled as
   Google's unverified summary, with its sources. When no engine answers, the failure says exactly
   why and what to do next — nothing is ever silently substituted.
@@ -110,23 +111,27 @@ minutes. If nothing _can_ be shown (a server, CI, no display), the check is simp
 honestly. And if you've installed the bridge extension, your own Chrome is used instead whenever it's
 connected — no window management at all, just a tab that appears if a check ever needs you.
 
-Because any check reaches a person, a person is on call — so Google (with its AI Overview) joins
-DuckDuckGo by default wherever a window could reach you; where it couldn't, fearch stays a
-self-identified crawler on DuckDuckGo alone. `--browser` pins one behaviour when
-you want it fixed:
+Search is DuckDuckGo lite with zero flags, in every mode. Google (with its AI Overview) and Bing are
+a choice you make with `--engines google,duckduckgo`, and they need a person on call: their
+robots.txt disallows result pages for crawlers, so fearch opens them only where a check can reach
+you — in your own Chrome through the extension, or in a visible window — and never headless. Two
+switches shape what that means: `FEARCH_INCOGNITO=1` keeps your profile (and your Google account)
+out of it, and `FEARCH_HUMAN_SEARCH=1` goes one step further — fearch fills the query into the
+engine's search box and **you press Enter**, so every Google query is one you submitted. `--browser`
+pins one behaviour when you want it fixed:
 
-| Mode                  | What it is                                                                       | Engines                 |
-| --------------------- | -------------------------------------------------------------------------------- | ----------------------- |
-| `fearch` (auto)       | headless until a challenge, which opens in a window for you; extension preferred | Google, then DuckDuckGo |
-| `--browser headless`  | never a window; challenges are final — for servers and CI                        | DuckDuckGo              |
-| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                        | Google, then DuckDuckGo |
-| `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | Google, then DuckDuckGo |
-| `--browser off`       | no browser tier at all                                                           | DuckDuckGo              |
+| Mode                  | What it is                                                                       | Google/Bing if listed     |
+| --------------------- | -------------------------------------------------------------------------------- | ------------------------- |
+| `fearch` (auto)       | headless until a challenge, which opens in a window for you; extension preferred | yes (a check reaches you) |
+| `--browser headless`  | never a window; challenges are final — for servers and CI                        | no                        |
+| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                        | yes                       |
+| `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | yes                       |
+| `--browser off`       | no browser tier at all                                                           | no                        |
 
 Search tries the engines in order — and that's all: no hidden fallback ever substitutes a different
-source. A bot-check page is an engine's "no" (10-minute cooldown) unless you pass it. The tool never solves anything. Bing exists but is opt-in
-(`--engines bing,duckduckgo`): it has served decoy results to automated browsers, the worst failure
-mode. The output says when a listed engine was skipped and why.
+source. A bot-check page is an engine's "no" (10-minute cooldown) unless you pass it. The tool never
+solves anything. Bing has served decoy results to automated browsers, the worst failure mode; list
+it knowingly. The output says when a listed engine was skipped and why.
 
 **The extension** opens pages in the Chrome you already have, through a bundled few-hundred-line
 extension you can read in full — auto mode prefers it whenever it's connected (`--browser extension`
@@ -140,7 +145,7 @@ fearch extension install     # writes the pairing token, opens chrome://extensio
 ```
 
 Pages open with your real profile (your logins, your Google history) and results say so;
-`FEARCH_INCOGNITO=1` keeps your profile out of it. Headed mode (`--browser headed`) is the middle
+`FEARCH_INCOGNITO=1` keeps your profile out of it (in `auto` too, whenever the extension is the tier). Headed mode (`--browser headed`) is the middle
 ground: your installed Chrome with a tool-owned empty profile at `~/.cache/fearch/browser-state.json`
 — delete the file to forget it.
 
@@ -152,13 +157,15 @@ The whole flag surface, on purpose:
 --browser auto|headless|headed|extension|off  who renders pages (see the table above; default auto)
 --robots default|strict|off              robots.txt for the tool's own fetching (strict adds training-crawler
                                          opt-outs; off = user-agent posture, like a browser)
---engines google,bing,duckduckgo         engine order (default derived from --browser and your display)
+--engines google,bing,duckduckgo         engine order (default: duckduckgo; google/bing need a person on call)
 --allow-domains a,b  --deny-domains c    host lists (subdomains included)
 ```
 
 Everything else is a `FEARCH_*` environment variable — escape hatches, not the interface:
 `FEARCH_HANDOFF=0` (challenges are surfaced to you by default whenever a window could reach you),
-`FEARCH_INCOGNITO=1`, `FEARCH_BROWSER_SESSION=1` (headed: send tool-profile cookies to ordinary
+`FEARCH_HUMAN_SEARCH=1` (Google/Bing: the query is filled in and you press Enter),
+`FEARCH_INCOGNITO=1` (your Chrome via the extension: incognito window, not your profile),
+`FEARCH_BROWSER_SESSION=1` (headed: send tool-profile cookies to ordinary
 pages, labelled "your session"), `FEARCH_BROWSER_IDENTITY=none`, `FEARCH_SEARCH_MODE=off`
 (no search tool at all), `FEARCH_AUDIT_LOG=off|<file>`,
 `FEARCH_LOG_LEVEL`, `FEARCH_LOG_FILE`, `FEARCH_CACHE_DIR`, `FEARCH_MAX_CHARS` (12000),
@@ -175,10 +182,10 @@ the OS trust store (on managed machines the CA is already there).
 
 ## Where queries go
 
-| Provider                   | When                                            | Notes                                                                                                                   |
-| -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| DuckDuckGo lite (default)  | always eligible                                 | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches            |
-| Google / Bing result pages | person present (or `--robots off`); Bing listed | their robots.txt disallows `/search` for crawlers — with you overseeing the browser it's your own browsing, and says so |
+| Provider                   | When                                                            | Notes                                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DuckDuckGo lite (default)  | always eligible                                                 | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches                                                                      |
+| Google / Bing result pages | listed in `--engines`, and a person present (or `--robots off`) | their robots.txt disallows `/search` for crawlers — with you overseeing the browser it's your own browsing, and says so; `FEARCH_HUMAN_SEARCH=1` makes you the one who submits it |
 
 No third-party search services — keyed or keyless — and no hidden fallback sources, by design: your
 queries reach an engine you chose, nothing else. Searches are cached 15 minutes. (Reading pages is a

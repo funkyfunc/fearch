@@ -5,8 +5,7 @@ server flags (put these in your MCP config's args):
   --browser auto|headless|headed|extension|off
                                            auto (default): headless until a site shows a challenge — then
                                            that page opens in a visible window for you to deal with (never
-                                           solved by the tool), and Google joins DuckDuckGo as your own
-                                           browsing; prefers your own Chrome via the fearch bridge
+                                           solved by the tool); prefers your own Chrome via the fearch bridge
                                            extension when it is connected (\`fearch extension install\`);
                                            with no display, challenges are simply final. Or pin one
                                            behaviour: headless (never a window) · headed (your installed
@@ -14,9 +13,10 @@ server flags (put these in your MCP config's args):
   --robots default|strict|off              robots.txt for the tool's own fetching: honour user-initiated
                                            agent opt-outs (default), also honour training-crawler opt-outs
                                            (strict), or don't consult it (off — the user-agent posture)
-  --engines google,bing,duckduckgo         engine result pages in preference order
-                                           (default: google,duckduckgo where a window could reach you;
-                                           duckduckgo elsewhere)
+  --engines google,bing,duckduckgo         engine result pages in preference order (default: duckduckgo,
+                                           the one engine whose robots.txt permits it; google and bing
+                                           need a person on call — FEARCH_HUMAN_SEARCH=1 lets you press
+                                           search yourself, FEARCH_INCOGNITO=1 keeps your profile out)
   --allow-domains a,b  --deny-domains c    host lists (subdomains included)
 
 Everything else is an environment variable (FEARCH_*) — escape hatches, not the interface; see the

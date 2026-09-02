@@ -173,16 +173,19 @@ describe("engine eligibility — the dials play together", () => {
       "google",
       "duckduckgo",
     ]);
-    // auto with a display: a person is on call for any check, so Google is their own browsing.
-    expect(names(mk({ DISPLAY: ":0" }))).toEqual(["google", "duckduckgo"]);
-    // A visible browser with handoff (the default there) likewise.
-    expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["google", "duckduckgo"]);
-    expect(names(mk({ FEARCH_BROWSER: "extension" }))).toEqual(["google", "duckduckgo"]);
+    // A display or a visible browser does not put Google in by itself: DuckDuckGo is the default everywhere.
+    expect(names(mk({ DISPLAY: ":0" }))).toEqual(["duckduckgo"]);
+    expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["duckduckgo"]);
+    // Listed, with a person on call for any check, Google is their own browsing.
+    const G = { FEARCH_ENGINES: "google,duckduckgo" };
+    expect(names(mk({ ...G, DISPLAY: ":0" }))).toEqual(["google", "duckduckgo"]);
+    expect(names(mk({ ...G, FEARCH_BROWSER: "headed" }))).toEqual(["google", "duckduckgo"]);
+    expect(names(mk({ ...G, FEARCH_BROWSER: "extension" }))).toEqual(["google", "duckduckgo"]);
     // …but not with handoff explicitly off (nobody would ever see a check).
-    expect(names(mk({ FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
-    expect(names(mk({ DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
+    expect(names(mk({ ...G, FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
+    expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
     // …and never in explicit headless, display or not.
-    expect(names(mk({ DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual(["duckduckgo"]);
+    expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_ENGINES: "bing", FEARCH_ROBOTS_POLICY: "strict" }))).toEqual([]);
     expect(names(mk({ FEARCH_ENGINES: "bing,nonsense", FEARCH_ROBOTS_POLICY: "off" }))).toEqual(["bing"]);
     const listedButOff = mk({ FEARCH_ENGINES: "google" }).find((p) => p.name === "google")!;
@@ -301,6 +304,90 @@ describe("engine eligibility — the dials play together", () => {
   });
 });
 
+describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
+  const RESULTS_URL = "https://www.google.com/search?q=x&sei=abc";
+  function humanProvider(
+    render: (
+      url: string,
+      opts: import("../src/fetch/browser.js").RenderOptions,
+    ) => Promise<{ html: string; url?: string; handedOff?: boolean; handoffWhere?: string }>,
+  ) {
+    const s = settings({ FEARCH_HUMAN_SEARCH: "1", FEARCH_ENGINES: "google,duckduckgo", FEARCH_BROWSER: "headed" });
+    const browser = {
+      enabled: () => true,
+      headed: true,
+      browserUserAgent: "ua",
+      browserChannel: "chrome",
+      render: async (u: string, o: import("../src/fetch/browser.js").RenderOptions = {}) => {
+        const r = await render(u, o);
+        return {
+          html: r.html,
+          finalUrl: r.url ?? u,
+          status: 200,
+          salvaged: false,
+          usedSession: false,
+          handedOff: r.handedOff ?? false,
+          handoffWhere: r.handoffWhere,
+        };
+      },
+      close: async () => {},
+    } as unknown as BrowserRenderer;
+    return new EngineProvider(
+      ENGINE_SPECS.google,
+      s,
+      browser,
+      new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" })),
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+      1,
+    );
+  }
+
+  it("opens the engine's home page with the query prefilled, hands it to the person, and parses the page they land on", async () => {
+    const seen: { url: string; opts: import("../src/fetch/browser.js").RenderOptions }[] = [];
+    const p = humanProvider(async (url, opts) => {
+      seen.push({ url, opts });
+      // the person presses Enter: the tab is now a results page
+      const home = `<html><body><textarea name="q">turndown gfm</textarea></body></html>`;
+      expect(opts.handToPerson!.ready(home, "https://www.google.com/?q=turndown+gfm")).toBe(false);
+      expect(opts.handToPerson!.ready(GOOGLE, RESULTS_URL)).toBe(true);
+      expect(opts.handToPerson!.ready(GOOGLE_SORRY, "https://www.google.com/sorry/index")).toBe(false);
+      return { html: GOOGLE, url: RESULTS_URL, handedOff: true, handoffWhere: "a browser window on your screen" };
+    });
+    const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
+    expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm&hl=en");
+    expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
+    expect(seen[0].opts.settleSelector).toBeUndefined();
+    expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
+    expect(p.disclosure).toContain("submitted by you");
+  });
+
+  it("says where the query is waiting when the person did not press search in time, without cooling the engine down", async () => {
+    const p = humanProvider(async () => ({
+      html: "<html><body>home</body></html>",
+      handedOff: false,
+      handoffWhere: "a tab in your Chrome",
+    }));
+    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(
+      /filled into Google in a tab in your Chrome .* press Enter there, then search again/,
+    );
+    await expect(p.search({ query: "x", maxResults: 5 })).rejects.not.toBeInstanceOf(RateLimited);
+  });
+
+  it("does not apply to DuckDuckGo lite, whose result pages robots.txt permits", async () => {
+    const seen: string[] = [];
+    const p = provider(
+      "duckduckgo",
+      async (u) => {
+        seen.push(u);
+        return { html: LITE, status: 200 };
+      },
+      { FEARCH_HUMAN_SEARCH: "1" },
+    );
+    await p.search({ query: "x", maxResults: 5 });
+    expect(seen[0]).toContain("lite.duckduckgo.com/lite/?q=x");
+  });
+});
+
 describe("human handoff loop", () => {
   it("waits until the page stops being a challenge, or gives up at the deadline", async () => {
     let n = 0;
@@ -330,12 +417,12 @@ describe("server flags", () => {
   it("maps flags onto settings, wins over env, derives engines, and passes the rest through", () => {
     const base = { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" };
     const a = settingsFromArgs(["--browser", "headed", "search", "some query", "--n", "3"], base, "linux");
-    // A visible browser means handoff on and Google first — no extra flags.
+    // A visible browser means handoff on; Google is still a choice, not a consequence.
     expect([a.settings.robotsPolicy, a.settings.browser, a.settings.handoff, a.settings.engines]).toEqual([
       "default",
       "headed",
       true,
-      ["google", "duckduckgo"],
+      ["duckduckgo"],
     ]);
     expect(a.rest).toEqual(["search", "some query", "--n", "3"]);
     const b = settingsFromArgs(
@@ -351,12 +438,13 @@ describe("server flags", () => {
     ]);
     // robots off alone (no display) leaves no person to pass Google's check: DuckDuckGo only
     expect(settingsFromArgs(["--robots", "off"], base, "linux").settings.engines).toEqual(["duckduckgo"]);
-    expect(settingsFromArgs(["--browser", "extension"], base, "linux").settings.engines).toEqual([
+    expect(settingsFromArgs(["--browser", "extension"], base, "linux").settings.engines).toEqual(["duckduckgo"]);
+    // a desktop platform can surface a window, and the default is still DuckDuckGo alone
+    expect(settingsFromArgs([], base, "darwin").settings.engines).toEqual(["duckduckgo"]);
+    expect(settingsFromArgs(["--engines", "google,duckduckgo"], base, "darwin").settings.engines).toEqual([
       "google",
       "duckduckgo",
     ]);
-    // a desktop platform means auto can surface a window: Google by default with zero flags
-    expect(settingsFromArgs([], base, "darwin").settings.engines).toEqual(["google", "duckduckgo"]);
     // handoff opted out (env escape hatch): nobody would see a check, so back to DuckDuckGo only
     expect(
       settingsFromArgs(["--browser", "headed"], { ...base, FEARCH_HANDOFF: "0" }, "linux").settings.engines,
@@ -379,7 +467,12 @@ describe("config dials", () => {
       "default",
     ]);
     const mac = settings({}, "darwin");
-    expect([mac.canSurface, mac.engines]).toEqual([true, ["google", "duckduckgo"]]);
+    expect([mac.canSurface, mac.engines, mac.humanSearch, mac.incognito]).toEqual([true, ["duckduckgo"], false, false]);
+    // incognito is a switch for the person's-Chrome tier, whether pinned (extension) or preferred (auto)
+    expect(settings({ FEARCH_INCOGNITO: "1" }).incognito).toBe(true);
+    expect(settings({ FEARCH_BROWSER: "extension", FEARCH_INCOGNITO: "1" }).incognito).toBe(true);
+    expect(settings({ FEARCH_BROWSER: "headed", FEARCH_INCOGNITO: "1" }).incognito).toBe(false);
+    expect(settings({ FEARCH_HUMAN_SEARCH: "1" }).humanSearch).toBe(true);
     const h = settings({
       FEARCH_BROWSER: "headed",
       FEARCH_HANDOFF: "1",

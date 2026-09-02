@@ -175,6 +175,31 @@ describe("extension tier — the handoff", () => {
     expect(log.filter((o) => o === "activate").length).toBe(1);
     await r.close();
   }, 20_000);
+
+  it("hands a prefilled search to the person and returns the page they land on once it is ready", async () => {
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47476, 47477]);
+    const port = await bridge.start();
+    const home = `<html><body><textarea name="q">x</textarea></body></html>`;
+    const results = `<html><body><div id="search"><a href="https://example.com/x"><h3>Result</h3></a></div></body></html>`;
+    let reads = 0;
+    const log: string[] = [];
+    const client = fakeExtension(port, () => (reads++ < 3 ? home : results), log);
+    const r = new ExtensionRenderer(
+      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "5000", FEARCH_ALLOW_PRIVATE: "1" }),
+      audit(),
+      bridge,
+    );
+    const out = await r.render("https://x.test/?q=x", {
+      handToPerson: { message: "press Enter", ready: (h) => /<h3>/.test(h) },
+    });
+    expect(out.handedOff).toBe(true);
+    expect(out.handoffWhere).toBe("a tab in your Chrome");
+    expect(out.html).toContain("<h3>Result</h3>");
+    await r.close();
+    await client.catch(() => {});
+    expect(log[0]).toBe("open");
+    expect(log[1]).toBe("activate");
+  }, 20_000);
 });
 
 describe("extension tier (real extension in Playwright Chromium)", () => {
@@ -232,8 +257,14 @@ describe("extension tier (real extension in Playwright Chromium)", () => {
     expect(out.html).toContain("Hello (JS ran)");
     expect(out.finalUrl).toBe(`${base}/page`);
     expect(out.label).toBe("your Chrome");
-    // only the profile's initial tab and the bridge's blank window tab remain
-    expect(ctx!.pages().every((p) => !p.url().startsWith(base))).toBe(true);
+    // only the profile's initial tab and the bridge's blank window tab remain (the tab's removal reaches
+    // Playwright a moment after the extension reports it closed, so wait for it rather than race it)
+    const gone = async () => {
+      for (let i = 0; i < 40 && ctx!.pages().some((p) => p.url().startsWith(base)); i++)
+        await new Promise((res) => setTimeout(res, 100));
+      return ctx!.pages().every((p) => !p.url().startsWith(base));
+    };
+    expect(await gone()).toBe(true);
     // private addresses are refused before a tab is opened
     await expect(
       new ExtensionRenderer(settings({ FEARCH_ALLOW_PRIVATE: "" }), audit(), bridge).render(

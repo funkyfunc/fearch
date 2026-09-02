@@ -31,7 +31,7 @@
         {
           "type": "named",
           "name": "--engines",
-          "description": "Engine result pages in preference order: google,bing,duckduckgo (default derived from --browser).",
+          "description": "Engine result pages in preference order: google,bing,duckduckgo (default: duckduckgo; google and bing need a person on call to pass their checks).",
           "isRequired": false
         },
         {
@@ -51,6 +51,16 @@
         {
           "name": "FEARCH_UA_INFO_URL",
           "description": "URL shown in the User-Agent (defaults to the project's bot-info page).",
+          "isRequired": false
+        },
+        {
+          "name": "FEARCH_HUMAN_SEARCH",
+          "description": "1: for Google/Bing, the query is filled into the search box in your browser and you press Enter yourself.",
+          "isRequired": false
+        },
+        {
+          "name": "FEARCH_INCOGNITO",
+          "description": "1: pages and searches opened through your own Chrome use an incognito window, not your profile.",
           "isRequired": false
         },
         {

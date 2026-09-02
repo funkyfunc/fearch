@@ -61,6 +61,12 @@ export interface RenderOptions {
   handoff?: boolean;
   /** The URL was upgraded to https optimistically; plain http may be tried if https cannot connect. */
   httpFallback?: boolean;
+  /**
+   * Open the page for the person straight away and wait until `ready` says they have done their part
+   * (e.g. pressed Enter on a prefilled search box). Needs a visible browser; `message` is what they are
+   * told. The result reports `handedOff` when `ready` was reached in time.
+   */
+  handToPerson?: { message: string; ready: (html: string, url: string) => boolean };
   /** Engine-specific challenge detector (gets the current URL too); default is the generic one. */
   isChallenge?: (html: string, status: number, url: string) => boolean;
   /** Wait (bounded) for this selector before judging the page, so a half-rendered page isn't mistaken for a challenge. */
@@ -335,6 +341,8 @@ export class BrowserRenderer implements BrowserTier {
 
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
     if (!this.enabled()) throw new BrowserUnavailable("browser tier disabled (--browser off)");
+    if (opts.handToPerson && !this.headed)
+      throw new BrowserUnavailable("handing a page to the person needs a visible browser (headed or the extension)");
     const target = normalizeUrl(url);
     const useProfile = this.profileAllowed && !!opts.session;
     const ctx = await this.context(useProfile ? "profile" : "plain");
@@ -393,7 +401,33 @@ export class BrowserRenderer implements BrowserTier {
       let handedOff = false;
       let handoffWhere: string | undefined;
       const isChallenge = opts.isChallenge ?? isChallengePage;
-      if (this.headed && this.settings.handoff && opts.handoff !== false && isChallenge(html, status, page.url())) {
+      if (opts.handToPerson) {
+        // The person's turn from the start: show the page, say what to do, wait for `ready`.
+        handoffWhere = "a browser window on your screen";
+        this.audit.log("warn", `${target}: handed to you (${opts.handToPerson.message})`);
+        this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
+        await page.bringToFront().catch(() => {});
+        const p = page;
+        const ready = opts.handToPerson.ready;
+        const r = await waitForHuman(
+          async () => ({ html: await p.content().catch(() => ""), status: 200, url: p.url() }),
+          (h, _s, u) => !h || !ready(h, u),
+          this.settings.handoffTimeoutMs,
+        );
+        html = r.html;
+        status = 200;
+        handedOff = r.passed;
+        this.audit.log(
+          r.passed ? "info" : "warn",
+          `${target}: ${r.passed ? "done by you; continuing" : "not done within the handoff window"}`,
+        );
+        this.events?.emit("handoff-end", { url: target, passed: r.passed });
+      } else if (
+        this.headed &&
+        this.settings.handoff &&
+        opts.handoff !== false &&
+        isChallenge(html, status, page.url())
+      ) {
         handoffWhere = "a browser window on your screen";
         // The human handoff: bring the tab forward and wait for the person. Nothing is clicked, typed
         // or solved by the tool; it only watches for the page to stop being a challenge.
@@ -507,6 +541,13 @@ export class EscalatingRenderer implements BrowserTier {
   }
 
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
+    // A page meant for the person's hands skips the headless attempt entirely.
+    if (opts.handToPerson) {
+      if (!this.canEscalate())
+        throw new BrowserUnavailable("no visible window can be shown here to hand the page to you");
+      this.escalation ??= this.makeEscalation();
+      return this.escalation.render(url, { ...opts, session: true, handoff: true });
+    }
     // Always with the tool profile: it holds only what the person did in escalation windows, and
     // carrying it is what keeps a passed check passed — the window must not reappear per page.
     const first = await this.routine.render(url, { ...opts, session: true, handoff: false });
