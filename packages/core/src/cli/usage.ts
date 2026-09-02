@@ -1,37 +1,67 @@
+import { FLAGS, type FlagSpec } from "../config.js";
+
+const WIDTH = 100;
+const COL = 40;
+
+function wrap(text: string, indent: number): string {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const w of words) {
+    if (line && (line + " " + w).length > WIDTH - indent) {
+      lines.push(line);
+      line = w;
+    } else line = line ? `${line} ${w}` : w;
+  }
+  if (line) lines.push(line);
+  return lines.join("\n" + " ".repeat(indent));
+}
+
+function valueHint(f: FlagSpec): string {
+  if (f.kind === "bool") return "";
+  if (f.kind === "enum") return ` ${f.values!.join("|")}`;
+  if (f.kind === "list") return f.values ? ` ${f.values.join(",")}` : " a,b";
+  if (f.kind === "int") return " N";
+  return f.flag.endsWith("dir") || f.flag.endsWith("log") || f.flag.endsWith("file") ? " path" : " value";
+}
+
+function flagLine(f: FlagSpec): string {
+  const head = `  --${f.flag}${valueHint(f)}`;
+  const pad = head.length >= COL ? "\n" + " ".repeat(COL) : " ".repeat(COL - head.length);
+  const dflt = f.default ? ` (default: ${f.default})` : "";
+  return head + pad + wrap(f.help + dflt, COL);
+}
+
 export function usage(): string {
-  return `usage: fearch [server flags] [command]
+  const core = FLAGS.filter((f) => !f.tuning)
+    .map(flagLine)
+    .join("\n");
+  const tuning = FLAGS.filter((f) => f.tuning)
+    .map(
+      (f) =>
+        `  --${f.flag}${valueHint(f)}${" ".repeat(Math.max(1, COL - 2 - f.flag.length - valueHint(f).length - 2))}${f.help} (${f.default || "unset"})`,
+    )
+    .join("\n");
+  return `usage: fearch [flags] [command]
 
-server flags (put these in your MCP config's args):
-  --browser auto|headless|headed|extension|off
-                                           auto (default): headless until a site shows a challenge — then
-                                           that page opens in a visible window for you to deal with (never
-                                           solved by the tool); prefers your own Chrome via the fearch bridge
-                                           extension when it is connected (\`fearch extension install\`);
-                                           with no display, challenges are simply final. Or pin one
-                                           behaviour: headless (never a window) · headed (your installed
-                                           Chrome, always visible) · extension (your Chrome only) · off.
-  --robots default|strict|off              robots.txt for the tool's own fetching: honour user-initiated
-                                           agent opt-outs (default), also honour training-crawler opt-outs
-                                           (strict), or don't consult it (off — the user-agent posture)
-  --engines google,bing,duckduckgo         engine result pages in preference order (default: duckduckgo,
-                                           the one engine whose robots.txt permits it; google and bing
-                                           need a person on call — FEARCH_HUMAN_SEARCH=1 lets you press
-                                           search yourself, FEARCH_INCOGNITO=1 keeps your profile out)
-  --allow-domains a,b  --deny-domains c    host lists (subdomains included)
+Flags go in your MCP config's "args" (or the same names as FEARCH_* environment variables — --human-search
+is FEARCH_HUMAN_SEARCH=1; flags win). Booleans take --flag, --flag=false or --no-flag.
 
-Everything else is an environment variable (FEARCH_*) — escape hatches, not the interface; see the
-README's configuration reference.
+${core}
+
+tuning (real settings nobody should need):
+${tuning}
 
 commands (same flags apply; add --json for machine-readable output):
-  (none)                                   start the MCP server (stdio)
+  (none)                                  start the MCP server (stdio)
   fetch <url> [--mode read|focus|section|pattern|raw] [--query q] [--max-chars N] [--cursor c] [--links] [--archive]
   search <query> [--site domain] [--recency d|w|m|y] [--n N] [--fetch-top N]
-  doctor                                   check configuration, providers, browser, and network
-  extension install|status|path            set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder
-  --version                                print the version
+  doctor                                  check configuration, providers, browser, and network
+  extension install|status|path           set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder
+  --version                               print the version
 
-When a person runs a command, the audit log is off and only warnings are printed unless FEARCH_AUDIT_LOG /
-FEARCH_LOG_LEVEL say otherwise; the MCP server keeps its defaults (audit to stderr, info).
+When a person runs a command, the audit log is off and only warnings are printed unless --audit-log /
+--log-level say otherwise; the MCP server keeps its defaults (audit to stderr, info).
 Exit codes: 0 ok · 1 refused (a Diagnosis explains why) · 2 failed (network, usage, no results).
 `;
 }

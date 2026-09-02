@@ -254,29 +254,271 @@ export function domainMatches(host: string, list: string[]): boolean {
 }
 
 /**
- * Command-line flags — the intended way to configure the server from an MCP config's `args`:
- *
- *   --browser auto|headless|headed|extension|off  auto (default): headless until a challenge, which
- *                                            opens in a visible window for the person (extension
- *                                            preferred when connected; graceful with no display);
- *                                            or pin: never visible / always visible / extension / none
- *   --robots default|strict|off            consent dial for the tool's own fetching (default: default)
- *   --engines google,duckduckgo            search-engine order (default: duckduckgo)
- *   --allow-domains a,b  --deny-domains c  host lists (subdomains included)
- *
- * That is the whole flag surface on purpose. Every other setting is an environment variable
- * (FEARCH_*) — escape hatches, not the interface. Flags map onto the same settings as the
- * environment variables and win over them. Returns the remaining argv (subcommands and their own
- * flags) alongside the settings.
+ * One settings table, every setting a flag. `--browser headed` in an MCP config's `args` and
+ * `FEARCH_BROWSER=headed` in its `env` are the same setting (flags win); the help text, the parser
+ * and the docs all come from this table, so there is no second category of "hidden" knobs. Booleans
+ * take `--incognito`, `--incognito=false` or `--no-incognito`. The tuning entries are real settings
+ * nobody should need; they are listed compactly at the end of `--help`.
  */
-export const SERVER_FLAGS: Record<string, { env: string; boolean?: boolean }> = {
-  robots: { env: "FEARCH_ROBOTS_POLICY" },
-  browser: { env: "FEARCH_BROWSER" },
-  engines: { env: "FEARCH_ENGINES" },
-  "allow-domains": { env: "FEARCH_ALLOW_DOMAINS" },
-  "deny-domains": { env: "FEARCH_DENY_DOMAINS" },
-};
+export interface FlagSpec {
+  flag: string;
+  env: string;
+  kind: "enum" | "bool" | "int" | "string" | "list";
+  values?: readonly string[];
+  /** Shown in help; the code's own default lives in settingsFromEnv. */
+  default: string;
+  help: string;
+  tuning?: boolean;
+}
 
+export const FLAGS: readonly FlagSpec[] = [
+  {
+    flag: "browser",
+    env: "FEARCH_BROWSER",
+    kind: "enum",
+    values: BROWSER_MODES,
+    default: "auto",
+    help: "auto: headless until a site shows a challenge, which then opens in a visible window for you (your own Chrome via the bridge extension when it is connected; with no display, challenges are final). Or pin one: headless (never a window) · headed (your installed Chrome, always visible) · extension (your Chrome only) · off.",
+  },
+  {
+    flag: "robots",
+    env: "FEARCH_ROBOTS_POLICY",
+    kind: "enum",
+    values: ROBOTS_POLICIES,
+    default: "default",
+    help: "robots.txt for the tool's own fetching: honour user-initiated agent opt-outs (default), also honour training-crawler opt-outs (strict), or don't consult it (off — the user-agent posture).",
+  },
+  {
+    flag: "engines",
+    env: "FEARCH_ENGINES",
+    kind: "list",
+    values: KNOWN_ENGINES,
+    default: "duckduckgo",
+    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it; google and bing need a person on call to pass their checks and are opened as your own browsing.",
+  },
+  {
+    flag: "human-search",
+    env: "FEARCH_HUMAN_SEARCH",
+    kind: "bool",
+    default: "false",
+    help: "Google/Bing: fearch fills the query into the engine's search box in your browser and you press Enter — every such query is one you submitted.",
+  },
+  {
+    flag: "incognito",
+    env: "FEARCH_INCOGNITO",
+    kind: "bool",
+    default: "false",
+    help: "Your own Chrome (extension, or auto when it is connected): open pages and engine result pages in an incognito window, not your profile.",
+  },
+  {
+    flag: "handoff",
+    env: "FEARCH_HANDOFF",
+    kind: "bool",
+    default: "true",
+    help: "Hand a bot check to you in a visible window/tab and wait for you to pass it. --no-handoff: never surface anything; challenges are final.",
+  },
+  {
+    flag: "allow-domains",
+    env: "FEARCH_ALLOW_DOMAINS",
+    kind: "list",
+    default: "",
+    help: "Only fetch these hosts (subdomains included).",
+  },
+  {
+    flag: "deny-domains",
+    env: "FEARCH_DENY_DOMAINS",
+    kind: "list",
+    default: "",
+    help: "Never fetch these hosts (subdomains included).",
+  },
+  {
+    flag: "search",
+    env: "FEARCH_SEARCH_MODE",
+    kind: "enum",
+    values: SEARCH_MODES,
+    default: "all",
+    help: "off: no search tool activity at all (fetch only).",
+  },
+  {
+    flag: "max-chars",
+    env: "FEARCH_MAX_CHARS",
+    kind: "int",
+    default: "12000",
+    help: "Default character budget of a fetch result.",
+  },
+  {
+    flag: "locale",
+    env: "FEARCH_LOCALE",
+    kind: "string",
+    default: "from LANG",
+    help: "BCP-47 tag engines and Accept-Language speak (de-DE, fr, …). Defaults to the machine's locale.",
+  },
+  {
+    flag: "cache-dir",
+    env: "FEARCH_CACHE_DIR",
+    kind: "string",
+    default: "~/.cache/fearch",
+    help: "Where the page/robots cache, browser profile and pairing token live.",
+  },
+  {
+    flag: "no-cache",
+    env: "FEARCH_NO_CACHE",
+    kind: "bool",
+    default: "false",
+    help: "Never read or write the page cache.",
+  },
+  {
+    flag: "audit-log",
+    env: "FEARCH_AUDIT_LOG",
+    kind: "string",
+    default: "stderr (server) · off (commands)",
+    help: "One JSON line per network request: stderr, off, or a file path.",
+  },
+  {
+    flag: "log-level",
+    env: "FEARCH_LOG_LEVEL",
+    kind: "enum",
+    values: ["debug", "info", "warn", "error"],
+    default: "info (server) · warn (commands)",
+    help: "Log verbosity on stderr. debug also saves engine pages that failed to parse (account details redacted).",
+  },
+  {
+    flag: "ua-info-url",
+    env: "FEARCH_UA_INFO_URL",
+    kind: "string",
+    default: "the project's bot-info page",
+    help: "URL in the User-Agent — point it at your organisation's own bot page.",
+  },
+  {
+    flag: "ua-contact",
+    env: "FEARCH_UA_CONTACT",
+    kind: "string",
+    default: "",
+    help: "Contact appended to the User-Agent (optional).",
+  },
+  // ---- tuning: real settings nobody should need
+  {
+    flag: "allow-private",
+    env: "FEARCH_ALLOW_PRIVATE",
+    kind: "bool",
+    default: "false",
+    help: "Allow private/loopback targets (development only).",
+    tuning: true,
+  },
+  {
+    flag: "budget",
+    env: "FEARCH_BUDGET_COUNT",
+    kind: "int",
+    default: "60",
+    help: "Page fetches per budget window.",
+    tuning: true,
+  },
+  {
+    flag: "budget-window-ms",
+    env: "FEARCH_BUDGET_WINDOW_MS",
+    kind: "int",
+    default: "600000",
+    help: "Budget window.",
+    tuning: true,
+  },
+  {
+    flag: "timeout-ms",
+    env: "FEARCH_TIMEOUT_MS",
+    kind: "int",
+    default: "30000",
+    help: "Plain HTTP request timeout.",
+    tuning: true,
+  },
+  {
+    flag: "browser-timeout-ms",
+    env: "FEARCH_BROWSER_TIMEOUT_MS",
+    kind: "int",
+    default: "20000",
+    help: "Browser navigation timeout.",
+    tuning: true,
+  },
+  {
+    flag: "handoff-timeout-ms",
+    env: "FEARCH_HANDOFF_TIMEOUT_MS",
+    kind: "int",
+    default: "45000",
+    help: "How long a handed-off check waits for you before answering 'waiting for you; call again'.",
+    tuning: true,
+  },
+  {
+    flag: "per-host-delay-ms",
+    env: "FEARCH_PER_HOST_DELAY_MS",
+    kind: "int",
+    default: "1000",
+    help: "Minimum gap between requests to one host (Crawl-delay if larger).",
+    tuning: true,
+  },
+  {
+    flag: "max-bytes",
+    env: "FEARCH_MAX_BYTES",
+    kind: "int",
+    default: "10485760",
+    help: "Response size cap.",
+    tuning: true,
+  },
+  {
+    flag: "excerpt-chars",
+    env: "FEARCH_EXCERPT_CHARS",
+    kind: "int",
+    default: "1500",
+    help: "Budget of each fetch_top excerpt.",
+    tuning: true,
+  },
+  {
+    flag: "browser-session",
+    env: "FEARCH_BROWSER_SESSION",
+    kind: "bool",
+    default: "false",
+    help: "headed only: send the tool profile's cookies to ordinary pages too (labelled 'your session').",
+    tuning: true,
+  },
+  {
+    flag: "browser-identity",
+    env: "FEARCH_BROWSER_IDENTITY",
+    kind: "enum",
+    values: ["header", "none"],
+    default: "header",
+    help: "Playwright tiers: name the tool in From/X-Agent headers, or send plain Chrome.",
+    tuning: true,
+  },
+  {
+    flag: "extension-connect-ms",
+    env: "FEARCH_EXTENSION_CONNECT_MS",
+    kind: "int",
+    default: "4000",
+    help: "How long to wait for the bridge extension before falling back.",
+    tuning: true,
+  },
+  {
+    flag: "browser-max-concurrent",
+    env: "FEARCH_BROWSER_MAX_CONCURRENT",
+    kind: "int",
+    default: "2",
+    help: "Concurrent browser renders.",
+    tuning: true,
+  },
+  {
+    flag: "log-file",
+    env: "FEARCH_LOG_FILE",
+    kind: "string",
+    default: "",
+    help: "Also append every log and audit line to this file.",
+    tuning: true,
+  },
+];
+
+const BY_FLAG = new Map(FLAGS.map((f) => [f.flag, f]));
+
+/**
+ * Parse server flags out of argv (anything else — subcommands and their own flags — is returned as
+ * `rest`), apply them over the environment, and build the settings. `overrides` are the env-spelled
+ * values the flags produced, for logging.
+ */
 export function settingsFromArgs(
   argv: string[],
   env: Env = process.env,
@@ -286,19 +528,42 @@ export function settingsFromArgs(
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    const m = /^--([a-z-]+)(?:=(.*))?$/.exec(a);
-    const spec = m ? SERVER_FLAGS[m[1]] : undefined;
-    if (!m || !spec) {
+    const m = /^--(no-)?([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(a);
+    if (!m) {
       rest.push(a);
       continue;
     }
-    if (spec.boolean) {
-      overrides[spec.env] = m[2] === undefined ? "1" : m[2];
-    } else {
-      const v = m[2] ?? argv[++i];
-      if (v === undefined) throw new Error(`--${m[1]} needs a value`);
-      overrides[spec.env] = v;
+    // `--no-cache` is a flag in its own right; `--no-handoff` negates `--handoff`.
+    let spec = BY_FLAG.get(m[1] ? `no-${m[2]}` : m[2]);
+    let negated = false;
+    if (!spec && m[1]) {
+      spec = BY_FLAG.get(m[2]);
+      negated = !!spec;
     }
+    if (!spec) {
+      rest.push(a);
+      continue;
+    }
+    if (spec.kind === "bool") {
+      const explicit = m[3];
+      overrides[spec.env] = negated ? "0" : explicit === undefined ? "1" : explicit;
+      continue;
+    }
+    if (negated) throw new Error(`--no-${m[2]} is not a boolean flag`);
+    const v = m[3] ?? argv[++i];
+    if (v === undefined) throw new Error(`--${m[2]} needs a value`);
+    if (spec.kind === "enum" && spec.values && !spec.values.includes(v.trim().toLowerCase()))
+      throw new Error(`--${m[2]} must be one of ${spec.values.join("|")}`);
+    overrides[spec.env] = v;
   }
   return { settings: settingsFromEnv({ ...env, ...overrides }, platform), rest, overrides };
+}
+
+/** `--flag value` spelling of an env-spelled override, for logs. */
+export function flagSpelling(envName: string, value: string): string {
+  const f = FLAGS.find((x) => x.env === envName);
+  if (!f) return `${envName}=${value}`;
+  if (f.kind === "bool")
+    return ["1", "true", "yes", "on"].includes(value.toLowerCase()) ? `--${f.flag}` : `--no-${f.flag}`;
+  return `--${f.flag} ${value}`;
 }

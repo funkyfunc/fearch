@@ -7,7 +7,7 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createApp } from "./app.js";
-import { settingsFromArgs, type Settings } from "./config.js";
+import { flagSpelling, settingsFromArgs, type Settings } from "./config.js";
 import { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -45,7 +45,7 @@ async function serve(settings: Settings, overrides: Record<string, string>): Pro
   const log = (msg: string) => app.audit.log("info", msg);
 
   const flags = Object.entries(overrides)
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([k, v]) => flagSpelling(k, v))
     .join(" ");
   log(`fearch ${settings.version} starting (stdio)${flags ? ` with ${flags}` : ""}`);
   log(`User-Agent: ${settings.userAgent} — operators can block it with \`User-agent: fearch\` in robots.txt`);

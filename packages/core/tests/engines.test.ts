@@ -451,6 +451,51 @@ describe("server flags", () => {
     ).toEqual(["duckduckgo"]);
     expect(settingsFromArgs([], base, "linux").settings.engines).toEqual(["duckduckgo"]);
     expect(() => settingsFromArgs(["--robots"], base, "linux")).toThrow(/needs a value/);
+    expect(() => settingsFromArgs(["--robots", "sometimes"], base, "linux")).toThrow(/must be one of/);
+  });
+
+  it("every setting is a flag: booleans, negation, tuning knobs, and the env twin losing to the flag", () => {
+    const base = { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" };
+    const s = settingsFromArgs(
+      [
+        "--incognito",
+        "--human-search=false",
+        "--no-handoff",
+        "--search",
+        "off",
+        "--handoff-timeout-ms=1000",
+        "search",
+        "q",
+      ],
+      { ...base, FEARCH_INCOGNITO: "0", FEARCH_SEARCH_MODE: "all" },
+      "darwin",
+    );
+    expect([
+      s.settings.incognito,
+      s.settings.humanSearch,
+      s.settings.handoff,
+      s.settings.searchMode,
+      s.settings.handoffTimeoutMs,
+    ]).toEqual([true, false, false, "off", 1000]);
+    expect(s.rest).toEqual(["search", "q"]);
+    expect(s.overrides).toEqual({
+      FEARCH_INCOGNITO: "1",
+      FEARCH_HUMAN_SEARCH: "false",
+      FEARCH_HANDOFF: "0",
+      FEARCH_SEARCH_MODE: "off",
+      FEARCH_HANDOFF_TIMEOUT_MS: "1000",
+    });
+    expect(() => settingsFromArgs(["--no-engines"], base, "linux")).toThrow(/not a boolean/);
+    // `--no-cache` is its own flag, not the negation of a `cache` flag
+    expect(settingsFromArgs(["--no-cache"], {}, "linux").settings.noCache).toBe(true);
+    // subcommand flags that share nothing with server flags pass through untouched
+    expect(settingsFromArgs(["fetch", "https://x.test/", "--mode", "raw", "--links"], base, "linux").rest).toEqual([
+      "fetch",
+      "https://x.test/",
+      "--mode",
+      "raw",
+      "--links",
+    ]);
   });
 });
 

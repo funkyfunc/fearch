@@ -19,50 +19,95 @@
         {
           "type": "named",
           "name": "--browser",
-          "description": "auto | headless | headed | extension | off \u2014 auto (default): headless until a site shows a challenge, which then opens in a visible window for the person to pass (their own Chrome via the bridge extension preferred when connected; graceful where no display exists). With a person on call, Google joins DuckDuckGo. The other values pin one behaviour: never visible, always visible, extension only, or no browser tier.",
+          "description": "auto | headless | headed | extension | off — auto (default): headless until a site shows a challenge, which then opens in a visible window for the person (their own Chrome via the bridge extension when connected; final where no display exists).",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--robots",
-          "description": "default | strict | off \u2014 robots.txt for the tool's own fetching: user-initiated agent opt-outs (default), also training-crawler opt-outs (strict), or not consulted (off).",
+          "description": "default | strict | off — robots.txt for the tool's own fetching.",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--engines",
-          "description": "Engine result pages in preference order: google,bing,duckduckgo (default: duckduckgo; google and bing need a person on call to pass their checks).",
+          "description": "Engine result pages in preference order: duckduckgo (default), google, bing. Google and Bing need a person on call to pass their checks.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--human-search",
+          "description": "Google/Bing: the query is filled into the search box in the person's browser and they press Enter.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--incognito",
+          "description": "The person's own Chrome: open pages and result pages in an incognito window, not their profile.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--no-handoff",
+          "description": "Never surface a bot check to the person; challenges are final.",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--allow-domains",
-          "description": "Comma-separated allow list of hosts.",
+          "description": "Comma-separated allow list of hosts (subdomains included).",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--deny-domains",
-          "description": "Comma-separated deny list of hosts.",
+          "description": "Comma-separated deny list of hosts (subdomains included).",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--search",
+          "description": "all | off — off disables the search tool.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--max-chars",
+          "description": "Default character budget of a fetch result (12000).",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--locale",
+          "description": "BCP-47 tag engines and Accept-Language speak; defaults to the machine's locale.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--cache-dir",
+          "description": "Where the cache, browser profile and pairing token live (~/.cache/fearch).",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--audit-log",
+          "description": "stderr | off | a file path — one JSON line per network request.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--log-level",
+          "description": "debug | info | warn | error.",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--ua-info-url",
+          "description": "URL shown in the User-Agent (defaults to the project's bot-info page).",
           "isRequired": false
         }
       ],
       "environmentVariables": [
-        {
-          "name": "FEARCH_UA_INFO_URL",
-          "description": "URL shown in the User-Agent (defaults to the project's bot-info page).",
-          "isRequired": false
-        },
-        {
-          "name": "FEARCH_HUMAN_SEARCH",
-          "description": "1: for Google/Bing, the query is filled into the search box in your browser and you press Enter yourself.",
-          "isRequired": false
-        },
-        {
-          "name": "FEARCH_INCOGNITO",
-          "description": "1: pages and searches opened through your own Chrome use an incognito window, not your profile.",
-          "isRequired": false
-        },
         {
           "name": "GITHUB_TOKEN",
           "description": "Optional: higher GitHub API limits and code search.",

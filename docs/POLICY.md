@@ -2,7 +2,9 @@
 
 This document is for security and legal reviewers. It states exactly how the server behaves on the
 network. Every rule below is enforced in code and covered by tests; the code paths are named so the
-claims can be audited. See `SPECTRUM.md` for the reasoning and sources.
+claims can be audited. See `SPECTRUM.md` for the reasoning and sources. Settings are named here by
+their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag with the same name
+(`--browser`), and the flag wins — the table is `FLAGS` in `packages/core/src/config.ts`.
 
 ## Identity
 
