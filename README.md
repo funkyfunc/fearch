@@ -51,8 +51,8 @@ fearch doctor          # effective config; tests the network, browser, and one s
 
 ## What "respectful" means
 
-Every rule is enforced in code and tested. `docs/POLICY.md` states them for security review;
-`docs/SPECTRUM.md` gives the reasoning with sources.
+Every rule is enforced in code and tested. [POLICY.md](https://github.com/funkyfunc/fearch/blob/main/docs/POLICY.md) states them for security
+review; [SPECTRUM.md](https://github.com/funkyfunc/fearch/blob/main/docs/SPECTRUM.md) gives the reasoning with sources.
 
 - **Identity** — `User-Agent: fearch/<version> (+https://github.com/funkyfunc/fearch#bot-info)`: a
   stable token operators can block and a URL explaining it. Never a browser string, not configurable to one.
@@ -220,7 +220,7 @@ Sections not shown: Coroutines · Awaitables · Creating tasks · ...
 
 A refusal comes back as a Diagnosis: the kind (`captcha_or_challenge`, `paywall`, `robots_disallowed`,
 …), what was attempted, and what to do instead. Guidance to paste into an agent's system prompt:
-`docs/AGENT-GUIDANCE.md`.
+[AGENT-GUIDANCE.md](https://github.com/funkyfunc/fearch/blob/main/docs/AGENT-GUIDANCE.md).
 
 ## Development
 
@@ -238,7 +238,10 @@ commit and typecheck + fast tests on push; CI runs everything.
 
 ## Docs
 
-- `docs/POLICY.md` — the access policy, for security/legal review
-- `docs/SPECTRUM.md` — what's acceptable, frowned upon, and illegal in automated web access, with sources
-- `docs/LEARNINGS.md` — notes from fourteen reference fetch/search tools
-- `docs/RESEARCH-RECONCILIATION.md`, `docs/research/` — research inputs and how they were resolved
+- [POLICY.md](https://github.com/funkyfunc/fearch/blob/main/docs/POLICY.md) — the access policy, for security/legal review
+- [SPECTRUM.md](https://github.com/funkyfunc/fearch/blob/main/docs/SPECTRUM.md) — what's acceptable, frowned upon, and illegal in automated web
+  access, with sources
+- [AGENT-GUIDANCE.md](https://github.com/funkyfunc/fearch/blob/main/docs/AGENT-GUIDANCE.md) — a paste-in snippet teaching an agent to use the tools well
+- [LEARNINGS.md](https://github.com/funkyfunc/fearch/blob/main/docs/LEARNINGS.md) — notes from fourteen reference fetch/search tools
+- [ROADMAP.md](https://github.com/funkyfunc/fearch/blob/main/docs/ROADMAP.md) — what's done, queued, and permanently out of scope
+- [RESEARCH-RECONCILIATION.md](https://github.com/funkyfunc/fearch/blob/main/docs/RESEARCH-RECONCILIATION.md) — research inputs and how they were resolved

@@ -64,6 +64,11 @@
     "human-in-the-loop",
     "duckduckgo",
     "google",
-    "cli"
+    "cli",
+    "ai-agent",
+    "llm",
+    "browser",
+    "claude",
+    "model-context-protocol"
   ]
 }
