@@ -1,6 +1,6 @@
 {
   "name": "fearch-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Respectful web search and page reading for coding agents: an MCP server and CLI that identify themselves honestly, honour robots.txt, and treat a refusal as final.",
   "license": "MIT",
   "homepage": "https://github.com/funkyfunc/fearch#bot-info",
