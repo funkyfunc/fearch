@@ -14,6 +14,23 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Published + release pipeline (2026-09-01).** npm package `fearch-mcp` (bare `fearch` blocked as
+  too similar to `fetch`; the command, UA token, and repo stay `fearch`); v2.0.1 released by the
+  GitHub Actions pipeline — tag push → Linux+macOS suite → tag/version guard → `npm publish
+  --provenance` under npm trusted publishing (OIDC, no token). Repo description, 14 topics,
+  CI/npm/license badges; README made fully self-contained (no outbound links, user's call).
+- **Handoff elicitation + raw DOM + MCPB builder (2026-09-01, Report D items).** A challenge handed
+  to the person now also notifies them through their MCP client via form-mode elicitation, aborted
+  when the handoff resolves (form, not URL mode — URL elicitation would send the person to a fresh
+  copy of the page in the wrong cookie jar; also works around an SDK bug dropping cancellations for
+  request id 0). Unanswered escalation windows close themselves instead of orphaning. `mode=raw`
+  returns the rendered DOM when the browser was needed, not the empty pre-JS scaffold. `npm run
+  mcpb` builds the one-click Claude Desktop bundle. Also: pattern mode greps like grep (gim flags);
+  fetching `/robots.txt` itself is exempt from the robots gate; Turnstile interstitials whose text
+  hides in the cross-origin iframe are detected; engine robots census (2026-08-31, live): Mojeek,
+  Ecosia, Startpage, Marginalia all disallow their results paths — DDG lite remains the web's only
+  robots-permitted engine.
+
 - **Locale-aware engines (2026-08-31, from google-search-mcp's honest host-derived locale).** Engine
   URLs, `Accept-Language`, and the browser context now speak the machine's real locale (`FEARCH_LOCALE`
   / `LC_ALL` / `LANG`; `de_DE.UTF-8` → DDG `kl=de-de`, Google `hl=de&gl=de`, Bing `setlang=de&cc=DE`;
@@ -71,8 +88,8 @@ is not a goal to get through them.
 | 1 | **Grow the eval set — general personas, judged** | 22 dev questions is a smoke test, and now mis-aimed: fearch is for general agent use. webfetch (reference repo) judged itself against a hosted baseline on SimpleQA-style general questions — the only rigorous eval in the corpus. | ~50+ questions across personas (news, health, travel, reference, dev); judged against a baseline, not substring-graded; a scheduled CI run; regressions block releases. |
 | 6 | **Progress notifications when the browser engages** | Batch and excerpt progress ship; the browser render itself (3–15 s) is still silent — and the escalation window doubly so. | Progress event before/after each browser render and when a challenge window opens. |
 | 15 | **Chrome Web Store listing for the bridge extension — via native messaging** | "Load unpacked" is a dev-only ritual; and Report D found the store path has an architectural precondition: loopback HTTP polling + `<all_urls>` likely fails CWS review, while Chrome **native messaging** is the documented, sanctioned channel for extension↔local-app links. Bonus: stdin/stdout to a Chrome-launched host retires the loopback port (and with it, most of what the pairing token defends against) for the store build. | Store listing published; the store build talks native messaging (extension ↔ Chrome-spawned host ↔ fearch); the unpacked dev build keeps the loopback bridge; `fearch extension install` prefers the store. |
-| 16 | **MCPB (.mcpb) packaging** | One-click install for Claude Desktop: the whole Node server + node_modules in one bundle, double-click to register, env vars in the OS keychain — the non-developer install path that exists today (Report D; formerly Anthropic DXT). | An `.mcpb` artifact built in CI; installing it also registers the native-messaging host manifest so the store extension pairs without any manual step. |
-| 17 | **URL-mode elicitation for the handoff** | Verified against the 2026-07-28 MCP spec: elicitation now has a URL mode for exactly this ("direct users to external URLs for interactions that must not pass through the client"). A bot-check could notify the person through their MCP client — "a check needs you, window is open" — instead of relying on window focus alone. | When the client declares `elicitation.url`, a challenge emits an elicitation alongside opening the window; without it, today's focus-based handoff is the graceful fallback. |
+| 16 | **MCPB distribution** | `npm run mcpb` builds the bundle (done, 2026-09-01); it isn't yet built in CI or attached to releases, and it should eventually register the native-messaging host manifest for the store extension. | The `.mcpb` built by the release workflow and attached to each GitHub release; a download link in the README. |
+| 18 | **MCP registry submission** | `server.json` is ready and points at the published `fearch-mcp`; the registry (registry.modelcontextprotocol.io) is the discovery hub every client reads. | fearch listed in the official MCP registry; the listing tracks releases. |
 
 ## v2.2 — fit into the harness
 
