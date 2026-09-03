@@ -52,7 +52,7 @@ export async function doctor(app: App): Promise<number> {
         const incognito = info?.incognitoAllowed
           ? "allowed"
           : s.incognito
-            ? "not allowed — FEARCH_INCOGNITO=1 will fail until “Allow in Incognito” is enabled"
+            ? "not allowed — --incognito will fail until “Allow in Incognito” is enabled"
             : "not allowed";
         ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
       } else if (s.browser === "extension")
@@ -80,7 +80,7 @@ export async function doctor(app: App): Promise<number> {
       // Chrome and adds no headers at all; only the Playwright tiers carry From/X-Agent.
       const identity =
         app.browser.browserChannel === "extension"
-          ? `none — your own Chrome, no identifying headers; ${s.incognito ? "incognito, your logins stay out" : "your logins ride along (FEARCH_INCOGNITO=1 to keep them out)"}`
+          ? `none — your own Chrome, no identifying headers; ${s.incognito ? "incognito, your logins stay out" : "your logins ride along (--incognito to keep them out)"}`
           : s.browserIdentity === "none"
             ? "none (plain Chrome, no identifying headers)"
             : "header (From/X-Agent name the tool)";

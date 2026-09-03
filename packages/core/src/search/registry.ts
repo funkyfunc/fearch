@@ -48,7 +48,7 @@ export class SearchRegistry {
   }
 
   describe(): string {
-    if (this.settings.searchMode === "off") return "search disabled (FEARCH_SEARCH_MODE=off)";
+    if (this.settings.searchMode === "off") return "search disabled (--search off)";
     const names = this.web.map((p) => p.name);
     const off = this.unusedEngines().map((x) => `${x.name} (${x.why})`);
     return `engines: ${names.join(" → ") || "(none)"}${off.length ? `; listed but not used: ${off.join("; ")}` : ""}`;
@@ -65,7 +65,7 @@ export class SearchRegistry {
   async search(q: SearchQuery): Promise<SearchOutcome> {
     if (this.settings.searchMode === "off") {
       throw new SearchError(
-        "Search is disabled on this server (FEARCH_SEARCH_MODE=off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
+        "Search is disabled on this server (--search off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
       );
     }
     const key = createHash("sha1")

@@ -73,7 +73,7 @@ export interface Settings {
   /**
    * When a page (or engine) shows a challenge, leave the tab in front and wait for the person to deal
    * with it, then continue with what they were shown. The tool never solves anything. On by default
-   * whenever the browser is visible (headed or extension); FEARCH_HANDOFF=0 turns it off.
+   * whenever the browser is visible (headed or extension); --no-handoff turns it off.
    */
   handoff: boolean;
   handoffTimeoutMs: number;
@@ -187,7 +187,7 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
         ? displayAvailable(env, platform)
         : false;
   // Handoff defaults on wherever a window (or the person's Chrome) could carry a challenge to them.
-  // FEARCH_HANDOFF=0 opts out — then nothing is ever surfaced and challenges are final.
+  // --no-handoff opts out — then nothing is ever surfaced and challenges are final.
   const handoff =
     browser === "auto" || browser === "headed" || browser === "extension"
       ? envBool(env, "FEARCH_HANDOFF", true)

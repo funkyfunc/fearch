@@ -490,13 +490,13 @@ export class EngineProvider implements SearchProvider {
     }
     if (human && !rendered.handedOff) {
       throw new SearchError(
-        `${this.name}: the query is filled into ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (FEARCH_HUMAN_SEARCH is on)`,
+        `${this.name}: the query is filled into ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (--human-search is on)`,
       );
     }
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
       // The engine's "no". Stop and cool down (the registry treats RateLimited as such).
       const hint = !this.settings.handoff
-        ? "handoff is disabled (FEARCH_HANDOFF=0); with it on you would be handed the page to pass yourself"
+        ? "handoff is disabled (--no-handoff); with it on you would be handed the page to pass yourself"
         : rendered.handoffWhere
           ? `it was opened in ${rendered.handoffWhere} but not passed in time — pass it there and search again`
           : this.settings.canSurface
@@ -513,7 +513,7 @@ export class EngineProvider implements SearchProvider {
       if (this.spec.noResults.test(rendered.html)) throw new SearchError(`${this.name}: no results for this query`);
       const dump = this.dumpUnparsed(rendered.html);
       throw new SearchError(
-        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : "; run with FEARCH_LOG_LEVEL=debug to save the page"})`,
+        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : "; run with --log-level debug to save the page"})`,
       );
     }
     if (!results.length) throw new SearchError(`${this.name}: no results matched the domain filters`);

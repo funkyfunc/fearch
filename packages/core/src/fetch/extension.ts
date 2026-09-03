@@ -537,7 +537,7 @@ function setupPage(extensionId: string): string {
 <ol><li>Open <code>chrome://extensions</code> (Chrome won't let this page link there).</li>
 <li>Turn on <b>Developer mode</b> (top right).</li>
 <li>Click <b>Load unpacked</b> and choose the folder <code>fearch extension install</code> printed (it is on your clipboard).</li>
-<li>Optional: open the extension's details and enable <b>Allow in Incognito</b> for <code>FEARCH_INCOGNITO=1</code>.</li></ol>
+<li>Optional: open the extension's details and enable <b>Allow in Incognito</b> for <code>--incognito</code>.</li></ol>
 <p>Expected extension ID: <code>${extensionId}</code></p>
 <script>setInterval(()=>fetch('/fearch/status').then(r=>r.json()).then(s=>{const e=document.getElementById('s');if(s.connected){e.className='ok';e.textContent='✔ connected (extension '+(s.extension&&s.extension.version)+')'}else if(s.unpairedExtensionSeen){e.textContent='✘ extension found but not paired — run \`fearch extension install\` again, then reload the extension'}}),1500)</script>
 </body></html>`;

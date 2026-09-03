@@ -71,7 +71,7 @@ async function install(
   out(
     "  2. click “Load unpacked”, press Cmd+Shift+G (macOS) or type in the path box, paste the folder above, and choose it",
   );
-  out("  3. optional: in the extension's details, enable “Allow in Incognito” for FEARCH_INCOGNITO=1");
+  out("  3. optional: in the extension's details, enable “Allow in Incognito” for --incognito");
   out("  (already loaded before? just click the ↻ reload button on its card so it picks up the new pairing token)");
   out(`\nExpected extension ID: ${EXTENSION_ID}.  Status page: http://127.0.0.1:${port}/setup`);
   openExtensionsPage();
@@ -85,7 +85,7 @@ async function install(
     `✔ connected — fearch bridge ${info?.version}; incognito ${info?.incognitoAllowed ? "allowed" : "not allowed (optional)"}.`,
   );
   out(
-    "Use it with: fearch --browser extension … (Google joins DuckDuckGo automatically — you are present to pass any check; FEARCH_INCOGNITO=1 keeps your profile out of it)",
+    "Auto mode uses it whenever it is connected (--browser extension pins it). Google: --engines google,duckduckgo; --human-search lets you press Enter yourself; --incognito keeps your profile out of it.",
   );
   return 0;
 }

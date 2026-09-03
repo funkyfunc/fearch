@@ -290,7 +290,7 @@ describe("engine eligibility — the dials play together", () => {
       status: 200,
     }));
     await expect(odd.search({ query: "x", maxResults: 5 })).rejects.toThrow(
-      /markup may have changed; run with FEARCH_LOG_LEVEL=debug/,
+      /markup may have changed; run with --log-level debug/,
     );
   });
 
