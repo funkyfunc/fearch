@@ -64,4 +64,25 @@ describe("isChallengePage — Turnstile lives in an invisible iframe", () => {
     expect(isChallengePage(`<html><head><title>Just a moment...</title></head><body></body></html>`)).toBe(true);
     expect(isChallengePage(`<html><body><main>ordinary page</main></body></html>`)).toBe(false);
   });
+
+  it("does not mistake a protected page that loaded fine, or an article about bot management, for a challenge", async () => {
+    const { isChallengePage } = await import("../src/fetch/diagnose.js");
+    // Cloudflare leaves its bot-detection script on every page of a protected site (help.openai.com, 2026-09-02).
+    const article = `<html><head><title>ChatGPT Work's Cloud browser allowlisting | OpenAI Help Center</title></head><body><main><h1>Allowlisting</h1><p>${"Cloudflare recognizes Cloud browser traffic as a signed agent. HUMAN (formerly PerimeterX) and DataDome verify request signatures automatically. ".repeat(12)}</p></main><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script><script>window._cf_chl_opt={}</script></body></html>`;
+    expect(isChallengePage(article, 200, "https://help.openai.com/en/articles/1")).toBe(false);
+    // …while the interstitial that precedes it (little text, the same markers) is one
+    const interstitial = `<html><head><title>Just a moment...</title></head><body><div id="challenge-body-text">Checking your browser before accessing help.openai.com.</div><script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script></body></html>`;
+    expect(isChallengePage(interstitial, 200)).toBe(true);
+    // a post-verification interstitial with no title marker but almost no text is still a challenge
+    expect(
+      isChallengePage(
+        `<html><head><title>Just a moment...</title></head><body><p>Verification successful. Waiting for www.example.test to respond</p></body></html>`,
+      ),
+    ).toBe(true);
+    expect(isChallengePage(`<html><body><p>We must verify your session before you can proceed</p></body></html>`)).toBe(
+      true,
+    );
+    // a status that says so needs no markup
+    expect(isChallengePage("<html><body>slow down</body></html>", 429)).toBe(true);
+  });
 });

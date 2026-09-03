@@ -43,30 +43,35 @@ const CHALLENGE_RE =
 const LOGIN_RE = /(type=["']password["']|Sign in to continue|Log in to continue|Please log in|Login required)/i;
 const PAYWALL_RE = /("isAccessibleForFree"\s*:\s*false|subscribe to continue|subscription required|paywall)/i;
 
-/** Is this rendered page a bot challenge / CAPTCHA interstitial (the thing a human, not the tool, may pass)? */
 // Turnstile widgets live in a cross-origin iframe: the "Verify you are human" text is invisible to a
 // DOM snapshot, and only the loader script or its container betrays them in the outer page.
 const TURNSTILE_RE = /(challenges\.cloudflare\.com|cf-turnstile)/i;
+/** Titles only an interstitial carries. */
+const CHALLENGE_TITLE_RE =
+  /<title[^>]*>\s*(Just a moment|Attention Required|Access denied|Verify you are human|Checking your browser|Please wait|Security check|Bot verification|One more step)/i;
+const CHALLENGE_PHRASE_RE = /unusual traffic|not a robot|verify you are|are you a human|verify your session/i;
+/** An interstitial has almost no visible text; a protected page that loaded fine has an article on it. */
+const INTERSTITIAL_MAX_TEXT = 800;
 
+function visibleTextLength(html: string): number {
+  return html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>|<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
+/**
+ * Is this rendered page a bot challenge / CAPTCHA interstitial (the thing a human, not the tool, may
+ * pass)? Decided by the *shape* of the page, not by vendor names: sites behind Cloudflare, DataDome
+ * or PerimeterX keep those vendors' scripts on every page that loads fine, and a help article about
+ * bot management names them in prose. A challenge is a status that says so, a title only an
+ * interstitial carries, Google's /sorry/ URL, or a challenge marker on a page with almost no text.
+ */
 export function isChallengePage(html: string, status = 200, url = ""): boolean {
-  if (
-    CHALLENGE_RE.test(html) ||
-    /unusual traffic|not a robot|verify you are|are you a human|verify your session/i.test(html) ||
-    /\/sorry\//.test(url) ||
-    status === 429
-  ) {
-    return true;
-  }
-  // A Turnstile on an otherwise empty page is a challenge interstitial. On a page with real content
-  // (a login or signup form embedding the widget) it is just a widget, not a gate on this content.
-  if (TURNSTILE_RE.test(html)) {
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return text.length < 800;
-  }
-  return false;
+  if (status === 429 || /\/sorry\//.test(url) || CHALLENGE_TITLE_RE.test(html)) return true;
+  const marked = CHALLENGE_RE.test(html) || CHALLENGE_PHRASE_RE.test(html) || TURNSTILE_RE.test(html);
+  if (!marked) return false;
+  return visibleTextLength(html) < INTERSTITIAL_MAX_TEXT;
 }
 
 const BOOK = "Do not retry with different headers, identities, or proxies — this server never does that.";

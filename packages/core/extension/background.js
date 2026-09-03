@@ -13,6 +13,8 @@ const loops = new Map(); // port -> true while a loop runs
 const state = { servers: {}, lastError: "" };
 const windows = { normal: null, incognito: null };
 const ownedTabs = new Set();
+/** The about:blank tab a window is created with; removed once a real tab exists. */
+const starterTabs = new Map(); // windowId -> tabId
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -57,7 +59,27 @@ async function ensureWindow(incognito) {
   }
   const win = await chrome.windows.create({ url: "about:blank", focused: false, incognito, state: "minimized" });
   windows[key] = win.id;
+  const starter = win.tabs && win.tabs[0];
+  if (starter) starterTabs.set(win.id, starter.id);
   return win.id;
+}
+
+/** Chrome needs a window to have a tab; the blank starter goes as soon as a fearch tab exists. */
+async function dropStarterTab(windowId) {
+  const id = starterTabs.get(windowId);
+  if (id === undefined) return;
+  starterTabs.delete(windowId);
+  await chrome.tabs.remove(id).catch(() => {});
+}
+
+/** After the last fearch tab in a window closes, close the window too, rather than leave an empty one around. */
+async function closeWindowIfEmpty(windowId) {
+  try {
+    const tabs = await chrome.tabs.query({ windowId });
+    if (tabs.some((t) => ownedTabs.has(t.id))) return;
+    for (const key of Object.keys(windows)) if (windows[key] === windowId) windows[key] = null;
+    await chrome.windows.remove(windowId);
+  } catch {}
 }
 
 function waitLoaded(tabId, timeoutMs) {
@@ -117,6 +139,7 @@ async function handle(job) {
       const windowId = await ensureWindow(!!job.incognito);
       const tab = await chrome.tabs.create({ windowId, url: job.url, active: false });
       ownedTabs.add(tab.id);
+      await dropStarterTab(windowId);
       await waitLoaded(tab.id, job.timeoutMs || 20000);
       await settle(tab.id, job.settleSelector, job.settleMs || 4000);
       const snap = await snapshot(tab.id);
@@ -137,7 +160,12 @@ async function handle(job) {
     case "close": {
       if (!ownedTabs.has(job.tabId)) return { ok: true };
       ownedTabs.delete(job.tabId);
+      let windowId = null;
+      try {
+        windowId = (await chrome.tabs.get(job.tabId)).windowId;
+      } catch {}
       await chrome.tabs.remove(job.tabId).catch(() => {});
+      if (windowId !== null) await closeWindowIfEmpty(windowId);
       return { ok: true };
     }
     default:
