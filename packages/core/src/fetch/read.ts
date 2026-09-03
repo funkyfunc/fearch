@@ -57,7 +57,12 @@ export function readDocument(doc: PageDoc, o: ReadOptions): string {
     const { body } = applyLinkMode(doc.markdown, false);
     const matches = findPattern(body, requireQuery(o, "a regex"), o.contextChars ?? 200);
     const window = applyBudget(renderPattern(o.query!, matches, body.length), 0, o.maxChars);
-    return renderPage({ ...page, window: { ...window, total: 0 }, note: notes.join(" ") });
+    // Pattern output is not a page: no cursor, and a cut is a hint to narrow the pattern, not to page.
+    if (window.truncated)
+      notes.push(
+        `Pattern output cut at ${o.maxChars} chars; narrow the pattern, lower context_chars, or raise max_chars.`,
+      );
+    return renderPage({ ...page, window: { ...window, total: 0, truncated: false }, note: notes.join(" ") });
   }
 
   const sections = splitSections(doc.markdown);
