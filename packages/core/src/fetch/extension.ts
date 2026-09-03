@@ -65,10 +65,12 @@ export function loadOrCreateExtensionToken(cacheDir: string): string {
 
 interface Job {
   id: string;
-  op: "ping" | "open" | "read" | "activate" | "close";
+  op: "ping" | "open" | "read" | "activate" | "close" | "fill";
   url?: string;
   tabId?: number;
   incognito?: boolean;
+  selector?: string;
+  text?: string;
   settleSelector?: string;
   settleMs?: number;
   timeoutMs?: number;
@@ -317,6 +319,13 @@ export class ExtensionBridge {
  * Chrome via the bridge when it is connected; a given fallback tier when it isn't. In auto the
  * extension is opportunistic — a short connection check, a quiet note — while explicit extension
  * mode waits longer and warns properly.
+ *
+ * Headless until it matters, in auto: an ordinary page read (no `session`) goes to the fallback tier
+ * first — self-identified, logged out, invisible — and the person's Chrome is used only when that
+ * render comes back as a bot check, or for engine pages (`session: true`, where a passed check
+ * lives) and pages handed to the person. Explicit `--browser extension` pins the person's Chrome
+ * for everything. This keeps an agent's ordinary reads out of the person's profile: a
+ * prompt-injected "read this settings page" renders logged out, not as them.
  */
 export class ExtensionRenderer implements BrowserTier {
   readonly headed = true;
@@ -350,7 +359,24 @@ export class ExtensionRenderer implements BrowserTier {
     return "your Chrome (fearch bridge extension)";
   }
 
+  /** Auto mode, an ordinary page read: the fallback tier is the first try (see the class comment). */
+  private headlessFirst(opts: RenderOptions): boolean {
+    return this.settings.browser === "auto" && !!this.fallback && !opts.session && !opts.handToPerson;
+  }
+
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
+    if (this.headlessFirst(opts)) {
+      const first = await this.fallback!.render(url, { ...opts, handoff: false });
+      const isChallenge = opts.isChallenge ?? isChallengePage;
+      if (!isChallenge(first.html, first.status, first.finalUrl) || opts.handoff === false || !this.settings.handoff)
+        return first;
+      this.audit.log("info", `challenge on ${url} in the headless browser: opening it in your Chrome instead`);
+      return this.renderInChrome(url, opts);
+    }
+    return this.renderInChrome(url, opts);
+  }
+
+  private async renderInChrome(url: string, opts: RenderOptions): Promise<Rendered> {
     // The pipeline has already normalised (and upgraded) the URL; keep its scheme — a page that only
     // speaks http would otherwise land on an SSL error page in the tab.
     const target = normalizeUrl(url, { keepScheme: true });
@@ -426,6 +452,10 @@ export class ExtensionRenderer implements BrowserTier {
       if (opts.handToPerson) {
         // The person's turn from the start: bring the tab up, say what to do, wait for `ready`.
         handoffWhere = "a tab in your Chrome";
+        if (opts.handToPerson.fill) {
+          const { selector, text } = opts.handToPerson.fill;
+          await this.bridge.request({ op: "fill", tabId, selector, text }, 10_000);
+        }
         this.audit.log("warn", `${target}: handed to you in your Chrome (${opts.handToPerson.message})`);
         this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
         await this.bridge.request({ op: "activate", tabId });

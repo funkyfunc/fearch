@@ -145,6 +145,8 @@ describe("extension tier — the handoff", () => {
           : job.op === "read"
             ? { ok: true, tabId: 7, html: page(), url: "https://x.test/" }
             : { ok: true };
+      if (job.op === "fill")
+        log.push(`fill:${(job as { selector?: string }).selector}=${(job as { text?: string }).text}`);
       await fetch(`http://127.0.0.1:${port}/fearch/result`, {
         method: "POST",
         headers: ORIGIN,
@@ -176,6 +178,59 @@ describe("extension tier — the handoff", () => {
     await r.close();
   }, 20_000);
 
+  it("auto: ordinary page reads go headless first and reach the person's Chrome only for a bot check; engine pages go straight there", async () => {
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47478, 47479]);
+    const port = await bridge.start();
+    const calls: string[] = [];
+    const page = (html: string, extra: Partial<import("../src/fetch/browser.js").Rendered> = {}) => ({
+      html,
+      finalUrl: "https://x.test/",
+      status: 200,
+      salvaged: false,
+      usedSession: false,
+      handedOff: false,
+      ...extra,
+    });
+    let headlessHtml = "<main>rendered logged out</main>";
+    const headless = {
+      enabled: () => true,
+      headed: false,
+      browserUserAgent: "x",
+      browserChannel: "chromium",
+      async render(u: string, o?: import("../src/fetch/browser.js").RenderOptions) {
+        calls.push(`headless ${u} handoff=${o?.handoff}`);
+        return page(headlessHtml);
+      },
+      async close() {},
+    } as BrowserTier;
+    const log: string[] = [];
+    const chromePage = `<html><body><div id="search"><a href="https://example.com/x"><h3>Result</h3></a>${"<p>x</p>".repeat(50)}</div></body></html>`;
+    const client = fakeExtension(port, () => chromePage, log);
+    const r = new ExtensionRenderer(
+      settings({ FEARCH_BROWSER: "auto", DISPLAY: ":0", FEARCH_ALLOW_PRIVATE: "1", FEARCH_HANDOFF_TIMEOUT_MS: "500" }),
+      audit(),
+      bridge,
+      headless,
+    );
+    // an ordinary read: headless answered, the person's Chrome was never asked
+    const plain = await r.render("https://x.test/a");
+    expect(plain.html).toContain("logged out");
+    expect(calls).toEqual(["headless https://x.test/a handoff=false"]);
+    expect(log.filter((o) => o === "open").length).toBe(0);
+    // an engine page (session) goes to the person's Chrome directly
+    const engine = await r.render("https://x.test/search?q=1", { session: true });
+    expect(engine.label).toBe("your Chrome");
+    expect(calls.length).toBe(1);
+    // a read whose headless render is a bot check is retried in the person's Chrome
+    headlessHtml = `<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>`;
+    const gated = await r.render("https://x.test/b");
+    expect(calls[1]).toBe("headless https://x.test/b handoff=false");
+    expect(gated.label).toBe("your Chrome");
+    expect(gated.html).toContain("<h3>Result</h3>");
+    await r.close();
+    await client.catch(() => {});
+  }, 20_000);
+
   it("hands a prefilled search to the person and returns the page they land on once it is ready", async () => {
     const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47476, 47477]);
     const port = await bridge.start();
@@ -189,8 +244,12 @@ describe("extension tier — the handoff", () => {
       audit(),
       bridge,
     );
-    const out = await r.render("https://x.test/?q=x", {
-      handToPerson: { message: "press Enter", ready: (h) => /<h3>/.test(h) },
+    const out = await r.render("https://x.test/", {
+      handToPerson: {
+        message: "press Enter",
+        ready: (h) => /<h3>/.test(h),
+        fill: { selector: "input[name=q]", text: "x" },
+      },
     });
     expect(out.handedOff).toBe(true);
     expect(out.handoffWhere).toBe("a tab in your Chrome");
@@ -198,7 +257,9 @@ describe("extension tier — the handoff", () => {
     await r.close();
     await client.catch(() => {});
     expect(log[0]).toBe("open");
-    expect(log[1]).toBe("activate");
+    expect(log[1]).toBe("fill");
+    expect(log[2]).toBe("fill:input[name=q]=x");
+    expect(log[3]).toBe("activate");
   }, 20_000);
 });
 

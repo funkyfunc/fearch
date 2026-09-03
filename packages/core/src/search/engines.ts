@@ -53,7 +53,12 @@ export interface EngineSpec {
    * recognise the results page the person lands on. Only for engines whose result pages are not
    * robots-permitted — the ones where the person's own hand on the query is the point.
    */
-  human?: { homeUrl(query: string, locale?: string): string; resultsUrl: RegExp };
+  human?: {
+    homeUrl(query: string, locale?: string): string;
+    resultsUrl: RegExp;
+    /** When the home URL cannot carry the query without submitting it: the search box to type into. */
+    fillSelector?: string;
+  };
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
   /** Extract the engine's own generated answer box, if the page carries one. */
@@ -347,9 +352,10 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     noResults: /There are no results for/i,
     resultsSelector: "li.b_algo",
     human: {
-      homeUrl: (q, loc = "en-US") =>
-        `https://www.bing.com/?q=${encodeURIComponent(q)}&setlang=${localeParts(loc).lang}`,
+      // bing.com/?q= redirects straight to /search (measured 2026-09-02), so the query is typed into the box instead.
+      homeUrl: (_q, loc = "en-US") => `https://www.bing.com/?setlang=${localeParts(loc).lang}`,
       resultsUrl: /\/search\?/,
+      fillSelector: "input[name=q], textarea[name=q]",
     },
   },
   google: {
@@ -473,6 +479,7 @@ export class EngineProvider implements SearchProvider {
               ? {
                   message: `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`,
                   ready,
+                  fill: human.fillSelector ? { selector: human.fillSelector, text: query } : undefined,
                 }
               : undefined,
             settleSelector: human ? undefined : this.spec.resultsSelector,

@@ -356,6 +356,10 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
     const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
     expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm&hl=en");
     expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
+    expect(seen[0].opts.handToPerson?.fill).toBeUndefined(); // Google's home page carries the query
+    // Bing's ?q= submits on its own, so its human spec types into the box instead
+    expect(ENGINE_SPECS.bing.human!.homeUrl("x", "en-US")).not.toContain("q=");
+    expect(ENGINE_SPECS.bing.human!.fillSelector).toContain("name=q");
     expect(seen[0].opts.settleSelector).toBeUndefined();
     expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
     expect(p.disclosure).toContain("submitted by you");
