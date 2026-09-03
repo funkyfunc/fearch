@@ -15,7 +15,7 @@ export async function doctor(app: App): Promise<number> {
   if (s.robotsPolicy === "off")
     warn("robots.txt", "not consulted (--robots off — user-agent posture; stamped on every result)");
   else ok("robots.txt", `honoured, policy=${s.robotsPolicy} (Crawl-delay honoured)`);
-  ok("cache", s.noCache ? "disabled (FEARCH_NO_CACHE=1)" : `${s.cacheDir}/cache-v2.sqlite`);
+  ok("cache", s.noCache ? "disabled (--no-cache)" : `${s.cacheDir}/cache-v2.sqlite`);
   ok("audit log", s.auditLog);
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
   ok("proxy", proxy || "none (set HTTPS_PROXY for a corporate egress proxy)");

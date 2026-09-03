@@ -44,8 +44,9 @@ export function usage(): string {
     .join("\n");
   return `usage: fearch [flags] [command]
 
-Flags go in your MCP config's "args" (or the same names as FEARCH_* environment variables — --human-search
-is FEARCH_HUMAN_SEARCH=1; flags win). Booleans take --flag, --flag=false or --no-flag.
+Flags go in your MCP config's "args". Booleans take --flag, --flag=false or --no-flag. (Every flag also
+answers to an environment variable of the same name, FEARCH_HUMAN_SEARCH=1 for --human-search, for
+deployments that cannot pass args; flags win.)
 
 ${core}
 

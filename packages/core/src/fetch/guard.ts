@@ -138,11 +138,11 @@ export async function assertPublicUrl(raw: string, opts: GuardOptions = {}): Pro
   if (opts.allowPrivate) return url;
   const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
   if (isBlockedHostname(host)) {
-    throw new BlockedURL(`Refusing to fetch private host '${host}' (set FEARCH_ALLOW_PRIVATE=1 to allow).`);
+    throw new BlockedURL(`Refusing to fetch private host '${host}' (--allow-private permits this).`);
   }
   if (isIP(host)) {
     if (isPrivateAddress(host))
-      throw new BlockedURL(`Refusing to fetch private address ${host} (set FEARCH_ALLOW_PRIVATE=1 to allow).`);
+      throw new BlockedURL(`Refusing to fetch private address ${host} (--allow-private permits this).`);
     return url;
   }
   let addrs: Array<{ address: string }>;
@@ -155,7 +155,7 @@ export async function assertPublicUrl(raw: string, opts: GuardOptions = {}): Pro
   for (const a of addrs) {
     if (isPrivateAddress(a.address)) {
       throw new BlockedURL(
-        `Refusing to fetch '${host}': resolves to private/internal address ${a.address} (set FEARCH_ALLOW_PRIVATE=1 to allow).`,
+        `Refusing to fetch '${host}': resolves to private/internal address ${a.address} (--allow-private permits this).`,
       );
     }
   }
