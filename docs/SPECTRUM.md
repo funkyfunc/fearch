@@ -81,6 +81,19 @@ and none are EU/UK law; the UK has no commercial TDM exception.
 | Scraping | built in, default | none. An opt-in impersonation module existed briefly and was removed on 2026-08-29: the headed tier covers the personal-use case without lying about what the client is |
 | Verdict | personal use; **orange** | defaults: corporate-safe, **green core + yellow browser tier** — the same place ordinary Playwright/Puppeteer automation sits. User-agent posture: **yellow, the person's explicit choice**, stamped on every result |
 
+## What the vendors' own documentation says (verified 2026-09-02; quotes in RESEARCH-RECONCILIATION, Report F)
+
+| Vendor product | Where it runs | Person's sessions | Identifies itself to sites | Bot checks | Uses a search engine on the person's behalf |
+|---|---|---|---|---|---|
+| Microsoft Copilot Cowork (local browser) | a **hidden tab** in the person's own Edge | yes ("no more and no less" than the person) | not described | hands the tab to the person | not described |
+| Anthropic Claude in Chrome | new tabs in the person's own Chrome, visible | yes ("shares your browser's login state") | not described | "pauses and asks you to handle it manually" | by example (types into a site's search box) |
+| Google Gemini in Chrome / auto browse | the person's own Chrome | yes | not described | not described | yes — "automatically uses … Google Search, Google Maps, YouTube" |
+| Perplexity `Perplexity-User` | Perplexity's servers (a fetcher, not a browser) | no | yes (UA + IP ranges) | n/a | n/a; "generally ignores robots.txt" for user requests |
+| OpenAI cloud browser / Operator | OpenAI's servers | no (cloud profile) | yes (RFC 9421 signatures, per OpenAI's help page) | "Takeover Mode": the person | in the browser, as a person would |
+| **fearch** | plain HTTP self-identified and robots-governed; the person's own Chrome (extension) or a visible window only for a check | extension: yes unless `--incognito`; headless: never | plain HTTP and Playwright tiers: yes; extension: no (it is the person's Chrome) | handed to the person; never solved | DuckDuckGo automatically; Google/Bing only if listed, and with `--human-search` the person submits |
+
+The local-browser row is the norm fearch's extension tier sits in; where fearch differs it is stricter.
+
 ## Search providers by posture
 
 | Provider | Index provenance | Free tier | Key | Posture |

@@ -204,3 +204,53 @@ Verification outcomes (each checked with fearch against the primary source on 20
   that encourage others to violate these terms": that clause is the author-side exposure, and
   "you press search" (`--human-search`) is the design answer to it.
 
+## Report F (2026-09-02): "AI Agent Browser Behavior Policies" (`docs/research/`)
+
+Commissioned to settle the norm question from the vendors' own pages: when Google, Anthropic, OpenAI,
+Perplexity and Microsoft drive a person's browser, what do they say about search engines,
+robots.txt, bot checks and identifying the agent to sites? Sourced overwhelmingly from vendor
+documentation this time (45 cited); the report wanders into sandboxing and prompt-injection material
+that was not asked for and skips the receiving side (Cloudflare's agent categories, AIPREF) almost
+entirely. Verification, each quote read on the vendor page with fearch on 2026-09-02:
+
+- **Microsoft Copilot Cowork, local browser** (learn.microsoft.com, updated 2026-08-28), verbatim:
+  "Cowork shows its work in a hidden Edge tab so you can stay in the conversation while it acts on
+  your behalf." "Because the tab runs in your own copy of Edge, it uses your existing single sign-on,
+  cookies, and sessions. The agent has exactly the same access to sites that you have when you
+  browse by hand — no more and no less." Hands the tab back for "a CAPTCHA or human-verification
+  prompt", "credentials, such as a password, or a multifactor authentication code". InPrivate
+  windows are not supported. No agent identification to sites is described. **This is fearch's
+  extension tier, from Microsoft: a hidden tab in the person's own browser, their sessions, the
+  check handed to the human.**
+- **Anthropic, Claude in Chrome via Claude Code** (code.claude.com/docs/en/chrome), verbatim:
+  "Claude opens new tabs for browser tasks and shares your browser's login state, so it can access
+  any site you're already signed into. Browser actions run in a visible Chrome window in real time.
+  When Claude encounters a login page or CAPTCHA, it pauses and asks you to handle it manually."
+  No agent identification to sites is described; the example task is literally "click on the search
+  box, type 'hooks', and tell me what results appear".
+- **Google, Gemini in Chrome** (Chrome Enterprise release notes), verbatim: "Gemini in Chrome also
+  serves as a productivity agent. Gemini in Chrome automatically uses public information from these
+  Google services: Google Search, Google Maps, YouTube." Chrome 144–150: "auto browse" and "Gemini
+  Spark can use Chrome auto browse to complete tasks that need web actuation." Google's own agent,
+  in the person's Chrome, uses Google Search on their behalf; no agent marker to sites is described.
+- **Perplexity** (docs.perplexity.ai/docs/resources/perplexity-crawlers), verbatim: `Perplexity-User`
+  "supports user actions within Perplexity … Since a user requested the fetch, this fetcher
+  generally ignores robots.txt rules." Self-identifying UA and published IP ranges — a *fetcher*
+  from Perplexity's servers, the declared-agent category, not a browser agent.
+- **OpenAI cloud browser** (help.openai.com article 11845367): the report says every request carries
+  RFC 9421 HTTP Message Signatures with `Signature-Agent: "https://chatgpt.com"` and a Cloudflare
+  bot ID. Vendor page; not re-read here (fetch pending at time of writing). Either way it is the
+  *cloud* architecture — OpenAI's servers make the requests — so identification is possible there
+  in a way it is not for a local browser.
+- **Not answered.** Cloudflare's agent category and whether an individual's browser agent can get a
+  signed identity; the IETF AIPREF drafts. Still open; check by hand.
+
+**What it settles.** The three vendors whose agents run in the person's own browser — Microsoft,
+Anthropic, Google — all do what fearch's extension tier does: the person's sessions, no
+identification to the site, the check handed to the human, and (Google, Anthropic by example) Google
+Search used from that browser. The two that identify themselves (OpenAI's cloud browser, Perplexity's
+fetcher) can because their servers make the requests. Nobody solves CAPTCHAs. So the norm for a
+local browser agent, from the vendors' own documentation, is: inherit the person's browser identity,
+never solve a check, hand it to the human. fearch is inside that norm on every point, and stricter
+on two — its own plain-HTTP fetches are self-identified and robots-governed, and Google is opt-in.
+

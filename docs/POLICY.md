@@ -60,7 +60,11 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   this path. First, no disclosure to the engine is possible on it: a declared automated client is
   exactly what these engines refuse, so the page is opened as the person's Chrome and nothing else,
   and the result header says so. Second, the precedent is the agent-in-the-user's-browser category
-  (Claude in Chrome, Playwright MCP, computer-use products; and *Amazon v. Perplexity*, 9th Cir.
+  — Microsoft's Copilot Cowork ("a hidden Edge tab … uses your existing single sign-on, cookies, and
+  sessions", CAPTCHAs handed back to the person), Anthropic's Claude in Chrome ("shares your
+  browser's login state … pauses and asks you to handle [a CAPTCHA] manually"), Google's own Gemini in
+  Chrome ("automatically uses … Google Search" from the person's Chrome); all verified on the
+  vendors' pages 2026-09-02, see `SPECTRUM.md` and `docs/CASES.md`; and *Amazon v. Perplexity*, 9th Cir.
   2026-08-04, No. 26-1444, which held that an agent acting at the user's direction from the user's
   own browser is a tool and the *user* is the one who accesses the site — a CFAA holding that the
   court expressly limited to that architecture and that leaves a site's terms of service intact), not
