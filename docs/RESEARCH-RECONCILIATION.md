@@ -239,7 +239,9 @@ entirely. Verification, each quote read on the vendor page with fearch on 2026-0
   from Perplexity's servers, the declared-agent category, not a browser agent.
 - **OpenAI cloud browser** (help.openai.com article 11845367): the report says every request carries
   RFC 9421 HTTP Message Signatures with `Signature-Agent: "https://chatgpt.com"` and a Cloudflare
-  bot ID. Vendor page; not re-read here (fetch pending at time of writing). Either way it is the
+  bot ID. Verified verbatim on the page (`Signature`, `Signature-Input`, `Signature-Agent:
+  "https://chatgpt.com"`, keys at chatgpt.com/.well-known/http-message-signatures-directory,
+  Cloudflare detection ID 129220581, Akamai "ChatGPT Agent", Vercel `chatgpt-operator`). It is the
   *cloud* architecture — OpenAI's servers make the requests — so identification is possible there
   in a way it is not for a local browser.
 - **Not answered.** Cloudflare's agent category and whether an individual's browser agent can get a

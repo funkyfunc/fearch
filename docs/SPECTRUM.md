@@ -89,7 +89,7 @@ and none are EU/UK law; the UK has no commercial TDM exception.
 | Anthropic Claude in Chrome | new tabs in the person's own Chrome, visible | yes ("shares your browser's login state") | not described | "pauses and asks you to handle it manually" | by example (types into a site's search box) |
 | Google Gemini in Chrome / auto browse | the person's own Chrome | yes | not described | not described | yes — "automatically uses … Google Search, Google Maps, YouTube" |
 | Perplexity `Perplexity-User` | Perplexity's servers (a fetcher, not a browser) | no | yes (UA + IP ranges) | n/a | n/a; "generally ignores robots.txt" for user requests |
-| OpenAI cloud browser / Operator | OpenAI's servers | no (cloud profile) | yes (RFC 9421 signatures, per OpenAI's help page) | "Takeover Mode": the person | in the browser, as a person would |
+| OpenAI cloud browser / Operator | OpenAI's servers | no (cloud profile) | yes (RFC 9421 signatures; verified on OpenAI's help page) | "Takeover Mode": the person | in the browser, as a person would |
 | **fearch** | plain HTTP self-identified and robots-governed; the person's own Chrome (extension) or a visible window only for a check | extension: yes unless `--incognito`; headless: never | plain HTTP and Playwright tiers: yes; extension: no (it is the person's Chrome) | handed to the person; never solved | DuckDuckGo automatically; Google/Bing only if listed, and with `--human-search` the person submits |
 
 The local-browser row is the norm fearch's extension tier sits in; where fearch differs it is stricter.
