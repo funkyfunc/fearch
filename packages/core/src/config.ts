@@ -24,10 +24,10 @@ export interface Settings {
   sessionBudget: { count: number; windowMs: number };
   allowPrivate: boolean;
   /**
-   * Which robots.txt groups apply. `default`/`strict` are the crawler posture (see fetch/robots.ts).
-   * `off` is the user-agent posture: like a browser, robots.txt is not consulted; pace limits and
-   * refusals still apply. Stamped on every result header. Engine result pages have their own rule:
-   * with a person present (see `personPresent`) they are user-driven browsing, whatever this dial says.
+   * Which robots.txt groups apply (see fetch/robots.ts): `default` honours `*`, our token and the
+   * user-initiated agent tokens; `strict` adds the training-crawler tokens. robots.txt is always
+   * consulted for the tool's own fetching. Engine result pages have their own rule: with a person
+   * present (see `personPresent`) they are that person's browsing.
    */
   robotsPolicy: (typeof ROBOTS_POLICIES)[number];
   allowDomains: string[];
@@ -56,20 +56,13 @@ export interface Settings {
   /** Extension (also as auto's preferred tier): open pages in an incognito window, not the person's profile. */
   incognito: boolean;
   /**
-   * "You press search": for engines whose result pages robots.txt disallows (Google, Bing), the query
-   * is filled into the engine's search box in the person's visible browser and *they* submit it —
-   * every such query is unambiguously theirs. DuckDuckGo lite (robots-permitted) stays automatic.
+   * `--human-search`: Google queries are shown to the person in their MCP client (editable) and run
+   * only when accepted; where nobody can be asked that way, the search box is handed over in the
+   * browser and they press Enter. DuckDuckGo lite (robots-permitted) stays automatic.
    */
   humanSearch: boolean;
   /** Extension only: how long to wait for the extension to show up before falling back (ms). */
   extensionConnectMs: number;
-  /**
-   * How the browser tier identifies itself. `header` (default): stock Chrome User-Agent plus `From:`
-   * (RFC 9110 §10.1.2, the header defined for robots to name their controller) and `X-Agent:` on every
-   * request. `none`: plain Chrome, no identifying headers (user-agent posture). `navigator.webdriver` is
-   * never touched. (Appending the token to the UA itself was measured to trip bot-checks and was dropped.)
-   */
-  browserIdentity: "header" | "none";
   /**
    * When a page (or engine) shows a challenge, leave the tab in front and wait for the person to deal
    * with it, then continue with what they were shown. The tool never solves anything. On by default
@@ -77,13 +70,6 @@ export interface Settings {
    */
   handoff: boolean;
   handoffTimeoutMs: number;
-  /**
-   * Headed only. Whether cookies the person created in the tool's own browser profile (by logging in
-   * or clicking through something in that window) are sent when reading ordinary pages. Engine result
-   * pages always use the profile (that is where a passed challenge lives). Results read with the
-   * person's session are labelled.
-   */
-  browserSession: boolean;
   /**
    * Search-engine result pages the browser may open, in preference order. Only engines whose
    * robots.txt permits their result pages are eligible unless `robotsPolicy` is `off`.
@@ -147,8 +133,8 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
   return v && allowed.includes(v) ? v : def;
 };
 
-export const KNOWN_ENGINES = ["duckduckgo", "bing", "google"] as const;
-export const ROBOTS_POLICIES = ["default", "strict", "off"] as const;
+export const KNOWN_ENGINES = ["duckduckgo", "google"] as const;
+export const ROBOTS_POLICIES = ["default", "strict"] as const;
 export const BROWSER_MODES = ["auto", "headless", "headed", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "off"] as const;
 
@@ -220,7 +206,6 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     logLevel: (env.FEARCH_LOG_LEVEL?.toLowerCase() as Settings["logLevel"]) || "info",
     browser,
     canSurface,
-    browserIdentity: pick(env.FEARCH_BROWSER_IDENTITY, ["header", "none"] as const, "header"),
     handoff,
     incognito: (browser === "extension" || browser === "auto") && envBool(env, "FEARCH_INCOGNITO"),
     humanSearch: envBool(env, "FEARCH_HUMAN_SEARCH"),
@@ -228,10 +213,8 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     // Long enough for a person at the screen to pass a check, short enough that an unattended agent
     // gets its answer ("waiting for you; call again") instead of a hung tool call.
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 45_000),
-    browserSession: browser === "headed" && envBool(env, "FEARCH_BROWSER_SESSION"),
-    // Default: DuckDuckGo lite, the one engine whose robots.txt permits its result pages. Google and
-    // Bing are opt-in (`--engines google,duckduckgo`) and need a person on call to pass their checks;
-    // Bing has also served decoy results to automated browsers.
+    // Default: DuckDuckGo lite, the one engine whose robots.txt permits its result pages. Google is
+    // opt-in (`--engines google,duckduckgo`) and needs a person on call to pass its checks.
     engines: (env.FEARCH_ENGINES === undefined ? ["duckduckgo"] : envList(env, "FEARCH_ENGINES")).filter((e) =>
       (KNOWN_ENGINES as readonly string[]).includes(e),
     ),
@@ -286,7 +269,7 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "enum",
     values: ROBOTS_POLICIES,
     default: "default",
-    help: "robots.txt for the tool's own fetching: honour user-initiated agent opt-outs (default), also honour training-crawler opt-outs (strict), or don't consult it (off — the user-agent posture).",
+    help: "robots.txt for the tool's own fetching: honour user-initiated agent opt-outs (default), or also honour training-crawler opt-outs (strict).",
   },
   {
     flag: "engines",
@@ -294,14 +277,14 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "list",
     values: KNOWN_ENGINES,
     default: "duckduckgo",
-    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it; google and bing need a person on call to pass their checks and are opened as your own browsing.",
+    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it; google needs a person on call to pass its checks and is opened as your own browsing.",
   },
   {
     flag: "human-search",
     env: "FEARCH_HUMAN_SEARCH",
     kind: "bool",
     default: "false",
-    help: "Google/Bing: fearch fills the query into the engine's search box in your browser and you press Enter — every such query is one you submitted.",
+    help: "Google: each query is shown to you in your MCP client, editable, and runs only when you accept it (in the CLI: the search box is handed over in your browser and you press Enter).",
   },
   {
     flag: "incognito",
@@ -467,23 +450,6 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "int",
     default: "1500",
     help: "Budget of each fetch_top excerpt.",
-    tuning: true,
-  },
-  {
-    flag: "browser-session",
-    env: "FEARCH_BROWSER_SESSION",
-    kind: "bool",
-    default: "false",
-    help: "headed only: send the tool profile's cookies to ordinary pages too (labelled 'your session').",
-    tuning: true,
-  },
-  {
-    flag: "browser-identity",
-    env: "FEARCH_BROWSER_IDENTITY",
-    kind: "enum",
-    values: ["header", "none"],
-    default: "header",
-    help: "Playwright tiers: name the tool in From/X-Agent headers, or send plain Chrome.",
     tuning: true,
   },
   {

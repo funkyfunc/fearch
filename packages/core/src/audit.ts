@@ -8,7 +8,7 @@ export interface AuditEvent {
   method?: string;
   status?: number | string;
   bytes?: number;
-  robots?: "allowed" | "disallowed" | "skipped" | "api" | "ignored" | "unavailable";
+  robots?: "allowed" | "disallowed" | "skipped" | "api" | "unavailable";
   provider?: string;
   cache?: "hit" | "miss" | "revalidated" | "bypass";
   note?: string;

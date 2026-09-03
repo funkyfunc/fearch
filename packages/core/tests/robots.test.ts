@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
 import { RobotsChecker } from "../src/fetch/robots.js";
 
-function checker(body: string | number, opts: { calls?: string[]; policy?: "default" | "strict" | "off" } = {}) {
+function checker(body: string | number, opts: { calls?: string[]; policy?: "default" | "strict" } = {}) {
   const fetcher = async (url: string) => {
     opts.calls?.push(url);
     if (typeof body === "number") return { status: body, body: "" };
@@ -37,9 +37,8 @@ describe("robots", () => {
     const d = await checker(agent).check("https://example.com/article");
     expect(d.allowed).toBe(false);
     expect(d.reason).toContain("Claude-User");
-    // strict: training opt-outs count too; off: not consulted at all.
+    // strict: training opt-outs count too.
     expect((await checker(training, { policy: "strict" }).check("https://example.com/a")).reason).toContain("GPTBot");
-    expect((await checker(agent, { policy: "off" }).check("https://example.com/a")).allowed).toBe(true);
   });
 
   it("reads Crawl-delay", async () => {
@@ -58,10 +57,8 @@ describe("robots", () => {
     expect((await failing.check("https://a.test/")).allowed).toBe(false);
   });
 
-  it("exempts documented API hosts and honours the ignore switch", async () => {
+  it("exempts documented API hosts", async () => {
     const c = checker("User-agent: *\nDisallow: /\n");
     expect((await c.check("https://api.github.com/repos/o/r")).status).toBe("api");
-    const ignoring = checker("User-agent: *\nDisallow: /\n", { policy: "off" });
-    expect((await ignoring.check("https://example.com/")).status).toBe("ignored");
   });
 });

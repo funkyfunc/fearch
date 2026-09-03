@@ -12,9 +12,7 @@ export async function doctor(app: App): Promise<number> {
 
   ok("node", `${process.version} (needs ≥22.5 for node:sqlite)`);
   ok("user-agent", s.userAgent);
-  if (s.robotsPolicy === "off")
-    warn("robots.txt", "not consulted (--robots off — user-agent posture; stamped on every result)");
-  else ok("robots.txt", `honoured, policy=${s.robotsPolicy} (Crawl-delay honoured)`);
+  ok("robots.txt", `honoured, policy=${s.robotsPolicy} (Crawl-delay honoured)`);
   ok("cache", s.noCache ? "disabled (--no-cache)" : `${s.cacheDir}/cache-v2.sqlite`);
   ok("audit log", s.auditLog);
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
@@ -81,13 +79,9 @@ export async function doctor(app: App): Promise<number> {
       const identity =
         app.browser.browserChannel === "extension"
           ? `none — your own Chrome, no identifying headers; ${s.incognito ? "incognito, your logins stay out" : "your logins ride along (--incognito to keep them out)"}`
-          : s.browserIdentity === "none"
-            ? "none (plain Chrome, no identifying headers)"
-            : "header (From/X-Agent name the tool)";
+          : "From/X-Agent headers name the tool";
       const headed =
-        s.browser === "headed"
-          ? `; handoff=${s.handoff ? "on" : "off"}; session=${s.browserSession ? "on" : "off"}; profile: ${s.browserStatePath}`
-          : "";
+        s.browser === "headed" ? `; handoff=${s.handoff ? "on" : "off"}; profile: ${s.browserStatePath}` : "";
       ok(
         "browser",
         `${s.browser} ${app.browser.browserChannel} rendered example.com (${r.html.length} chars); identity=${identity}; UA: ${app.browser.browserUserAgent.slice(0, 60)}…${headed}`,

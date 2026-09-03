@@ -25,19 +25,19 @@
         {
           "type": "named",
           "name": "--robots",
-          "description": "default | strict | off — robots.txt for the tool's own fetching.",
+          "description": "default | strict — robots.txt for the tool's own fetching.",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--engines",
-          "description": "Engine result pages in preference order: duckduckgo (default), google, bing. Google and Bing need a person on call to pass their checks.",
+          "description": "Engine result pages in preference order: duckduckgo (default), google. Google needs a person on call to pass its checks.",
           "isRequired": false
         },
         {
           "type": "named",
           "name": "--human-search",
-          "description": "Google/Bing: the query is filled into the search box in the person's browser and they press Enter.",
+          "description": "Google: each query is shown to the person in their MCP client, editable, and runs only when accepted.",
           "isRequired": false
         },
         {

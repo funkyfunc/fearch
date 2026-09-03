@@ -12,14 +12,12 @@ import { renderResults } from "./search/render.js";
 
 /**
  * Tool descriptions are built from the effective settings so the model is never told something the
- * configuration makes untrue (e.g. "robots.txt is honoured" under --robots off).
+ * configuration makes untrue (e.g. which engines are in play, whether queries are approved first).
  */
 export function searchDescription(s: Settings): string {
   const posture = personPresent(s)
-    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any challenge opened in a visible window for them to pass; the tool never solves anything.`
-    : s.robotsPolicy === "off"
-      ? `robots.txt is not consulted on this server (operator's choice — user-agent posture); the tool still identifies itself honestly, paces requests, and never solves challenges.`
-      : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser).`;
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any challenge opened in a visible window for them to pass${s.humanSearch ? ", and each Google query shown to them for approval first" : ""}; the tool never solves anything.`
+    : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser).`;
   return `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
 
 Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
@@ -29,11 +27,9 @@ Use this for discovery — docs pages, GitHub repos/issues, blog posts, error me
 ${posture} It never impersonates a browser or hides that it is automated.`;
 }
 
-export function fetchDescription(s: Settings): string {
+export function fetchDescription(_s: Settings): string {
   const robots =
-    s.robotsPolicy === "off"
-      ? "robots.txt is not consulted on this server (operator's choice — user-agent posture), but it still identifies itself honestly and waits between requests to a host"
-      : "identifies itself honestly, honours robots.txt (including AI-agent opt-outs), and waits between requests to a host";
+    "identifies itself honestly, honours robots.txt (including AI-agent opt-outs), and waits between requests to a host";
   return `Fetch a web page and return its main content as clean markdown (boilerplate removed; code blocks and tables preserved). Handles HTML, markdown, plain text, PDF, GitHub (files, READMEs, issues, tree listings, releases, gists), PyPI, npm, StackOverflow and llms.txt.
 
 Output is bounded by \`max_chars\` (default 12000). Long pages: don't page blindly — pick a mode:
@@ -167,7 +163,7 @@ function progressReporter(extra: ToolExtra, total: number): (progress: number, m
 }
 
 /**
- * `--human-search`: before a Google/Bing query runs, ask the person through their client with the
+ * `--human-search`: before a Google query runs, ask the person through their client with the
  * query in an editable field. What they accept is what runs, as their submission; a decline skips the
  * engine. Clients without elicitation get `undefined` from this, and the engine hands the search box
  * over in the browser instead.

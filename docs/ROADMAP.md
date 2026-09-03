@@ -21,9 +21,11 @@ is not a goal to get through them.
   Posture: DuckDuckGo is the default engine everywhere; Google/Bing are `--engines` opt-ins;
   `FEARCH_INCOGNITO` applies in `auto`; `FEARCH_HUMAN_SEARCH=1` ("you press search") fills the
   query in and lets the person submit it. The Ninth Circuit's *Amazon v. Perplexity* opinion was
-  confirmed real (RESEARCH-RECONCILIATION corrected). Still open from the review: routing ordinary
-  page reads away from the person's Chrome profile (headless first, the person's Chrome only for a
-  check), and the remove list (Bing, `--robots off`, `identity=none`, headed-as-a-mode).
+  confirmed real (RESEARCH-RECONCILIATION corrected). Then (same day): `--human-search` became an
+  editable-query elicitation through the MCP client (browser handoff as the fallback); ordinary page
+  reads in `auto` go headless-first and reach the person's Chrome only for a check; Bing, `--robots
+  off`, `--browser-identity` and `--browser-session` removed; every setting is a flag; `docs/CASES.md`
+  added. Headed stays as a mode for now.
 
 - **Published + release pipeline (2026-09-01).** npm package `fearch-mcp` (bare `fearch` blocked as
   too similar to `fetch`; the command, UA token, and repo stay `fearch`); v2.0.1 released by the

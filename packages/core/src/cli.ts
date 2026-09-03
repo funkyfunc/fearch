@@ -49,9 +49,7 @@ async function serve(settings: Settings, overrides: Record<string, string>): Pro
     .join(" ");
   log(`fearch ${settings.version} starting (stdio)${flags ? ` with ${flags}` : ""}`);
   log(`User-Agent: ${settings.userAgent} — operators can block it with \`User-agent: fearch\` in robots.txt`);
-  log(
-    `robots.txt: ${settings.robotsPolicy === "off" ? "not consulted (--robots off)" : `honoured, policy=${settings.robotsPolicy}`}`,
-  );
+  log(`robots.txt: honoured, policy=${settings.robotsPolicy}`);
   log(`search providers — ${app.search.describe()}`);
   log(`browser tier: ${describeBrowser(settings)}`);
   if (settings.allowDomains.length) log(`allow list: ${settings.allowDomains.join(", ")}`);
@@ -72,7 +70,7 @@ function describeBrowser(s: Settings): string {
     case "off":
       return "off";
     case "headed":
-      return `headed — your installed Chrome in a visible window; handoff=${s.handoff ? "on" : "off"}; session=${s.browserSession ? "on" : "off"}`;
+      return `headed — your installed Chrome in a visible window; handoff=${s.handoff ? "on" : "off"}`;
     case "extension":
       return `extension — your own Chrome via the fearch bridge; incognito=${s.incognito ? "on" : "off"}; falls back to headless if not connected`;
     case "headless":

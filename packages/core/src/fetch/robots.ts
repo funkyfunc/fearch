@@ -25,21 +25,19 @@ import { describeNetworkError, FetchError } from "./transport.js";
  *   open this page" has answered our exact question. Training-crawler opt-outs are *not* applied —
  *   we don't train, and treating "don't use me as a dataset" as "don't read me" misreads the signal.
  * - `strict`: also honour training/indexing crawler opt-outs (the most conservative reading).
- * - `off`: robots.txt is not consulted (the user-agent posture: a browser does not read it either).
  */
-export type RobotsPolicy = "default" | "strict" | "off";
+export type RobotsPolicy = "default" | "strict";
 export const USER_AGENT_TOKENS = ["Claude-User", "ChatGPT-User"];
 export const TRAINING_TOKENS = ["GPTBot", "ClaudeBot", "anthropic-ai", "Claude-Web", "Google-Extended", "CCBot"];
 
 export function tokensFor(policy: RobotsPolicy): string[] {
-  if (policy === "off") return [PRODUCT];
   if (policy === "strict") return [PRODUCT, ...USER_AGENT_TOKENS, ...TRAINING_TOKENS];
   return [PRODUCT, ...USER_AGENT_TOKENS];
 }
 
 export interface RobotsDecision {
   allowed: boolean;
-  status: "allowed" | "disallowed" | "api" | "ignored" | "unavailable";
+  status: "allowed" | "disallowed" | "api" | "unavailable";
   reason?: string;
   crawlDelayMs?: number;
   /** Set when a `Content-Signal:` line in robots.txt says `ai-input=no`. */
@@ -71,7 +69,6 @@ export class RobotsChecker {
     const u = new URL(url);
     const host = u.host.toLowerCase();
     if (isApiUrl(url)) return { allowed: true, status: "api" };
-    if (this.policy === "off") return { allowed: true, status: "ignored", reason: "--robots off" };
 
     let entry = this.cache.getRobots(host);
     if (!entry) {

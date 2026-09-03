@@ -11,12 +11,10 @@ import {
   EngineProvider,
   engineProviders,
   ddgChallenge,
-  parseBing,
   parseGoogle,
   parseGoogleOverview,
   parseLite,
   redactAccount,
-  unwrapBing,
 } from "../src/search/engines.js";
 import { RateLimited } from "../src/search/provider.js";
 import { renderResults } from "../src/search/render.js";
@@ -32,12 +30,6 @@ const LITE = `<html><body><table>
 </table></body></html>`;
 const BOTCHECK = `<html><head><title>DuckDuckGo</title></head><body><div id="challenge">anomaly detected</div></body></html>`;
 
-const b64 = (s: string) => Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const BING = `<html><body><ol id="b_results">
-<li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&&p=abc&u=a1${b64("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm")}&ntb=1">@joplin/turndown-plugin-gfm - npm</a></h2><div class="b_caption"><p>A Turndown plugin which adds GitHub Flavored Markdown extensions.</p></div></li>
-<li class="b_algo"><h2><a href="https://github.com/trutohq/turndown-plugin-gfm">GitHub - trutohq/turndown-plugin-gfm</a></h2><div class="b_caption"><p>Enhanced Turndown plugin.</p></div></li>
-<li class="b_algo"><h2><a href="https://www.bing.com/images/search?q=x">Images</a></h2></li>
-</ol></body></html>`;
 const GOOGLE = `<html><body><div id="search">
 <div class="g" data-hveid="1"><a href="https://www.npmjs.com/package/@joplin/turndown-plugin-gfm"><h3>@joplin/turndown-plugin-gfm - npm</h3></a><div class="VwiC3b">A Turndown plugin which adds GitHub Flavored Markdown extensions.</div></div>
 <div class="g" data-hveid="2"><a href="/url?q=https://github.com/trutohq/turndown-plugin-gfm&sa=U"><h3>GitHub - trutohq/turndown-plugin-gfm</h3></a><div class="VwiC3b">Enhanced Turndown plugin.</div></div>
@@ -107,23 +99,6 @@ describe("engine parsers", () => {
     expect(ddgChallenge("", 202)).toBe(true);
     expect(ddgChallenge(BOTCHECK, 200)).toBe(true);
   });
-  it("Bing: decodes /ck/a?u=a1<base64url> links, skips Bing's own", () => {
-    expect(unwrapBing(`https://www.bing.com/ck/a?u=a1${b64("https://example.com/x?y=1")}`)).toBe(
-      "https://example.com/x?y=1",
-    );
-    const r = parseBing(BING, "bing");
-    expect(r.map((x) => x.url)).toEqual([
-      "https://www.npmjs.com/package/@joplin/turndown-plugin-gfm",
-      "https://github.com/trutohq/turndown-plugin-gfm",
-    ]);
-    expect(r[0].snippet).toContain("GitHub Flavored");
-    // a normal results page mentioning "challenge" in a script is not a challenge
-    expect(ENGINE_SPECS.bing.isChallenge(BING.replace("</body>", "<script>var challenge=1</script></body>"), 200)).toBe(
-      false,
-    );
-    expect(ENGINE_SPECS.bing.isChallenge("<html><body>Please verify you are a human</body></html>", 200)).toBe(true);
-    expect(ENGINE_SPECS.bing.isChallenge("", 403)).toBe(true);
-  });
   it("Google: a:has(h3) results, /url?q= unwrapped, Google's own links skipped, challenge recognised", () => {
     const r = parseGoogle(GOOGLE, "google");
     expect(r.map((x) => x.url)).toEqual([
@@ -157,7 +132,7 @@ describe("engine parsers", () => {
 });
 
 describe("engine eligibility — the dials play together", () => {
-  it("DuckDuckGo is eligible by default; Bing/Google need a person present (or robots off) and a listing", () => {
+  it("DuckDuckGo is eligible by default; Google needs a person present and a listing", () => {
     const mk = (env: Record<string, string>) =>
       engineProviders(
         settings(env),
@@ -169,10 +144,6 @@ describe("engine eligibility — the dials play together", () => {
     // No display (CI, servers): nothing can be surfaced, so DuckDuckGo only.
     expect(names(mk({}))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo" }))).toEqual(["duckduckgo"]);
-    expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo", FEARCH_ROBOTS_POLICY: "off" }))).toEqual([
-      "google",
-      "duckduckgo",
-    ]);
     // A display or a visible browser does not put Google in by itself: DuckDuckGo is the default everywhere.
     expect(names(mk({ DISPLAY: ":0" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["duckduckgo"]);
@@ -186,22 +157,21 @@ describe("engine eligibility — the dials play together", () => {
     expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
     // …and never in explicit headless, display or not.
     expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual(["duckduckgo"]);
-    expect(names(mk({ FEARCH_ENGINES: "bing", FEARCH_ROBOTS_POLICY: "strict" }))).toEqual([]);
-    expect(names(mk({ FEARCH_ENGINES: "bing,nonsense", FEARCH_ROBOTS_POLICY: "off" }))).toEqual(["bing"]);
+    expect(names(mk({ FEARCH_ENGINES: "google,nonsense", DISPLAY: ":0" }))).toEqual(["google"]);
     const listedButOff = mk({ FEARCH_ENGINES: "google" }).find((p) => p.name === "google")!;
     expect(listedButOff.ineligibleReason()).toMatch(/person is on call/);
   });
 
   it("the registry orders eligible engines in FEARCH_ENGINES order and reports the rest in describe()", () => {
-    const s = settings({ FEARCH_ENGINES: "bing,duckduckgo,google", FEARCH_ROBOTS_POLICY: "off" });
+    const s = settings({ FEARCH_ENGINES: "google,duckduckgo", DISPLAY: ":0" });
     const engines = engineProviders(
       s,
       fakeBrowser(async () => ({ html: "", status: 200 })),
-      new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }), "off"),
+      new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" })),
       new Politeness(1, { count: 1, windowMs: 1 }),
     );
     const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
-    expect(reg.web.map((p) => p.name)).toEqual(["bing", "duckduckgo", "google"]);
+    expect(reg.web.map((p) => p.name)).toEqual(["google", "duckduckgo"]);
     const s2 = settings({ FEARCH_ENGINES: "google,duckduckgo" });
     const reg2 = new SearchRegistry(
       s2,
@@ -259,11 +229,6 @@ describe("engine eligibility — the dials play together", () => {
       FEARCH_BROWSER: "headed",
     }).search({ query: "x", maxResults: 5 });
     expect(g[0].url).toContain("npmjs.com");
-    // …and likewise under the explicit user-agent posture (robots off).
-    const { results: g2 } = await provider("google", async () => ({ html: GOOGLE, status: 200 }), {
-      FEARCH_ROBOTS_POLICY: "off",
-    }).search({ query: "x", maxResults: 5 });
-    expect(g2[0].url).toContain("npmjs.com");
   });
 
   it("treats a bot-check page as a final 'no' (rate-limited, no retry) and says how a person could pass it", async () => {
@@ -356,8 +321,6 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
     const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
     expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm&hl=en");
     expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
-    // Bing's ?q= submits on its own, so its fallback opens the plain home page and asks the person to type
-    expect(ENGINE_SPECS.bing.human!.homeUrl("x", "en-US")).not.toContain("q=");
     expect(seen[0].opts.settleSelector).toBeUndefined();
     expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
     expect(p.disclosure).toContain("approved by you");
@@ -458,18 +421,18 @@ describe("server flags", () => {
     ]);
     expect(a.rest).toEqual(["search", "some query", "--n", "3"]);
     const b = settingsFromArgs(
-      ["--robots=strict", "--browser=off", "--engines", "bing,duckduckgo", "doctor"],
-      { ...base, FEARCH_ROBOTS_POLICY: "off" },
+      ["--robots=strict", "--browser=off", "--engines", "google,duckduckgo", "doctor"],
+      { ...base, FEARCH_ROBOTS_POLICY: "default" },
       "linux",
     );
     expect([b.settings.robotsPolicy, b.settings.browser, b.settings.engines, b.rest]).toEqual([
       "strict",
       "off",
-      ["bing", "duckduckgo"],
+      ["google", "duckduckgo"],
       ["doctor"],
     ]);
-    // robots off alone (no display) leaves no person to pass Google's check: DuckDuckGo only
-    expect(settingsFromArgs(["--robots", "off"], base, "linux").settings.engines).toEqual(["duckduckgo"]);
+    // an unknown robots policy is refused
+    expect(() => settingsFromArgs(["--robots", "off"], base, "linux")).toThrow(/must be one of/);
     expect(settingsFromArgs(["--browser", "extension"], base, "linux").settings.engines).toEqual(["duckduckgo"]);
     // a desktop platform can surface a window, and the default is still DuckDuckGo alone
     expect(settingsFromArgs([], base, "darwin").settings.engines).toEqual(["duckduckgo"]);
@@ -535,9 +498,8 @@ describe("config dials", () => {
   it("parses browser/identity/handoff/session/engines/robots and derives surfacing from mode + display", () => {
     const d = settings();
     // Default is auto with handoff armed; with no display it cannot surface, so engines stay DuckDuckGo.
-    expect([d.browser, d.browserIdentity, d.handoff, d.canSurface, d.engines, d.robotsPolicy]).toEqual([
+    expect([d.browser, d.handoff, d.canSurface, d.engines, d.robotsPolicy]).toEqual([
       "auto",
-      "header",
       true,
       false,
       ["duckduckgo"],
@@ -553,22 +515,18 @@ describe("config dials", () => {
     const h = settings({
       FEARCH_BROWSER: "headed",
       FEARCH_HANDOFF: "1",
-      FEARCH_BROWSER_SESSION: "on",
-      FEARCH_BROWSER_IDENTITY: "none",
-      FEARCH_ENGINES: "Google, bing",
-      FEARCH_ROBOTS_POLICY: "off",
+      FEARCH_ENGINES: "Google, duckduckgo",
+      FEARCH_ROBOTS_POLICY: "strict",
     });
-    expect([h.browser, h.browserIdentity, h.handoff, h.browserSession, h.engines, h.robotsPolicy]).toEqual([
+    expect([h.browser, h.handoff, h.engines, h.robotsPolicy]).toEqual([
       "headed",
-      "none",
       true,
-      true,
-      ["google", "bing"],
-      "off",
+      ["google", "duckduckgo"],
+      "strict",
     ]);
     expect(h.browserStatePath).toMatch(/browser-state\.json$/);
-    const hl = settings({ FEARCH_BROWSER: "headless", FEARCH_HANDOFF: "1", FEARCH_BROWSER_SESSION: "1" });
-    expect([hl.handoff, hl.browserSession, hl.canSurface]).toEqual([false, false, false]);
+    const hl = settings({ FEARCH_BROWSER: "headless", FEARCH_HANDOFF: "1" });
+    expect([hl.handoff, hl.canSurface]).toEqual([false, false]);
     // Handoff defaults on wherever a person could be reached; FEARCH_HANDOFF=0 opts out.
     expect(settings({ FEARCH_BROWSER: "headed" }).handoff).toBe(true);
     expect(settings({ FEARCH_BROWSER: "extension" }).handoff).toBe(true);
@@ -598,8 +556,8 @@ describe("google AI overview", () => {
   });
   it("flows from the engine through the registry into the rendered output, labelled and cached", async () => {
     const page = `<html><body><div id="search">${fixture}<div class="yuRUbf"><a class="zReHs" href="https://example.com/rest"><h3>REST</h3><cite>https://example.com › rest</cite></a></div></div></body></html>`;
-    const s = settings({ FEARCH_ENGINES: "google", FEARCH_ROBOTS_POLICY: "off" });
-    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }), "off");
+    const s = settings({ FEARCH_ENGINES: "google", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
     const engines = engineProviders(
       s,
       fakeBrowser(async () => ({ html: page, status: 200 })),
@@ -644,9 +602,6 @@ describe("locale", () => {
     expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "fr")).toContain("kl=wt-wt");
     expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
     expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&num=10&tbs=qdr:m");
-    expect(ENGINE_SPECS.bing.url("q", undefined, "de-DE")).toContain("setlang=de&cc=DE");
-    expect(ENGINE_SPECS.bing.url("q", "w", "en-US")).toContain('filters=ex1:"ez2"');
-    expect(ENGINE_SPECS.bing.url("q", "y", "en-US")).not.toContain("filters="); // Bing has no year filter
     expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");
     expect(acceptLanguage("en-US")).toBe("en-US,en;q=0.8");
   });

@@ -11,9 +11,9 @@
  *   login the person chose to do in that window is remembered. It is never the person's own Chrome
  *   profile (Chrome refuses automation on that anyway).
  *
- * Identity is by headers (`From:`/`X-Agent:`), by a UA suffix, or none — see config.ts. What is never
- * done in any mode: hiding `navigator.webdriver`, fingerprint changes, stealth patches, CAPTCHA
- * solving, credentials the tool holds. docs/SPECTRUM.md.
+ * Identity is by headers (`From:`/`X-Agent:`) on every request, always. What is never done in any
+ * mode: hiding `navigator.webdriver`, fingerprint changes, stealth patches, CAPTCHA solving,
+ * credentials the tool holds. docs/SPECTRUM.md.
  */
 
 import { execFile } from "node:child_process";
@@ -55,7 +55,7 @@ export interface BrowserTier {
 }
 
 export interface RenderOptions {
-  /** Use the persistent tool profile (headed). Engine pages always do; page reads only with browserSession. */
+  /** Use the persistent tool profile (headed/auto). Engine pages do (a passed check lives there); page reads never. */
   session?: boolean;
   /** Allow the human handoff on a challenge (visible browser, handoff on). Default true. */
   handoff?: boolean;
@@ -234,13 +234,8 @@ export class BrowserRenderer implements BrowserTier {
       this.userAgent = baseUa;
       this.audit.log(
         "info",
-        `browser tier ready (${this.channel} ${this.browser.version()}, ${headless ? "headless" : "headed"}); identity=${this.settings.browserIdentity}; UA: ${this.userAgent}` +
-          (this.settings.browserIdentity === "none"
-            ? ""
-            : `; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}`) +
-          (this.headed
-            ? `; handoff=${this.settings.handoff ? "on" : "off"}; session=${this.settings.browserSession ? "on" : "off"}`
-            : ""),
+        `browser tier ready (${this.channel} ${this.browser.version()}, ${headless ? "headless" : "headed"}); UA: ${this.userAgent}; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}` +
+          (this.headed ? `; handoff=${this.settings.handoff ? "on" : "off"}` : ""),
       );
       return this.browser;
     })();
@@ -252,11 +247,11 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   private contextOptions(): Parameters<Browser["newContext"]>[0] {
-    const headers: Record<string, string> = { "Accept-Language": acceptLanguage(this.settings.locale) };
-    if (this.settings.browserIdentity !== "none") {
-      headers.From = this.settings.uaContact || this.settings.uaInfoUrl;
-      headers["X-Agent"] = this.settings.userAgent;
-    }
+    const headers: Record<string, string> = {
+      "Accept-Language": acceptLanguage(this.settings.locale),
+      From: this.settings.uaContact || this.settings.uaInfoUrl,
+      "X-Agent": this.settings.userAgent,
+    };
     return {
       userAgent: this.userAgent,
       locale: this.settings.locale,

@@ -247,7 +247,7 @@ export class Fetcher {
 
     // Content-Signal response header: ai-input=no means "don't feed my pages into an AI model".
     const cs = parseContentSignal(fetched.headers["content-signal"]);
-    if (cs?.aiInput === false && this.settings.robotsPolicy !== "off") {
+    if (cs?.aiInput === false) {
       this.audit.record({
         url,
         status: fetched.status,
@@ -414,7 +414,7 @@ export class Fetcher {
     try {
       rendered = await this.politeness.run(
         host,
-        () => this.browser!.render(url, { session: this.settings.browserSession, handoff: true, httpFallback }),
+        () => this.browser!.render(url, { handoff: true, httpFallback }),
         crawlDelayMs,
       );
     } catch (e) {
@@ -430,7 +430,6 @@ export class Fetcher {
       rendered.salvaged ? "browser (partial render)" : "browser",
       rendered.label,
       rendered.handedOff && "challenge passed by you",
-      rendered.usedSession && "your session",
     ];
     const fetched: Fetched = {
       url,
@@ -494,7 +493,7 @@ export class Fetcher {
 }
 
 function robotsLabel(d: RobotsDecision): string {
-  return d.status === "api" ? "api terms" : d.status === "ignored" ? "off (--robots off)" : "allowed";
+  return d.status === "api" ? "api terms" : "allowed";
 }
 
 function firstHeading(text: string): string {

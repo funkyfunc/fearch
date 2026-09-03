@@ -34,20 +34,17 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
     training-only control that does not affect reading or search. Treating "don't use me as a dataset"
     as "don't read me" would misstate the site's choice.
   - `strict` — additionally honour the training-crawler opt-outs (the most conservative reading).
-  - `off` — robots.txt is not consulted. This is the *user-agent* posture: RFC 9309 addresses
-    "automatic clients" (crawlers), and a person's browser does not read it; a tool driving that browser
-    on the person's behalf at human pace takes the same position (as OpenAI's `ChatGPT-User` and all
-    computer-use products do). Pace limits, final refusals and the SSRF guard are unchanged. The choice
-    is stamped on every result header and logged at startup.
-  Two independent reviews argued for each end of this range (see `RESEARCH-RECONCILIATION.md`):
-  that a training-crawler block signals a wish to stay out of AI systems entirely, and that RFC 9309
-  only contemplates a client's own token. Organisations that want the most conservative reading should
-  set `FEARCH_ROBOTS_POLICY=strict`.
+  There is no setting that turns robots.txt off for the tool's own fetching (one existed until
+  2026-09-02 and was removed: its only job had been to make Google eligible without a person present,
+  and Google is now an explicit engine choice). Two independent reviews argued for each end of the
+  remaining range (see `RESEARCH-RECONCILIATION.md`): that a training-crawler block signals a wish to
+  stay out of AI systems entirely, and that RFC 9309 only contemplates a client's own token.
+  Organisations that want the most conservative reading should set `FEARCH_ROBOTS_POLICY=strict`.
 - **Content Signals** (`Content-Signal: search=yes, ai-input=no, ai-train=no`, as a response header or
   a `robots.txt` line) are honoured under `default` and `strict`: `ai-input=no` means the site does not
   want its pages fed into an AI model, which is exactly what this tool does, so the content is withheld
   and a `content_signal` diagnosis is returned.
-- **Person-present rule.** robots.txt governs the tool fetching on its own. Google and Bing result
+- **Person-present rule.** robots.txt governs the tool fetching on its own. Google result
   pages are never opened by default: they are used only when the operator lists them in `--engines`
   *and* a person is on call — a window (or their own Chrome via the extension) can reach them and
   handoff is on. Those pages are then that person's own browsing, automated only in the sense that
@@ -127,22 +124,21 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   solves nothing; it only watches for the page to stop being a challenge. The extension activates the
   tab and asks for attention (dock/taskbar) without taking focus. Without handoff, or where nothing
   can be shown, a challenge is final.
-- **Session** (`FEARCH_BROWSER_SESSION`, headed only, default off). Cookies the person created in the
-  tool profile are sent to engine pages always (a passed check lives there) and to ordinary pages only
-  when on; such reads are labelled `your session` in the result header and in the audit log. In auto
-  mode the tool profile rides along on browser renders for the same reason — it contains only what the
-  person did in windows the tool opened (passed checks, above all), and carrying it is what keeps a
-  passed check passed; reads that used its cookies carry the same label.
-- **Identity** (`FEARCH_BROWSER_IDENTITY`). `header` (default): every request carries `From:`
-  (RFC 9110 §10.1.2 — the header defined for a robot to name who controls it; set to the bot-info URL
-  or `FEARCH_UA_CONTACT`) and `X-Agent: fearch/<version> (+<info-url>)`. The User-Agent is
-  Chrome's ordinary one, because it is Chrome (appending the product token to it was measured,
-  2026-08-28, to trigger bot-checks that key on unusual UA strings, and was dropped). `none`: plain
-  Chrome with no identifying headers (user-agent posture). For ordinary page reads under any policy
-  other than `off`, robots.txt is evaluated under our own token *before* the browser requests
-  anything, so an operator's stated decision is honoured regardless of what their access log shows;
-  engine result pages under the person-present rule are the one documented exception (see *Consent
-  signals*).
+- **Session.** The tool-owned profile (headed/auto) holds only what the person did in windows the
+  tool opened — passed checks, above all. It is sent to engine pages (that is where a passed check
+  lives) and never to ordinary page reads; there is no setting that forwards it to ordinary pages
+  (one existed until 2026-09-02 and was removed). Through the bridge extension, ordinary reads in
+  `auto` go to the logged-out headless tier first and reach the person's Chrome only for a check;
+  `--incognito` keeps the person's profile out of engine pages too.
+- **Identity.** Every request from the Playwright tiers carries `From:` (RFC 9110 §10.1.2 — the
+  header defined for a robot to name who controls it; set to the bot-info URL or `FEARCH_UA_CONTACT`)
+  and `X-Agent: fearch/<version> (+<info-url>)`. There is no setting that removes them (one existed
+  until 2026-09-02 and was removed). The User-Agent is Chrome's ordinary one, because it is Chrome
+  (appending the product token to it was measured, 2026-08-28, to trigger bot-checks that key on
+  unusual UA strings, and was dropped). For ordinary page reads, robots.txt is evaluated under our own
+  token *before* the browser requests anything, so an operator's stated decision is honoured
+  regardless of what their access log shows; engine result pages under the person-present rule are
+  the one documented exception (see *Consent signals*).
 - **In every mode:** no automation-signal hiding (`navigator.webdriver` is left true — measured
   2026-08-29: Playwright-driven Chrome reports it true regardless of launch flags, and the only way to
   make it false is the stealth flag `--disable-blink-features=AutomationControlled`, which this project
@@ -201,10 +197,13 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 - **Search engines.** With no person present, the only engine result pages this server requests are
   DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live before
   every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
-  Google and Bing disallow `/search` for crawlers and are used only when listed in `FEARCH_ENGINES`
-  and eligible under the person-present rule (a person on call — any check the engine raises opens
-  in a window, or their own Chrome, for them to decide) or the explicit `FEARCH_ROBOTS_POLICY=off`
-  user-agent posture; with `FEARCH_HUMAN_SEARCH=1` the person submits each query themselves. `doctor` reports exactly which
+  Google disallows `/search` for crawlers and is used only when listed in `FEARCH_ENGINES` and
+  eligible under the person-present rule (a person on call — any check the engine raises opens in a
+  window, or their own Chrome, for them to decide); with `FEARCH_HUMAN_SEARCH=1` each query is shown
+  to the person in their MCP client, editable, and runs only when they accept it (or, where nobody
+  can be asked that way, the search box is handed over in the browser). Bing was removed 2026-09-02:
+  it served decoy results to automated browsers and its home page cannot carry a query without
+  submitting it. `doctor` reports exactly which
   engines are in use and why the rest are not. Engine pages are opened in the same browser tier as
   page reads, one query per search call, at least 3 s apart. A bot-check page is that engine's "no":
   the provider stops and cools down for 10 minutes, unless the person passes it themselves in the

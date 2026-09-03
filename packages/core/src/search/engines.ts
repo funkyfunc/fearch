@@ -4,9 +4,9 @@
  * Eligibility is where the dials meet: an engine is only used if it is listed in --engines *and*
  * either its robots.txt permits its result pages (DuckDuckGo lite does: `/lite/`) or a person is
  * present — a visible browser (headed or extension) with handoff on, where the result page is the
- * person's own browsing rather than a crawl (Google and Bing both `Disallow: /search`, which governs
- * unattended crawlers, not a browser someone oversees). `--robots off` also qualifies, as the
- * explicit user-agent posture. Robots-permitted engines are still verified live before every request.
+ * person's own browsing rather than a crawl (Google's `Disallow: /search` governs unattended
+ * crawlers, not a browser someone oversees). Robots-permitted engines are still verified live before
+ * every request.
  *
  * One page per search call, ≥3 s between requests to an engine. A challenge page is the engine's "no":
  * in headless mode the provider stops and cools down; with a person present the tab is handed to
@@ -108,18 +108,15 @@ export function parseLite(html: string, provider: string): SearchResult[] {
 }
 
 /**
- * Challenge detectors must not fire on a normal results page (Bing's scripts contain the word
- * "challenge"; a false positive would hand a good page to the person and wait). Rule: a definitive
- * status, or a challenge marker *and* no parsed results.
+ * Challenge detectors must not fire on a normal results page (engine scripts mention "challenge";
+ * a false positive would hand a good page to the person and wait). Rule: a definitive status, or a
+ * challenge marker *and* no parsed results.
  */
 export function ddgChallenge(html: string, status: number): boolean {
   return (
     status === 202 || (!/class="result-link"/.test(html) && /anomaly|challenge|captcha|unusual traffic/i.test(html))
   );
 }
-
-const bingChallenge = (html: string, status: number): boolean =>
-  status === 403 || status === 429 || (!/class="b_algo"/.test(html) && /verify you|not a robot|captcha/i.test(html));
 
 /**
  * Google's check lives at /sorry/…; once passed, the browser lands on a results page with <h3>
@@ -132,38 +129,6 @@ const googleChallenge = (html: string, status: number, url = ""): boolean => {
   if (/<h3/.test(html)) return false;
   return status === 429 || /unusual traffic from your computer network|not a robot|recaptcha/i.test(html);
 };
-
-// ---------------------------------------------------------------- Bing
-
-/** Bing wraps result links as /ck/a?…&u=a1<base64url of the URL>. */
-export function unwrapBing(href: string): string {
-  try {
-    const u = new URL(href, "https://www.bing.com");
-    const p = u.searchParams.get("u");
-    if (u.pathname.startsWith("/ck/") && p && p.startsWith("a1")) {
-      const b64 = p.slice(2).replace(/-/g, "+").replace(/_/g, "/");
-      const decoded = Buffer.from(b64 + "=".repeat((4 - (b64.length % 4)) % 4), "base64").toString("utf8");
-      if (/^https?:\/\//.test(decoded)) return decoded;
-    }
-    return u.toString();
-  } catch {
-    return href;
-  }
-}
-
-export function parseBing(html: string, provider: string): SearchResult[] {
-  const $ = cheerio.load(html);
-  const out: SearchResult[] = [];
-  $("li.b_algo").each((_, li) => {
-    const a = $(li).find("h2 a").first();
-    const url = unwrapBing(a.attr("href") ?? "");
-    const title = a.text().trim();
-    if (!title || !/^https?:/.test(url) || skipHost(url, /(^|\.)bing\.com$/, /(^|\.)microsoft\.com$/)) return;
-    const snippet = $(li).find(".b_caption p, p").first().text().replace(/\s+/g, " ").trim();
-    out.push({ title, url, snippet, provider });
-  });
-  return out;
-}
 
 // ---------------------------------------------------------------- Google
 
@@ -331,29 +296,6 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     noResults: /No (more )?results\./i,
     resultsSelector: "a.result-link",
   },
-  bing: {
-    name: "bing",
-    label: "Bing",
-    host: "www.bing.com",
-    robotsPermitted: false,
-    privacy: "queries are logged by Microsoft",
-    // Bing's date filter knows day/week/month (ez1/ez2/ez3); a year restriction has no equivalent and is ignored.
-    url: (q, r, loc = "en-US") => {
-      const { lang, region } = localeParts(loc);
-      const ez = r ? { d: "ez1", w: "ez2", m: "ez3" }[r as "d" | "w" | "m"] : undefined;
-      return `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=${lang}${region ? `&cc=${region}` : ""}${ez ? `&filters=ex1:"${ez}"` : ""}`;
-    },
-    parse: parseBing,
-    isChallenge: bingChallenge,
-    noResults: /There are no results for/i,
-    resultsSelector: "li.b_algo",
-    // No prefilled home page: bing.com/?q= redirects straight to /search (measured 2026-09-02), so the
-    // in-browser fallback for --human-search opens Bing's home page and the person types the query.
-    human: {
-      homeUrl: (_q, loc = "en-US") => `https://www.bing.com/?setlang=${localeParts(loc).lang}`,
-      resultsUrl: /\/search\?/,
-    },
-  },
   google: {
     name: "google",
     label: "Google",
@@ -411,9 +353,7 @@ export class EngineProvider implements SearchProvider {
       ? "robots.txt permits"
       : this.humanSearch
         ? "each query approved by you before it runs"
-        : personPresent(this.settings)
-          ? "your own browsing, not a crawl"
-          : "robots is off";
+        : "your own browsing, not a crawl";
     return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
   }
 
@@ -428,7 +368,7 @@ export class EngineProvider implements SearchProvider {
   }
 
   eligible(): boolean {
-    return this.spec.robotsPermitted || personPresent(this.settings) || this.settings.robotsPolicy === "off";
+    return this.spec.robotsPermitted || personPresent(this.settings);
   }
 
   /** Why a listed engine is not used, for `doctor`. */
@@ -465,8 +405,8 @@ export class EngineProvider implements SearchProvider {
       !this.spec.isChallenge(html, 200, at) &&
       (cheerio.load(html)(this.spec.resultsSelector).length > 0 || this.spec.noResults.test(html));
     // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
-    // eligible through the person-present or robots-off posture are the person's own browsing — the
-    // crawler rules don't apply, so robots.txt is not consulted for their result pages.
+    // eligible through the person-present rule are the person's own browsing — the crawler rules
+    // don't apply, so robots.txt is not consulted for their result pages.
     let crawlDelayMs = 0;
     if (this.spec.robotsPermitted) {
       const decision = await this.robots.check(url);
@@ -487,9 +427,7 @@ export class EngineProvider implements SearchProvider {
             isChallenge: this.spec.isChallenge,
             handToPerson: human
               ? {
-                  message: url.includes("q=")
-                    ? `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`
-                    : `${this.spec.label} is open — type your query (${query}) into its search box and press Enter.`,
+                  message: `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`,
                   ready,
                 }
               : undefined,

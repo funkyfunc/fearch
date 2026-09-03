@@ -315,27 +315,6 @@ describe("browser tier (real Chromium)", () => {
     expect(renderer.browserUserAgent).not.toContain("fearch/");
     expect(ua.html).toMatch(/X-Agent: fearch\//);
     expect(ua.html).toMatch(/From: https?:\/\//);
-
-    // identity=none: plain Chrome, no identifying headers, and still no automation hiding.
-    const none = new BrowserRenderer(
-      settingsFromEnv({
-        FEARCH_NO_CACHE: "1",
-        FEARCH_AUDIT_LOG: "off",
-        FEARCH_LOG_LEVEL: "error",
-        FEARCH_ALLOW_PRIVATE: "1",
-        FEARCH_BROWSER_IDENTITY: "none",
-      }),
-      new Audit({ auditLog: "off", logLevel: "error" }),
-    );
-    try {
-      const r3 = await none.render(`${base}/ua`, { httpFallback: true });
-      expect(r3.html).toMatch(/From: undefined/);
-      expect(r3.html).toMatch(/X-Agent: undefined/);
-      expect(r3.html).not.toContain("fearch/");
-      expect(r3.usedSession).toBe(false);
-    } finally {
-      await none.close();
-    }
   }, 90_000);
 
   it("blocks private subresources and non-http schemes at the request gate", async (t) => {

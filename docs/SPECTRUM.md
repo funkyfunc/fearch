@@ -33,7 +33,7 @@ That yields two coherent, mainstream postures — both held by serious companies
 | Legal shape (US, not advice) | the "good bot" fact pattern | reading public pages is not "unauthorised access" (*Van Buren*, *hiQ*, *Meta v. Bright Data*); an engine's "no automated queries" clause is a contract term the *person* accepted — breach risk sits on their account, not in a statute |
 | What is identical | pace limits, final refusals after a challenge, no stealth, no CAPTCHA solving, no proxies, no credentials held by the tool, SSRF guard, audit log | same |
 
-fearch exposes both as composable dials (README → *Choosing your posture*). The rungs below are
+fearch's own fetching is always the crawler posture; the user-agent posture exists only for engine result pages with a person present (README → *Headless until it matters*). The `--robots off` dial that once put the tool's own fetching into the user-agent posture was removed 2026-09-02. The rungs below are
 still useful for the *behaviour* axis and for placing third-party tools; read rung 12 with the identity
 distinction in mind.
 
@@ -108,8 +108,8 @@ The local-browser row is the norm fearch's extension tier sits in; where fearch 
 | Google Programmable Search | Google | 100/day | yes | closed to new customers; shuts down 2027-01-01 |
 | Serper / SerpApi / DataForSEO | **scraped Google SERPs** | some | yes | 🔴 reseller of rung 8–9 behaviour; SerpApi is a named defendant |
 | DuckDuckGo lite via a self-identified real browser | Bing-syndicated | yes | none | 🟡 rung 7: robots.txt permits `/lite/`; ToS has no automation clause; DDG's bot-check is honoured as a "no" (it keys on unusual User-Agent strings, not on headless/headed) |
-| Bing / Google result pages in the person's browser, challenges handed to the person | own indexes | yes | none | 🟡 rung 7b: `Disallow: /search` and ToS clauses are the person's contract under the user-agent posture; Google's check is IP-level and only a person can pass it; opt-in via `--engines`, never a default |
-| Google / Bing with the person pressing search (`FEARCH_HUMAN_SEARCH=1`) | own indexes | yes | none | 🟢/🟡 the query is the person's own submission; the tool only prefilled the box and read the page they landed on |
+| Google result pages in the person's browser, challenges handed to the person | own index | yes | none | 🟡 rung 7b: `Disallow: /search` and ToS clauses are the person's contract under the user-agent posture; Google's check is IP-level and only a person can pass it; opt-in via `--engines`, never a default. (Bing sat here too until 2026-09-02; removed — decoy results to automated browsers.) |
+| Google with `--human-search` | own index | yes | none | 🟢/🟡 each query shown to the person, editable, run only on their accept (or submitted by them in the browser); the tool only reads the page they landed on |
 | `ddgs`, SearXNG, DDG/Bing HTML scraping with impersonation | scraped | yes | none | 🟠 browser impersonation required to work |
 | Google / Bing / Brave / Mojeek / Startpage result pages by a server-side client or a stealth browser | scraped | yes | none | 🟠→🔴 `Disallow: /search` for all agents; ToS forbid automated queries; hiding `navigator.webdriver` / TLS impersonation is the identity lie |
 
