@@ -15,6 +15,7 @@ import {
   dedupe,
   RateLimited,
   SearchError,
+  type ConfirmQuery,
   type EngineSummary,
   type SearchProvider,
   type SearchQuery,
@@ -45,6 +46,11 @@ export class SearchRegistry {
     private readonly engines: EngineProvider[] = [],
   ) {
     this.web = settings.searchMode === "off" ? [] : engines.filter((p) => p.available());
+  }
+
+  /** `--human-search`: install how the person is asked before an engine query runs. */
+  onConfirmQuery(confirm: ConfirmQuery | undefined): void {
+    for (const p of this.engines) p.confirmQuery = confirm;
   }
 
   describe(): string {

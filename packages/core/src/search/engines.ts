@@ -26,6 +26,7 @@ import {
   filterDomains,
   RateLimited,
   SearchError,
+  type ConfirmQuery,
   type EngineSummary,
   type Recency,
   type SearchProvider,
@@ -53,12 +54,7 @@ export interface EngineSpec {
    * recognise the results page the person lands on. Only for engines whose result pages are not
    * robots-permitted — the ones where the person's own hand on the query is the point.
    */
-  human?: {
-    homeUrl(query: string, locale?: string): string;
-    resultsUrl: RegExp;
-    /** When the home URL cannot carry the query without submitting it: the search box to type into. */
-    fillSelector?: string;
-  };
+  human?: { homeUrl(query: string, locale?: string): string; resultsUrl: RegExp };
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
   /** Extract the engine's own generated answer box, if the page carries one. */
@@ -351,11 +347,11 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     isChallenge: bingChallenge,
     noResults: /There are no results for/i,
     resultsSelector: "li.b_algo",
+    // No prefilled home page: bing.com/?q= redirects straight to /search (measured 2026-09-02), so the
+    // in-browser fallback for --human-search opens Bing's home page and the person types the query.
     human: {
-      // bing.com/?q= redirects straight to /search (measured 2026-09-02), so the query is typed into the box instead.
       homeUrl: (_q, loc = "en-US") => `https://www.bing.com/?setlang=${localeParts(loc).lang}`,
       resultsUrl: /\/search\?/,
-      fillSelector: "input[name=q], textarea[name=q]",
     },
   },
   google: {
@@ -384,6 +380,8 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
 export class EngineProvider implements SearchProvider {
   readonly name: string;
   readonly posture: SearchProvider["posture"] = "browser";
+  /** Installed by the MCP server: how to ask the person about a query (`--human-search`). */
+  confirmQuery?: ConfirmQuery;
 
   constructor(
     readonly spec: EngineSpec,
@@ -412,7 +410,7 @@ export class EngineProvider implements SearchProvider {
     const robots = this.spec.robotsPermitted
       ? "robots.txt permits"
       : this.humanSearch
-        ? "query filled in by fearch, submitted by you"
+        ? "each query approved by you before it runs"
         : personPresent(this.settings)
           ? "your own browsing, not a crawl"
           : "robots is off";
@@ -443,10 +441,22 @@ export class EngineProvider implements SearchProvider {
   }
 
   async search(q: SearchQuery): Promise<SearchResponse> {
-    const query = q.site ? `${q.query} site:${q.site}` : q.query;
-    const human = this.humanSearch ? this.spec.human! : null;
-    // Human mode opens the engine's home page with the query in the box; the person presses Enter.
-    // (Recency has no place in a query the person submits; it is applied by the engine's UI if at all.)
+    let query = q.site ? `${q.query} site:${q.site}` : q.query;
+    // --human-search: the person approves (and may edit) the query in their client before it runs;
+    // then the engine runs it as their submission. Where nobody can be asked that way, the engine's
+    // home page is handed over in the browser with the query in the box and the person presses Enter.
+    let submittedByPerson = false;
+    let human = this.humanSearch ? this.spec.human! : null;
+    if (human && this.confirmQuery) {
+      const answer = await this.confirmQuery(this.spec.label, query);
+      if (answer === "declined") throw new SearchError(`${this.name}: you declined to run this query`);
+      if (answer !== "unavailable") {
+        query = answer.query;
+        submittedByPerson = true;
+        human = null;
+      }
+    }
+    // (Recency has no place in a query the person submits by hand; the engine's UI applies it if at all.)
     const url = human
       ? human.homeUrl(query, this.settings.locale)
       : this.spec.url(query, q.recency, this.settings.locale);
@@ -477,9 +487,10 @@ export class EngineProvider implements SearchProvider {
             isChallenge: this.spec.isChallenge,
             handToPerson: human
               ? {
-                  message: `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`,
+                  message: url.includes("q=")
+                    ? `Your query is filled into ${this.spec.label}'s search box — press Enter there to run it yourself.`
+                    : `${this.spec.label} is open — type your query (${query}) into its search box and press Enter.`,
                   ready,
-                  fill: human.fillSelector ? { selector: human.fillSelector, text: query } : undefined,
                 }
               : undefined,
             settleSelector: human ? undefined : this.spec.resultsSelector,
@@ -497,9 +508,10 @@ export class EngineProvider implements SearchProvider {
     }
     if (human && !rendered.handedOff) {
       throw new SearchError(
-        `${this.name}: the query is filled into ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (--human-search is on)`,
+        `${this.name}: the query is waiting in ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (--human-search is on)`,
       );
     }
+    if (submittedByPerson) rendered = { ...rendered, handedOff: true, handoffWhere: "your MCP client" };
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
       // The engine's "no". Stop and cool down (the registry treats RateLimited as such).
       const hint = !this.settings.handoff

@@ -257,9 +257,7 @@ describe("extension tier — the handoff", () => {
     await r.close();
     await client.catch(() => {});
     expect(log[0]).toBe("open");
-    expect(log[1]).toBe("fill");
-    expect(log[2]).toBe("fill:input[name=q]=x");
-    expect(log[3]).toBe("activate");
+    expect(log[1]).toBe("activate");
   }, 20_000);
 });
 

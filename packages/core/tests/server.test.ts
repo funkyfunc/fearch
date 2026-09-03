@@ -210,6 +210,53 @@ describe("stdio", () => {
   }, 30_000);
 });
 
+describe("query confirmation (--human-search)", () => {
+  it("asks the client with the query in an editable field and runs what the person accepted", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_HUMAN_SEARCH: "1",
+        FEARCH_ENGINES: "google",
+        FEARCH_BROWSER: "headed",
+      } as NodeJS.ProcessEnv),
+    );
+    const asked: Array<{ message: string; schema: unknown }> = [];
+    const ran: string[] = [];
+    // a fake engine that records what it was asked to run
+    const engine = (
+      state.search as unknown as { engines: Array<{ confirmQuery?: unknown; search: unknown; name: string }> }
+    ).engines.find((e) => e.name === "google")!;
+    (state.search as unknown as { web: unknown[] }).web = [engine];
+    engine.search = async (q: { query: string }) => {
+      const answer = await (engine.confirmQuery as (e: string, q: string) => Promise<{ query: string } | string>)(
+        "Google",
+        q.query,
+      );
+      if (typeof answer === "string") throw new Error(answer);
+      ran.push(answer.query);
+      return { results: [{ title: "t", url: "https://x.test/1", snippet: "s", provider: "google" }] };
+    };
+    const server = buildServer(state);
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
+    c.setRequestHandler(ElicitRequestSchema, async (req) => {
+      asked.push({ message: req.params.message, schema: req.params.requestedSchema });
+      return { action: "accept" as const, content: { query: "edited query" } };
+    });
+    await c.connect(ct);
+    const r = await c.callTool({ name: "search", arguments: { query: "original query" } });
+    expect(asked.length).toBe(1);
+    expect(asked[0].message).toContain("Google");
+    expect(JSON.stringify(asked[0].schema)).toContain('"default":"original query"');
+    expect(ran).toEqual(["edited query"]);
+    expect(text(r)).toContain("https://x.test/1");
+    await c.close();
+  });
+});
+
 describe("handoff elicitation", () => {
   it("notifies an elicitation-capable client when a challenge is handed to the person, and dismisses it when the handoff ends", async () => {
     const state = fakeState();

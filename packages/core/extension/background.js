@@ -1,9 +1,7 @@
 // fearch bridge — the whole extension. It long-polls fearch servers on this machine for jobs and knows
-// four verbs: open a URL in a background tab, read the tab's HTML, close the tab, and "activate" (bring a
-// tab forward when a site shows a challenge, or a search box, for you to deal with). One more, "fill",
-// puts text into a search box for --human-search on engines whose home page cannot carry the query;
-// it sets a value and never submits — pressing Enter is yours. Nothing else is clicked, typed or
-// submitted; no chrome.debugger; no automation flags. It only ever touches tabs it opened.
+// three verbs: open a URL in a background tab, read the tab's HTML, close the tab (plus "activate", to
+// bring a tab forward when a site shows a challenge, or a search box, for you to deal with). Nothing is
+// clicked, typed or submitted; no chrome.debugger; no automation flags. It only ever touches tabs it opened.
 //
 // Pairing: `fearch extension install` writes token.json next to this file. Every poll proves we hold
 // the token (SHA-256 over a fresh nonce), and every job must carry the server's matching proof back —
@@ -157,23 +155,6 @@ async function handle(job) {
       if (!ownedTabs.has(job.tabId)) throw new Error("not a fearch tab");
       const tab = await chrome.tabs.update(job.tabId, { active: true });
       await chrome.windows.update(tab.windowId, { state: "normal", drawAttention: true });
-      return { ok: true };
-    }
-    case "fill": {
-      if (!ownedTabs.has(job.tabId)) throw new Error("not a fearch tab");
-      const [r] = await chrome.scripting.executeScript({
-        target: { tabId: job.tabId },
-        func: (selector, text) => {
-          const el = document.querySelector(selector);
-          if (!el) return false;
-          el.focus();
-          el.value = text;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          return true;
-        },
-        args: [job.selector, job.text],
-      });
-      if (!r.result) throw new Error(`no element matches ${job.selector}`);
       return { ok: true };
     }
     case "close": {

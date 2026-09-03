@@ -356,13 +356,11 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
     const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
     expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm&hl=en");
     expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
-    expect(seen[0].opts.handToPerson?.fill).toBeUndefined(); // Google's home page carries the query
-    // Bing's ?q= submits on its own, so its human spec types into the box instead
+    // Bing's ?q= submits on its own, so its fallback opens the plain home page and asks the person to type
     expect(ENGINE_SPECS.bing.human!.homeUrl("x", "en-US")).not.toContain("q=");
-    expect(ENGINE_SPECS.bing.human!.fillSelector).toContain("name=q");
     expect(seen[0].opts.settleSelector).toBeUndefined();
     expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
-    expect(p.disclosure).toContain("submitted by you");
+    expect(p.disclosure).toContain("approved by you");
   });
 
   it("says where the query is waiting when the person did not press search in time, without cooling the engine down", async () => {
@@ -372,9 +370,39 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
       handoffWhere: "a tab in your Chrome",
     }));
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(
-      /filled into Google in a tab in your Chrome .* press Enter there, then search again/,
+      /waiting in Google in a tab in your Chrome .* press Enter there, then search again/,
     );
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.not.toBeInstanceOf(RateLimited);
+  });
+
+  it("with a client that can ask: the person approves or edits the query, and it runs as their submission", async () => {
+    const seen: string[] = [];
+    const p = humanProvider(async (url, opts) => {
+      seen.push(url);
+      expect(opts.handToPerson).toBeUndefined(); // no browser handoff: the client asked instead
+      return { html: GOOGLE, url: RESULTS_URL };
+    });
+    p.confirmQuery = async (engine, query) => {
+      expect(engine).toBe("Google");
+      expect(query).toBe("turndown gfm");
+      return { query: "turndown gfm plugin" };
+    };
+    const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
+    expect(seen[0]).toContain("google.com/search?q=turndown%20gfm%20plugin");
+    expect(results.length).toBeGreaterThan(0);
+    // declined: the engine is skipped with a note, nothing is opened
+    const skipped = humanProvider(async () => {
+      throw new Error("must not render");
+    });
+    skipped.confirmQuery = async () => "declined";
+    await expect(skipped.search({ query: "x", maxResults: 5 })).rejects.toThrow(/you declined/);
+    // unavailable (client cannot ask): the browser handoff is the fallback
+    const fallback = humanProvider(async (_u, opts) => {
+      expect(opts.handToPerson?.message).toMatch(/press Enter/);
+      return { html: GOOGLE, url: RESULTS_URL, handedOff: true, handoffWhere: "a tab in your Chrome" };
+    });
+    fallback.confirmQuery = async () => "unavailable";
+    expect((await fallback.search({ query: "x", maxResults: 5 })).results.length).toBeGreaterThan(0);
   });
 
   it("does not apply to DuckDuckGo lite, whose result pages robots.txt permits", async () => {

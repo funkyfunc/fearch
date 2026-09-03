@@ -166,9 +166,40 @@ function progressReporter(extra: ToolExtra, total: number): (progress: number, m
   };
 }
 
+/**
+ * `--human-search`: before a Google/Bing query runs, ask the person through their client with the
+ * query in an editable field. What they accept is what runs, as their submission; a decline skips the
+ * engine. Clients without elicitation get `undefined` from this, and the engine hands the search box
+ * over in the browser instead.
+ */
+function wireQueryConfirmation(app: App, server: McpServer): void {
+  if (!app.settings.humanSearch) return;
+  app.search.onConfirmQuery(async (engine, query) => {
+    if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
+    const r = await server.server.request(
+      {
+        method: "elicitation/create",
+        params: {
+          message: `Run this search on ${engine} as you? Edit the query if you like; it is submitted under your browser session.`,
+          requestedSchema: {
+            type: "object",
+            properties: { query: { type: "string", title: "Query", default: query } },
+            required: ["query"],
+          },
+        },
+      },
+      ElicitResultSchema,
+    );
+    if (r.action !== "accept") return "declined";
+    const q = typeof r.content?.query === "string" ? r.content.query.trim() : "";
+    return { query: q || query };
+  });
+}
+
 export function buildServer(app: App): McpServer {
   const server = new McpServer({ name: "fearch", version: app.settings.version });
   wireHandoffElicitation(app, server);
+  wireQueryConfirmation(app, server);
 
   server.registerTool(
     "search",

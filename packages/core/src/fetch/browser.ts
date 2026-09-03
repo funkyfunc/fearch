@@ -66,12 +66,7 @@ export interface RenderOptions {
    * (e.g. pressed Enter on a prefilled search box). Needs a visible browser; `message` is what they are
    * told. The result reports `handedOff` when `ready` was reached in time.
    */
-  handToPerson?: {
-    message: string;
-    ready: (html: string, url: string) => boolean;
-    /** Put this text into this box before handing over (for pages that cannot be prefilled by URL). Never submitted. */
-    fill?: { selector: string; text: string };
-  };
+  handToPerson?: { message: string; ready: (html: string, url: string) => boolean };
   /** Engine-specific challenge detector (gets the current URL too); default is the generic one. */
   isChallenge?: (html: string, status: number, url: string) => boolean;
   /** Wait (bounded) for this selector before judging the page, so a half-rendered page isn't mistaken for a challenge. */
@@ -409,10 +404,6 @@ export class BrowserRenderer implements BrowserTier {
       if (opts.handToPerson) {
         // The person's turn from the start: show the page, say what to do, wait for `ready`.
         handoffWhere = "a browser window on your screen";
-        if (opts.handToPerson.fill) {
-          const { selector, text } = opts.handToPerson.fill;
-          await page.fill(selector, text, { timeout: 5000 }).catch(() => {});
-        }
         this.audit.log("warn", `${target}: handed to you (${opts.handToPerson.message})`);
         this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
         await page.bringToFront().catch(() => {});

@@ -45,6 +45,13 @@ export interface SearchResponse {
   summary?: EngineSummary;
 }
 
+/**
+ * `--human-search`: ask the person before an engine query is submitted on their behalf. Resolves to
+ * `{ query }` to run (they may have edited it), `"declined"`, or `"unavailable"` when nobody can be
+ * asked this way — then the engine hands the search box over in the browser instead.
+ */
+export type ConfirmQuery = (engine: string, query: string) => Promise<{ query: string } | "declined" | "unavailable">;
+
 export interface SearchProvider {
   /** Short id shown in output, e.g. "google", "duckduckgo". */
   name: string;

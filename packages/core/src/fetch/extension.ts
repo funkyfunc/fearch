@@ -65,12 +65,10 @@ export function loadOrCreateExtensionToken(cacheDir: string): string {
 
 interface Job {
   id: string;
-  op: "ping" | "open" | "read" | "activate" | "close" | "fill";
+  op: "ping" | "open" | "read" | "activate" | "close";
   url?: string;
   tabId?: number;
   incognito?: boolean;
-  selector?: string;
-  text?: string;
   settleSelector?: string;
   settleMs?: number;
   timeoutMs?: number;
@@ -452,10 +450,6 @@ export class ExtensionRenderer implements BrowserTier {
       if (opts.handToPerson) {
         // The person's turn from the start: bring the tab up, say what to do, wait for `ready`.
         handoffWhere = "a tab in your Chrome";
-        if (opts.handToPerson.fill) {
-          const { selector, text } = opts.handToPerson.fill;
-          await this.bridge.request({ op: "fill", tabId, selector, text }, 10_000);
-        }
         this.audit.log("warn", `${target}: handed to you in your Chrome (${opts.handToPerson.message})`);
         this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
         await this.bridge.request({ op: "activate", tabId });
