@@ -26,9 +26,9 @@ import {
   filterDomains,
   RateLimited,
   SearchError,
-  type ConfirmQuery,
   type EngineSummary,
   type Recency,
+  type SearchOptions,
   type SearchProvider,
   type SearchResponse,
   type SearchQuery,
@@ -321,9 +321,12 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
 
 export class EngineProvider implements SearchProvider {
   readonly name: string;
+  readonly label: string;
   readonly posture: SearchProvider["posture"] = "browser";
-  /** Installed by the MCP server: how to ask the person about a query (`--human-search`). */
-  confirmQuery?: ConfirmQuery;
+  /** Result pages the engine's robots.txt does not permit: opened only as the person's own act. */
+  readonly needsPerson: boolean;
+  /** The profile choice the last query ran with, for the disclosure line. */
+  private lastIncognito: boolean | undefined;
 
   constructor(
     readonly spec: EngineSpec,
@@ -334,14 +337,17 @@ export class EngineProvider implements SearchProvider {
     private readonly gapMs = 3000,
   ) {
     this.name = spec.name;
+    this.label = spec.label;
+    this.needsPerson = !spec.robotsPermitted;
   }
 
   /** One line, once per response: which browser opened the page, on whose authority, and who logs it. */
   get disclosure(): string {
     const ch = this.browser.browserChannel;
+    const incognito = this.lastIncognito ?? this.settings.incognito;
     const how =
       ch === "extension"
-        ? this.settings.incognito
+        ? incognito
           ? "your own Chrome, incognito"
           : "your own Chrome, your profile"
         : ch === "auto"
@@ -349,17 +355,17 @@ export class EngineProvider implements SearchProvider {
           : this.settings.browser === "headed"
             ? "the visible browser window"
             : "a self-identified headless browser";
-    const robots = this.spec.robotsPermitted
-      ? "robots.txt permits"
-      : this.humanSearch
-        ? "each query approved by you before it runs"
-        : "your own browsing, not a crawl";
+    const robots = this.spec.robotsPermitted ? "robots.txt permits" : "each query approved or submitted by you";
     return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
   }
 
-  /** "You press search" applies to this engine: opted in, and its result pages are not robots-permitted. */
-  private get humanSearch(): boolean {
-    return this.settings.humanSearch && !this.spec.robotsPermitted && !!this.spec.human;
+  /**
+   * A query on this engine needs the person's act: always for an engine whose result pages are not
+   * robots-permitted (Google), and for every engine with `--human-search`. The registry asks through
+   * the client first; when nobody can be asked that way, the search box is handed over in the browser.
+   */
+  private get needsApproval(): boolean {
+    return this.needsPerson || this.settings.humanSearch;
   }
 
   /** Listed in --engines, browser on, and robots-eligible. */
@@ -380,26 +386,14 @@ export class EngineProvider implements SearchProvider {
     return null;
   }
 
-  async search(q: SearchQuery): Promise<SearchResponse> {
-    let query = q.site ? `${q.query} site:${q.site}` : q.query;
-    // --human-search: the person approves (and may edit) the query in their client before it runs;
-    // then the engine runs it as their submission. Where nobody can be asked that way, the engine's
+  async search(q: SearchQuery, opts: SearchOptions = {}): Promise<SearchResponse> {
+    const query = q.site ? `${q.query} site:${q.site}` : q.query;
+    // The person approved (and may have edited) the query in their client: it runs as their
+    // submission. Where nobody could be asked that way and the engine needs their act, the engine's
     // home page is handed over in the browser with the query in the box and the person presses Enter.
-    let submittedByPerson = false;
-    let human = this.humanSearch ? this.spec.human! : null;
-    if (human && this.confirmQuery) {
-      const answer = await this.confirmQuery(this.spec.label, query);
-      if (answer === "declined") throw new SearchError(`${this.name}: you declined to run this query`);
-      if (answer === "unanswered")
-        throw new SearchError(
-          `${this.name}: needs your approval in your MCP client and nobody answered within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — search again when you are there (--human-search is on)`,
-        );
-      if (answer !== "unavailable") {
-        query = answer.query;
-        submittedByPerson = true;
-        human = null;
-      }
-    }
+    const submittedByPerson = !!opts.submittedByPerson;
+    const human = this.needsApproval && !submittedByPerson && this.spec.human ? this.spec.human : null;
+    this.lastIncognito = opts.incognito;
     // (Recency has no place in a query the person submits by hand; the engine's UI applies it if at all.)
     const url = human
       ? human.homeUrl(query, this.settings.locale)
@@ -428,6 +422,7 @@ export class EngineProvider implements SearchProvider {
           this.browser.render(url, {
             session: true,
             handoff: true,
+            incognito: opts.incognito,
             isChallenge: this.spec.isChallenge,
             handToPerson: human
               ? {
@@ -451,21 +446,27 @@ export class EngineProvider implements SearchProvider {
     if (human && !rendered.handedOff) {
       // The tab/window was closed when the render returned: there is nothing left to press Enter in.
       throw new SearchError(
-        `${this.name}: the query was opened in ${rendered.handoffWhere ?? "your browser"} but not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s, so that tab was closed — search again when you are at the screen and press Enter there (--human-search is on)`,
+        `${this.name}: the query was opened in ${rendered.handoffWhere ?? "your browser"} but not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s, so that tab was closed — search again when you are at the screen and press Enter there`,
       );
     }
     if (submittedByPerson) rendered = { ...rendered, handedOff: true, handoffWhere: "your MCP client" };
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
-      // The engine's "no". Stop and cool down (the registry treats RateLimited as such).
+      // The engine's "no". The registry decides whether that means a cooldown (nobody can be asked)
+      // or just this answer (a person is on call and will be asked again next time).
+      const at = new Date().toISOString().slice(11, 16) + " UTC";
       const hint = !this.settings.handoff
         ? "handoff is disabled (--no-handoff); with it on you would be handed the page to pass yourself"
-        : rendered.handoffWhere
-          ? `it was opened in ${rendered.handoffWhere} but not passed in time — pass it there and search again`
-          : this.settings.canSurface
-            ? "the last check went unanswered, so it was not handed to you again yet"
-            : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
+        : rendered.handoff === "declined"
+          ? "you declined to open it"
+          : rendered.handoff === "unanswered"
+            ? `you were asked at ${at} whether to open it and nobody answered — search again when you are at the screen`
+            : rendered.handoffWhere
+              ? `it was opened in ${rendered.handoffWhere} at ${at} but not passed in time — pass it there and search again`
+              : this.settings.canSurface
+                ? "the last check went unanswered, so it was not handed to you again yet"
+                : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
       throw new RateLimited(
-        `${this.name}: rate-limited — ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); not retrying (${hint})`,
+        `${this.name}: ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); ${hint}`,
       );
     }
     const parsed = this.spec.parse(rendered.html, this.name);

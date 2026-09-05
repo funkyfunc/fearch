@@ -50,8 +50,12 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   handoff is on. Those pages are then that person's own browsing, automated only in the sense that
   the query is typed and the result read back for them, and every gate a site raises is decided by
   them personally; they are opened without consulting robots.txt, exactly as their own Chrome would.
-  `FEARCH_HUMAN_SEARCH=1` removes even that qualification: the query is filled into the engine's
-  search box and the person submits it. Ordinary page fetches — the tool acting alone — stay under
+  Every such query is the person's act: before it reaches Google it is shown to them in their MCP
+  client (the query, editable; the engine, with the one about to run preselected; their signed-in
+  profile or incognito, incognito by default; "ask me again next time") and runs only on their
+  accept; where the client cannot show a form, the query is filled into the engine's search box and
+  the person submits it. `FEARCH_HUMAN_SEARCH=1` shows the form for every query, DuckDuckGo lite
+  included. Ordinary page fetches — the tool acting alone — stay under
   the robots policy above in every mode, and where no person can be reached (no display, handoff
   off, explicit headless) the carve-out simply does not apply. Two things must be said plainly about
   this path. First, no disclosure to the engine is possible on it: a declared automated client is
@@ -124,15 +128,21 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   and says so in the log (including that the handoff is unavailable until it connects).
 - **Human handoff** (on by default whenever a window could reach the person — auto with a display,
   headed, or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
-  it is surfaced — the auto tier opens that one page in a visible window; headed brings the tab to
-  the front; the extension activates the tab in the person's Chrome — and the tool waits (default
-  45 s, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with it, then continues with what they
-  were shown. If the check is still there, the answer is a `captcha_or_challenge` diagnosis marked
-  retryable that says where the check is waiting and that the same URL may be called again once the
-  person has passed it — the one retry of a refused URL that is correct. The tool clicks, types and
-  solves nothing; it only watches for the page to stop being a challenge. The extension activates the
-  tab and asks for attention (dock/taskbar) without taking focus. Without handoff, or where nothing
-  can be shown, a challenge is final.
+  the person is asked first, through their MCP client: "A bot check appeared on host. Open it for
+  you?" On yes the check is surfaced — the auto tier opens that one page in a visible window; headed
+  brings the tab to the front; the extension activates the tab in the person's Chrome — and the tool
+  waits (default 45 s from the yes, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with it, then
+  continues with what they were shown. On no, that is the answer. If nobody answers within the same
+  timeout, they are away: nothing is opened, the answer says so, and the next request asks again —
+  there is no backoff, because the prompt itself is the test of presence. A client that cannot show
+  a prompt gets the pre-prompt behaviour (the tab or window is surfaced straight away, and an
+  unanswered one earns a 10-minute pause on further windows). If the check is still there, the answer
+  is a `captcha_or_challenge` diagnosis marked retryable that says where the check is waiting, or
+  that nobody answered, and that the same URL may be called again once the person is there — the one
+  retry of a refused URL that is correct. The tool clicks, types and solves nothing; it only watches
+  for the page to stop being a challenge. The extension activates the tab and asks for attention
+  (dock/taskbar) without taking focus. Without handoff, or where nothing can be shown, a challenge is
+  final.
 - **Session.** The tool-owned profile (headed/auto) holds only what the person did in windows the
   tool opened — passed checks, above all. It is sent to engine pages (that is where a passed check
   lives) and never to ordinary page reads; there is no setting that forwards it to ordinary pages
@@ -214,9 +224,11 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   it served decoy results to automated browsers and its home page cannot carry a query without
   submitting it. `doctor` reports exactly which
   engines are in use and why the rest are not. Engine pages are opened in the same browser tier as
-  page reads, one query per search call, at least 3 s apart. A bot-check page is that engine's "no":
-  the provider stops and cools down for 10 minutes, unless the person passes it themselves in the
-  surfaced window; nothing is done to avoid it.
+  page reads, one query per search call, at least 3 s apart. A bot-check page is that engine's "no"
+  to the tool and a question for the person: they are asked whether to open it, and pass it
+  themselves or not. With a person on call there is no cooldown — the next search asks again. Only
+  where nobody can be asked (headless, no display, `FEARCH_HANDOFF=0`) does the provider sit out for
+  5 minutes, and the note says at what time it was refused; nothing is done to avoid the check.
 - No telemetry, no version pings, no crash reporting.
 
 ## Safety limits

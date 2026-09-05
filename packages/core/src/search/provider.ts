@@ -46,25 +46,56 @@ export interface SearchResponse {
 }
 
 /**
- * `--human-search`: ask the person before an engine query is submitted on their behalf. Resolves to
- * `{ query }` to run (they may have edited it), `"declined"`, `"unanswered"` when the client could
- * ask but nobody answered in time, or `"unavailable"` when nobody can be asked this way — then the
- * engine hands the search box over in the browser instead.
+ * The form shown to the person before a query runs on an engine that needs their say-so (Google
+ * always; every engine with `--human-search`): the query, editable; the engine, with the one about
+ * to be used preselected; whether to use their signed-in browser profile (offered only when their own
+ * Chrome is the tier); and whether to ask again next time.
  */
-export type ConfirmQuery = (
-  engine: string,
-  query: string,
-) => Promise<{ query: string } | "declined" | "unanswered" | "unavailable">;
+export interface QueryAsk {
+  query: string;
+  /** The engine that is about to run — the form's default. */
+  engine: string;
+  engines: Array<{ name: string; label: string }>;
+  /** Why the person is being asked now, when an earlier engine already failed ("DuckDuckGo showed its bot check…"). */
+  reason?: string;
+  offerProfile: boolean;
+}
+
+export interface QueryChoice {
+  query: string;
+  engine: string;
+  useProfile: boolean;
+  askAgain: boolean;
+}
+
+/**
+ * Resolves to the person's choice, `"declined"`, `"unanswered"` when the client could ask but nobody
+ * answered in time, or `"unavailable"` when nobody can be asked this way — then the engine hands the
+ * search box over in the browser instead and the person presses Enter.
+ */
+export type ConfirmQuery = (ask: QueryAsk) => Promise<QueryChoice | "declined" | "unanswered" | "unavailable">;
+
+/** What the registry tells a provider about the person's part in this query. */
+export interface SearchOptions {
+  /** The person approved (and may have edited) this query in their client: it runs as their submission. */
+  submittedByPerson?: boolean;
+  /** Per-query override of `--incognito` for the person's own Chrome (the form's profile choice). */
+  incognito?: boolean;
+}
 
 export interface SearchProvider {
   /** Short id shown in output, e.g. "google", "duckduckgo". */
   name: string;
+  /** Display name for the person ("DuckDuckGo lite", "Google"); defaults to `name`. */
+  label?: string;
   /** Human description of where queries go, shown in the result header. */
   disclosure: string;
   /** Posture per docs/SPECTRUM.md: official API, or a result page opened in the browser tier. */
   posture: "official" | "browser";
+  /** The engine's result pages are not robots-permitted: only a person's own act may open them. */
+  needsPerson?: boolean;
   available(): boolean;
-  search(q: SearchQuery): Promise<SearchResponse>;
+  search(q: SearchQuery, opts?: SearchOptions): Promise<SearchResponse>;
 }
 
 export class SearchError extends Error {

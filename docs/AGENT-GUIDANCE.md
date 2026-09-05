@@ -20,13 +20,13 @@ You have `search` and `fetch`.
 - To continue a truncated page, pass the `cursor` from the footer verbatim.
 - If a fetch returns a `Diagnosis`, the site has declined automated access or the page is gone. Do not
   retry the same URL with different settings; use another source, an official API, or ask the user.
-  One exception: a `captcha_or_challenge` marked `retryable: true` means the check is open in the
-  user's browser waiting for them — tell them, and call fetch again on the same URL once they say
-  they have passed it. Likewise, a search note saying a Google query "was not submitted" or "nobody
-  answered" means the user approves or submits searches themselves on this server: tell them, and
-  search again once they are at the screen (the tab that timed out was closed; the next search opens
-  a fresh one). A prompt asking the user to approve a query is normal on servers run with
-  `--human-search`; a declined query is the user's answer, not an error to work around.
+  One exception: a `captcha_or_challenge` marked `retryable: true` means a bot check is waiting for
+  the user — either open in their browser, or not yet opened because they were asked and did not
+  answer. Tell them, and call fetch again on the same URL once they are at the screen; they will be
+  asked again. Likewise, a search note saying "nobody answered" or "not submitted" means the user
+  approves searches themselves on this server (every Google query; every query with `--human-search`):
+  tell them, and search again once they are there. A prompt asking the user to approve a query or to
+  open a bot check is normal; a declined prompt is the user's answer, not an error to work around.
 - A `Diagnosis` of kind `empty` means the page was reached but held nothing readable (a binary file,
   a page that only exists after JavaScript and could not be rendered): try `mode="raw"` to see what
   came back, or another URL on the site.

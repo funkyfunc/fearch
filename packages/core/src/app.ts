@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { Audit } from "./audit.js";
 import { Cache } from "./cache.js";
 import { settingsFromEnv, type Settings } from "./config.js";
-import { BrowserRenderer, EscalatingRenderer, type BrowserTier } from "./fetch/browser.js";
+import { BrowserRenderer, EscalatingRenderer, type BrowserTier, type HandoffGate } from "./fetch/browser.js";
 import { ExtensionBridge, ExtensionRenderer, loadOrCreateExtensionToken } from "./fetch/extension.js";
 import { Fetcher } from "./fetch/pipeline.js";
 import { RobotsChecker } from "./fetch/robots.js";
@@ -25,6 +25,8 @@ export interface AppEvents extends EventEmitter {
 export interface App {
   settings: Settings;
   events: AppEvents;
+  /** How a bot check is put to the person before anything is surfaced; the MCP server installs the ask. */
+  gate: HandoffGate;
   audit: Audit;
   cache: Cache;
   transport: Transport;
@@ -38,6 +40,7 @@ export interface App {
 
 export function createApp(settings: Settings = settingsFromEnv()): App {
   const events = new EventEmitter() as AppEvents;
+  const gate: HandoffGate = {};
   const audit = new Audit(settings);
   const cache = new Cache(settings.noCache ? null : `${settings.cacheDir}/cache-v2.sqlite`);
   const transport = new Transport(settings, audit);
@@ -62,14 +65,15 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
     settings.robotsPolicy,
   );
 
-  const browser = createBrowser(settings, audit, events);
+  const browser = createBrowser(settings, audit, events, gate);
   const fetcher = new Fetcher(settings, cache, transport, robots, politeness, audit, browser);
   const engines = engineProviders(settings, browser, robots, politeness);
-  const search = new SearchRegistry(settings, cache, audit, engines);
+  const search = new SearchRegistry(settings, cache, audit, engines, browser);
 
   return {
     settings,
     events,
+    gate,
     audit,
     cache,
     transport,
@@ -85,26 +89,26 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
   };
 }
 
-function createBrowser(settings: Settings, audit: Audit, events?: AppEvents): BrowserTier {
+function createBrowser(settings: Settings, audit: Audit, events: AppEvents, gate: HandoffGate): BrowserTier {
   switch (settings.browser) {
     case "headless":
     case "headed":
     case "off":
-      return new BrowserRenderer(settings, audit, events);
+      return new BrowserRenderer(settings, audit, events, gate);
     default: {
       // auto and extension: the person's own Chrome whenever the paired extension is connected, else
       // headless with challenge escalation (or plain headless where nothing can be surfaced). The two
       // modes differ only in how long the extension is waited for and how loudly its absence is noted.
       const bridge = new ExtensionBridge(audit, loadOrCreateExtensionToken(settings.cacheDir));
-      return new ExtensionRenderer(settings, audit, bridge, adaptive(settings, audit, events), events);
+      return new ExtensionRenderer(settings, audit, bridge, adaptive(settings, audit, events, gate), events, gate);
     }
   }
 }
 
 /** Headless-first with challenge escalation where a window can be shown; plain headless where not. */
-function adaptive(settings: Settings, audit: Audit, events?: AppEvents): BrowserTier {
+function adaptive(settings: Settings, audit: Audit, events: AppEvents, gate: HandoffGate): BrowserTier {
   const auto: Settings = { ...settings, browser: "auto" };
   return settings.canSurface && settings.handoff
-    ? new EscalatingRenderer(auto, audit, new BrowserRenderer(auto, audit, events), undefined, events)
-    : new BrowserRenderer({ ...settings, browser: "headless" }, audit, events);
+    ? new EscalatingRenderer(auto, audit, new BrowserRenderer(auto, audit, events, gate), undefined, events, gate)
+    : new BrowserRenderer({ ...settings, browser: "headless" }, audit, events, gate);
 }

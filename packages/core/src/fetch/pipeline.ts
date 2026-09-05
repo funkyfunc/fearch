@@ -489,7 +489,11 @@ export class Fetcher {
     if (isChallengePage(rendered.html, rendered.status, rendered.finalUrl)) {
       throw new DiagnosedError(
         url,
-        diagnoseUnpassedChallenge([...attempts, "browser: captcha_or_challenge"], rendered.handoffWhere),
+        diagnoseUnpassedChallenge(
+          [...attempts, "browser: captcha_or_challenge"],
+          rendered.handoffWhere,
+          rendered.handoff === "passed" ? "none" : rendered.handoff,
+        ),
       );
     }
     const dx = diagnose(fetched, { isShell: isShellByResult(rendered.html) });

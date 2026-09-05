@@ -51,8 +51,8 @@ describe("registry", () => {
     },
   });
 
-  function registry(web: SearchProvider[]) {
-    const settings = settingsFromEnv({} as NodeJS.ProcessEnv, "linux");
+  function registry(web: SearchProvider[], env: Record<string, string> = {}) {
+    const settings = settingsFromEnv(env as NodeJS.ProcessEnv, "linux");
     const reg = new SearchRegistry(settings, new Cache(null), new Audit({ auditLog: "off", logLevel: "error" }));
     (reg as unknown as { web: SearchProvider[] }).web = web;
     return reg;
@@ -94,6 +94,142 @@ describe("registry", () => {
     const ok = stub("google", [r("https://x.com/2")]);
     const out = await registry([broken, ok]).search({ query: "q3", maxResults: 2 });
     expect(out.notes.join(" ")).toContain("robots.txt unavailable");
+  });
+
+  it("never cools an engine down when a person is on call: the check is put to them again next time", async () => {
+    const limited = stub(
+      "duckduckgo",
+      [],
+      "duckduckgo: DuckDuckGo lite showed its bot-check page; nobody answered",
+      true,
+    );
+    const google = stub("google", [r("https://x.com/1")]);
+    const reg = registry([limited, google], { DISPLAY: ":0" });
+    await reg.search({ query: "q1", maxResults: 2 });
+    const second = await reg.search({ query: "q2", maxResults: 2 });
+    expect(limited.calls).toBe(2); // asked again, not skipped
+    expect(second.notes.join(" ")).not.toContain("skipped");
+    expect(second.notes.join(" ")).toContain("nobody answered");
+  });
+
+  describe("the query form", () => {
+    const person = (
+      name: string,
+      results: SearchResult[],
+      opts: { needsPerson?: boolean; error?: string; limited?: boolean } = {},
+    ) => {
+      const p = stub(name, results, opts.error, opts.limited) as SearchProvider & {
+        calls: number;
+        seen: Array<{ query: string; submitted?: boolean; incognito?: boolean }>;
+      };
+      p.needsPerson = opts.needsPerson ?? false;
+      p.label = name === "google" ? "Google" : "DuckDuckGo lite";
+      p.seen = [];
+      const inner = p.search.bind(p);
+      p.search = async (q, o) => {
+        p.seen.push({ query: q.query, submitted: o?.submittedByPerson, incognito: o?.incognito });
+        return inner(q, o);
+      };
+      return p;
+    };
+
+    it("asks before a query reaches Google, with Google preselected; DuckDuckGo runs without asking", async () => {
+      const ddg = person("duckduckgo", [r("https://x.com/d")]);
+      const google = person("google", [r("https://x.com/g")], { needsPerson: true });
+      const asked: unknown[] = [];
+      const reg = registry([ddg, google], { DISPLAY: ":0" });
+      reg.onConfirmQuery(async (a) => {
+        asked.push(a);
+        return { query: `${a.query} edited`, engine: a.engine, useProfile: false, askAgain: true };
+      });
+      // DuckDuckGo answers first: nobody is asked
+      await reg.search({ query: "q", maxResults: 1 });
+      expect(asked).toEqual([]);
+      expect(ddg.seen[0]).toEqual({ query: "q", submitted: false, incognito: undefined });
+      // Google first in the chain: the form appears, Google preselected, and the edited query runs as theirs
+      const reg2 = registry([google, ddg], { DISPLAY: ":0" });
+      reg2.onConfirmQuery(async (a) => {
+        asked.push(a);
+        return { query: `${a.query} edited`, engine: a.engine, useProfile: false, askAgain: true };
+      });
+      const out = await reg2.search({ query: "q2", maxResults: 1 });
+      expect(asked.length).toBe(1);
+      expect(asked[0]).toMatchObject({ engine: "google", query: "q2", offerProfile: false });
+      expect((asked[0] as { engines: unknown[] }).engines).toEqual([
+        { name: "google", label: "Google" },
+        { name: "duckduckgo", label: "DuckDuckGo lite" },
+      ]);
+      expect(google.seen[0]).toMatchObject({ query: "q2 edited", submitted: true });
+      expect(out.providers.map((p) => p.name)).toEqual(["google"]);
+    });
+
+    it("lets the person switch the engine in the form, and remembers the choice when they say so", async () => {
+      const ddg = person("duckduckgo", [r("https://x.com/d")]);
+      const google = person("google", [r("https://x.com/g")], { needsPerson: true });
+      const reg = registry([google, ddg], { DISPLAY: ":0" });
+      let asks = 0;
+      reg.onConfirmQuery(async (a) => {
+        asks++;
+        return { query: a.query, engine: "duckduckgo", useProfile: false, askAgain: false };
+      });
+      const first = await reg.search({ query: "q1", maxResults: 1 });
+      expect(first.providers.map((p) => p.name)).toEqual(["duckduckgo"]);
+      expect(google.calls).toBe(0);
+      // remembered: DuckDuckGo leads and nobody is asked again
+      const second = await reg.search({ query: "q2", maxResults: 1 });
+      expect(second.providers.map((p) => p.name)).toEqual(["duckduckgo"]);
+      expect(asks).toBe(1);
+      expect(google.calls).toBe(0);
+    });
+
+    it("asks again — with the reason — when the remembered engine fails and Google is next", async () => {
+      const ddg = person("duckduckgo", [], {
+        error: "duckduckgo: DuckDuckGo lite showed its bot-check page",
+        limited: true,
+      });
+      const google = person("google", [r("https://x.com/g")], { needsPerson: true });
+      const reg = registry([ddg, google], { DISPLAY: ":0" });
+      const asked: Array<{ engine: string; reason?: string }> = [];
+      reg.onConfirmQuery(async (a) => {
+        asked.push({ engine: a.engine, reason: a.reason });
+        return { query: a.query, engine: "google", useProfile: false, askAgain: false };
+      });
+      const out = await reg.search({ query: "q", maxResults: 1 });
+      expect(asked).toEqual([{ engine: "google", reason: "duckduckgo: DuckDuckGo lite showed its bot-check page." }]);
+      expect(out.providers.map((p) => p.name)).toEqual(["google"]);
+      expect(out.notes.join(" ")).toContain("bot-check page");
+    });
+
+    it("stops at a decline or an unanswered prompt, and says which", async () => {
+      const google = person("google", [r("https://x.com/g")], { needsPerson: true });
+      const declined = registry([google], { DISPLAY: ":0" });
+      declined.onConfirmQuery(async () => "declined");
+      await expect(declined.search({ query: "q", maxResults: 1 })).rejects.toThrow(/you declined to run this query/);
+      const away = registry([google], { DISPLAY: ":0" });
+      away.onConfirmQuery(async () => "unanswered");
+      await expect(away.search({ query: "q", maxResults: 1 })).rejects.toThrow(
+        /nobody answered within \d+ s \(asked at \d\d:\d\d UTC\)/,
+      );
+      expect(google.calls).toBe(0);
+      // a client that cannot ask: the engine gets the query un-submitted and hands the box over itself
+      const cli = registry([google], { DISPLAY: ":0" });
+      cli.onConfirmQuery(async () => "unavailable");
+      await cli.search({ query: "q", maxResults: 1 });
+      expect(google.seen[0]).toMatchObject({ submitted: false });
+    });
+
+    it("--human-search asks for every engine, DuckDuckGo included", async () => {
+      const ddg = person("duckduckgo", [r("https://x.com/d")]);
+      const reg = registry([ddg], { DISPLAY: ":0", FEARCH_HUMAN_SEARCH: "1" });
+      let asks = 0;
+      reg.onConfirmQuery(async (a) => {
+        asks++;
+        return { query: a.query, engine: a.engine, useProfile: false, askAgain: true };
+      });
+      await reg.search({ query: "q", maxResults: 1 });
+      expect(asks).toBe(1);
+      expect(ddg.seen[0]).toMatchObject({ submitted: true });
+    });
   });
 
   it("fails honestly when no engine answers — no silent substitution", async () => {

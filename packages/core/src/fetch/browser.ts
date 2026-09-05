@@ -29,6 +29,13 @@ import { acceptLanguage, type Settings } from "../config.js";
 import { isChallengePage } from "./diagnose.js";
 import { BlockedURL, isBlockedHostname, isPrivateAddress, normalizeUrl } from "./guard.js";
 
+/**
+ * What became of a bot check: `passed` (the person cleared it), `timeout` (they said yes but it was
+ * not passed in time), `declined` (they said no), `unanswered` (nobody answered the prompt, nothing
+ * was opened), `none` (no check, or nothing could be surfaced).
+ */
+export type HandoffOutcome = "passed" | "timeout" | "declined" | "unanswered" | "none";
+
 export interface Rendered {
   html: string;
   finalUrl: string;
@@ -40,8 +47,38 @@ export interface Rendered {
   handedOff: boolean;
   /** Where a challenge was handed to the person (whether or not they passed it), e.g. "a tab in your Chrome". */
   handoffWhere?: string;
+  handoff?: HandoffOutcome;
   /** Extra provenance shown in the result header (e.g. "your Chrome"). */
   label?: string;
+}
+
+/**
+ * Asks the person, through their MCP client, whether to bring a bot check in front of them. Resolves
+ * `accept`, `declined`, `unanswered` (the prompt timed out: they are not there), or `unavailable`
+ * (the client cannot ask — then the tab or window is surfaced straight away, as the only channel left).
+ */
+export type HandoffAsk = (info: {
+  url: string;
+  where: string;
+  message?: string;
+}) => Promise<"accept" | "declined" | "unanswered" | "unavailable">;
+
+/** The server installs the ask here; renderers read it at handoff time. */
+export interface HandoffGate {
+  ask?: HandoffAsk;
+}
+
+/** When nobody can be asked, the tab or window is surfaced immediately (the pre-gate behaviour). */
+export async function askToSurface(
+  gate: HandoffGate | undefined,
+  info: { url: string; where: string; message?: string },
+): Promise<"accept" | "declined" | "unanswered" | "unavailable"> {
+  if (!gate?.ask) return "unavailable";
+  try {
+    return await gate.ask(info);
+  } catch {
+    return "unavailable";
+  }
 }
 
 /** What the pipeline and the engines need from a browser tier; BrowserRenderer and ExtensionRenderer both provide it. */
@@ -61,6 +98,10 @@ export interface RenderOptions {
   handoff?: boolean;
   /** The URL was upgraded to https optimistically; plain http may be tried if https cannot connect. */
   httpFallback?: boolean;
+  /** Per-render override of `--incognito` (the person's choice in the query form). Extension tier only. */
+  incognito?: boolean;
+  /** The person already said yes to seeing this check (an outer tier asked); do not ask again. */
+  handoffApproved?: boolean;
   /**
    * Open the page for the person straight away and wait until `ready` says they have done their part
    * (e.g. pressed Enter on a prefilled search box). Needs a visible browser; `message` is what they are
@@ -147,6 +188,7 @@ export class BrowserRenderer implements BrowserTier {
     private readonly settings: Settings,
     private readonly audit: Audit,
     private readonly events?: AppEvents,
+    private readonly handoffGate?: HandoffGate,
   ) {}
 
   enabled(): boolean {
@@ -395,6 +437,7 @@ export class BrowserRenderer implements BrowserTier {
       }
       let handedOff = false;
       let handoffWhere: string | undefined;
+      let handoff: HandoffOutcome = "none";
       const isChallenge = opts.isChallenge ?? isChallengePage;
       if (opts.handToPerson) {
         // The person's turn from the start: show the page, say what to do, wait for `ready`.
@@ -412,6 +455,7 @@ export class BrowserRenderer implements BrowserTier {
         html = r.html;
         status = 200;
         handedOff = r.passed;
+        handoff = r.passed ? "passed" : "timeout";
         this.audit.log(
           r.passed ? "info" : "warn",
           `${target}: ${r.passed ? "done by you; continuing" : "not done within the handoff window"}`,
@@ -424,33 +468,48 @@ export class BrowserRenderer implements BrowserTier {
         isChallenge(html, status, page.url())
       ) {
         handoffWhere = "a browser window on your screen";
-        // The human handoff: bring the tab forward and wait for the person. Nothing is clicked, typed
-        // or solved by the tool; it only watches for the page to stop being a challenge.
-        this.audit.log(
-          "warn",
-          `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
-        );
-        this.events?.emit("handoff", { url: target, where: handoffWhere });
-        await page.bringToFront().catch(() => {});
-        const p = page;
-        const r = await waitForHuman(
-          async () => ({ html: await p.content().catch(() => ""), status: 200, url: p.url() }),
-          (h, s, u) => !h || isChallenge(h, s, u),
-          this.settings.handoffTimeoutMs,
-        );
-        if (r.passed) {
-          await Promise.race([
-            p.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {}),
-            new Promise((res) => setTimeout(res, 4000)),
-          ]);
-          html = await p.content();
-          status = 200;
-          handedOff = true;
-          this.audit.log("info", `challenge on ${target} passed by you; continuing`);
+        // Ask first, through the client: a person who is there says yes and the window comes to the
+        // front; a person who is away does not get a window fought for on their desktop.
+        const answer = opts.handoffApproved
+          ? "accept"
+          : await askToSurface(this.handoffGate, { url: target, where: handoffWhere });
+        if (answer === "declined" || answer === "unanswered") {
+          handoff = answer;
+          this.audit.log(
+            "warn",
+            `challenge on ${target}: ${answer === "declined" ? "you declined to see it" : "nobody answered the prompt"}`,
+          );
         } else {
-          this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
+          // The human handoff: bring the tab forward and wait for the person. Nothing is clicked,
+          // typed or solved by the tool; it only watches for the page to stop being a challenge.
+          this.audit.log(
+            "warn",
+            `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+          );
+          this.events?.emit("handoff", { url: target, where: handoffWhere });
+          await page.bringToFront().catch(() => {});
+          const p = page;
+          const r = await waitForHuman(
+            async () => ({ html: await p.content().catch(() => ""), status: 200, url: p.url() }),
+            (h, s, u) => !h || isChallenge(h, s, u),
+            this.settings.handoffTimeoutMs,
+          );
+          if (r.passed) {
+            await Promise.race([
+              p.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {}),
+              new Promise((res) => setTimeout(res, 4000)),
+            ]);
+            html = await p.content();
+            status = 200;
+            handedOff = true;
+            handoff = "passed";
+            this.audit.log("info", `challenge on ${target} passed by you; continuing`);
+          } else {
+            handoff = "timeout";
+            this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
+          }
+          this.events?.emit("handoff-end", { url: target, passed: r.passed });
         }
-        this.events?.emit("handoff-end", { url: target, passed: r.passed });
       }
       const finalUrl = page.url();
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
@@ -475,7 +534,7 @@ export class BrowserRenderer implements BrowserTier {
             .filter(Boolean)
             .join("; ") || undefined,
       });
-      return { html, finalUrl, status: status || 200, salvaged, usedSession, handedOff, handoffWhere };
+      return { html, finalUrl, status: status || 200, salvaged, usedSession, handedOff, handoffWhere, handoff };
     } finally {
       this.inFlight--;
       await page?.close().catch(() => {});
@@ -497,15 +556,19 @@ export class BrowserRenderer implements BrowserTier {
   }
 }
 
-/** How long to stop opening windows (or activating tabs) after one goes unanswered — the person is evidently away. */
+/**
+ * How long to stop opening windows (or activating tabs) after one goes unanswered *when nobody could
+ * be asked first* — the person is evidently away. With a client that can ask, the prompt is the test
+ * of presence and nothing is opened until they say yes, so no backoff is needed.
+ */
 export const AWAY_COOLDOWN_MS = 10 * 60_000;
 
 /**
  * The `auto` tier: headless until it matters. Routine renders happen invisibly (with the tool
- * profile, so a passed check stays passed); when a page comes back as a challenge, the same URL is
- * opened once in a visible window and handed to the person. If the window goes unanswered, no more
- * windows for a while; if no window can be opened at all (no display, no Chrome), the challenge is
- * final exactly as in headless mode. Nothing is ever clicked or solved by the tool.
+ * profile, so a passed check stays passed); when a page comes back as a challenge, the person is
+ * asked, and on yes the same URL is opened once in a visible window and handed to them. If no window
+ * can be opened at all (no display, no Chrome), the challenge is final exactly as in headless mode.
+ * Nothing is ever clicked or solved by the tool.
  */
 export class EscalatingRenderer implements BrowserTier {
   readonly browserChannel = "auto";
@@ -519,8 +582,9 @@ export class EscalatingRenderer implements BrowserTier {
     private readonly audit: Audit,
     private readonly routine: BrowserTier,
     private readonly makeEscalation: () => BrowserTier = () =>
-      new BrowserRenderer({ ...settings, browser: "headed" }, audit, events),
+      new BrowserRenderer({ ...settings, browser: "headed" }, audit, events, handoffGate),
     private readonly events?: AppEvents,
+    private readonly handoffGate?: HandoffGate,
   ) {}
 
   enabled(): boolean {
@@ -550,12 +614,22 @@ export class EscalatingRenderer implements BrowserTier {
     if (!isChallenge(first.html, first.status, first.finalUrl) || opts.handoff === false || !this.canEscalate()) {
       return first;
     }
+    const where = "a browser window on your screen";
+    const answer = opts.handoffApproved ? "accept" : await askToSurface(this.handoffGate, { url, where });
+    if (answer === "declined" || answer === "unanswered") {
+      this.audit.log(
+        "warn",
+        `challenge on ${url}: ${answer === "declined" ? "you declined to see it" : "nobody answered the prompt"}; the challenge stands`,
+      );
+      return { ...first, handoffWhere: where, handoff: answer };
+    }
     this.audit.log("warn", `challenge on ${url}: opening it in a visible window for you to deal with`);
     let second: Rendered;
     try {
       this.escalation ??= this.makeEscalation();
-      // session:true so what the person passes lands in the shared profile and the window need not reappear.
-      second = await this.escalation.render(url, { ...opts, session: true, handoff: true });
+      // session:true so what the person passes lands in the shared profile and the window need not
+      // reappear; handoffApproved so the window does not ask a second time.
+      second = await this.escalation.render(url, { ...opts, session: true, handoff: true, handoffApproved: true });
     } catch (e) {
       const msg = (e as Error).message;
       // A window that cannot be opened here (no display, no Chrome) will not open next time either.
@@ -570,11 +644,14 @@ export class EscalatingRenderer implements BrowserTier {
       return second;
     }
     if (isChallenge(second.html, second.status, second.finalUrl)) {
-      this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
-      this.audit.log(
-        "warn",
-        `the window went unanswered; not opening another for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
-      );
+      if (answer === "unavailable") {
+        // Nobody could be asked first, so the window itself was the question and it went unanswered.
+        this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
+        this.audit.log(
+          "warn",
+          `the window went unanswered; not opening another for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
+        );
+      }
       // Close the window rather than orphan it: a dead page must not sit there collecting a click
       // whose request has already given up.
       await this.escalation?.close().catch(() => {});

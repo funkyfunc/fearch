@@ -16,7 +16,7 @@ import { renderResults } from "./search/render.js";
  */
 export function searchDescription(s: Settings): string {
   const posture = personPresent(s)
-    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any challenge opened in a visible window for them to pass${s.humanSearch ? ", and each Google query shown to them for approval first" : ""}; the tool never solves anything.`
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — queried on their behalf at human pace, with any bot check put to them first and opened for them to pass${s.engines.includes("google") ? "; each Google query is shown to them for approval before it runs" : ""}${s.humanSearch ? " (every query, with --human-search)" : ""}; the tool never solves anything. A note saying nobody answered means the user is away: tell them, and search again when they are back.`
     : `This server searches only where automated clients are permitted (DuckDuckGo lite in a real, self-identified browser).`;
   return `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
 
@@ -93,55 +93,50 @@ const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] 
 const failure = (t: string): ToolResult => ({ content: [{ type: "text", text: t }], isError: true });
 
 /**
- * When a challenge is handed to the person (a window opens, a Chrome tab activates), tell them
- * through their MCP client too — a form-mode elicitation used purely as a notification. The handoff
- * itself never depends on the answer (the page is polled for the check clearing); the prompt is
- * aborted the moment the handoff resolves so it cannot go stale. URL-mode elicitation is deliberately
- * NOT used: it would navigate the person to a fresh copy of the page in their default browser, whose
- * cookie jar is not the one the render is waiting on. Clients without elicitation lose nothing.
+ * Before a bot check is brought in front of the person (a window comes forward, a Chrome tab
+ * activates), ask them through their MCP client. The prompt is the test of presence: yes surfaces
+ * the check and starts the wait; no is their answer; no reply within the handoff timeout means they
+ * are away, and nothing is opened on their desk. URL-mode elicitation is deliberately NOT used: it
+ * would navigate the person to a fresh copy of the page in their default browser, whose cookie jar
+ * is not the one the render is waiting on. Clients without elicitation get the pre-prompt behaviour
+ * (the tab or window is surfaced straight away).
  */
-function wireHandoffElicitation(app: App, server: McpServer): void {
-  const pending = new Map<string, AbortController>();
+function wireHandoffGate(app: App, server: McpServer): void {
   // Burn outgoing request id 0 on a ping: the SDK's cancellation handler treats `requestId: 0` as
   // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
-  // and the first handoff elicitation would otherwise be exactly that request.
+  // and the first handoff prompt would otherwise be exactly that request.
   server.server.oninitialized = () => {
     void server.server.ping().catch(() => {});
   };
-  app.events.on("handoff", ({ url, where, message }) => {
-    if (!server.server.getClientCapabilities()?.elicitation) return;
+  app.gate.ask = async ({ url, where, message }) => {
+    if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
     let host = url;
     try {
       host = new URL(url).host;
     } catch {
       // keep the raw url
     }
-    const ac = new AbortController();
-    pending.get(url)?.abort();
-    pending.set(url, ac);
-    // Raw request rather than elicitInput(): clients predating the form/url split declare the
-    // legacy empty `elicitation: {}` capability (spec: equivalent to form-only), which the SDK's
-    // helper would reject.
-    void server.server
-      .request(
+    try {
+      // Raw request rather than elicitInput(): clients predating the form/url split declare the
+      // legacy empty `elicitation: {}` capability (spec: equivalent to form-only), which the SDK's
+      // helper would reject.
+      const r = await server.server.request(
         {
           method: "elicitation/create",
           params: {
-            message: `${message ?? `A bot-check appeared while opening ${host}.`} It is waiting in ${where} — deal with it there and this request continues by itself (this prompt dismisses on its own).`,
+            message: `${message ?? `A bot check appeared on ${host}.`} Open it for you in ${where}? You then pass it yourself; the tool never solves checks.`,
             requestedSchema: { type: "object", properties: {} },
           },
         },
         ElicitResultSchema,
-        { signal: ac.signal },
-      )
-      .catch(() => {
-        // declined, unsupported, or aborted — the notification already did its job
-      })
-      .finally(() => {
-        if (pending.get(url) === ac) pending.delete(url);
-      });
-  });
-  app.events.on("handoff-end", ({ url }) => pending.get(url)?.abort());
+        { timeout: app.settings.handoffTimeoutMs },
+      );
+      return r.action === "accept" ? "accept" : "declined";
+    } catch (e) {
+      if (e instanceof McpError && e.code === ErrorCode.RequestTimeout) return "unanswered";
+      return "unavailable";
+    }
+  };
 }
 
 /** MCP progress notifications, when the client asked for them (`_meta.progressToken`). Never throws. */
@@ -163,27 +158,49 @@ function progressReporter(extra: ToolExtra, total: number): (progress: number, m
 }
 
 /**
- * `--human-search`: before a Google query runs, ask the person through their client with the
- * query in an editable field. What they accept is what runs, as their submission; a decline skips the
- * engine. Clients without elicitation get `undefined` from this, and the engine hands the search box
+ * The query form: before a query reaches an engine that needs the person's act (Google always;
+ * every engine with `--human-search`), ask through their client — the query in an editable field,
+ * the engine with the one about to run preselected, their profile or incognito when their own Chrome
+ * is the tier, and whether to ask again. What they accept runs as their submission; a decline skips
+ * the engine. Clients without elicitation get "unavailable", and the engine hands the search box
  * over in the browser instead.
  */
-function wireQueryConfirmation(app: App, server: McpServer): void {
-  if (!app.settings.humanSearch) return;
-  app.search.onConfirmQuery(async (engine, query) => {
+function wireQueryForm(app: App, server: McpServer): void {
+  app.search.onConfirmQuery(async (ask) => {
     if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
+    const names = ask.engines.map((e) => e.name);
+    const properties: Record<string, unknown> = {
+      query: { type: "string", title: "Query", default: ask.query },
+      engine: {
+        type: "string",
+        title: "Engine",
+        enum: names,
+        enumNames: ask.engines.map((e) => e.label),
+        default: names.includes(ask.engine) ? ask.engine : names[0],
+      },
+    };
+    if (ask.offerProfile)
+      properties.use_profile = {
+        type: "boolean",
+        title: "Use my signed-in Chrome profile",
+        description:
+          "Off: an incognito window. On: your logins and history ride along (Google ties the query to your account).",
+        default: false,
+      };
+    properties.ask_again = {
+      type: "boolean",
+      title: "Ask me again next time",
+      description: "Off: keep this engine and profile choice for the rest of the session without asking.",
+      default: true,
+    };
     let r;
     try {
       r = await server.server.request(
         {
           method: "elicitation/create",
           params: {
-            message: `Run this search on ${engine} as you? Edit the query if you like; it is submitted under your browser session.`,
-            requestedSchema: {
-              type: "object",
-              properties: { query: { type: "string", title: "Query", default: query } },
-              required: ["query"],
-            },
+            message: `${ask.reason ? `${ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
+            requestedSchema: { type: "object", properties, required: ["query", "engine"] },
           },
         },
         ElicitResultSchema,
@@ -195,15 +212,17 @@ function wireQueryConfirmation(app: App, server: McpServer): void {
       throw e;
     }
     if (r.action !== "accept") return "declined";
-    const q = typeof r.content?.query === "string" ? r.content.query.trim() : "";
-    return { query: q || query };
+    const c = (r.content ?? {}) as Record<string, unknown>;
+    const query = typeof c.query === "string" && c.query.trim() ? c.query.trim() : ask.query;
+    const engine = typeof c.engine === "string" && names.includes(c.engine) ? c.engine : ask.engine;
+    return { query, engine, useProfile: c.use_profile === true, askAgain: c.ask_again !== false };
   });
 }
 
 export function buildServer(app: App): McpServer {
   const server = new McpServer({ name: "fearch", version: app.settings.version });
-  wireHandoffElicitation(app, server);
-  wireQueryConfirmation(app, server);
+  wireHandoffGate(app, server);
+  wireQueryForm(app, server);
 
   server.registerTool(
     "search",

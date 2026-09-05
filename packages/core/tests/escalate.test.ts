@@ -108,6 +108,36 @@ describe("EscalatingRenderer", () => {
     expect(routine.calls).toBe(0);
   });
 
+  it("with a client that can ask: the prompt gates the window, and silence means nothing is opened", async () => {
+    const routine = tier(async () => page("<b>captcha</b>"));
+    const escalation = tier(async (_u, o) => {
+      expect(o?.handoffApproved).toBe(true); // the window must not ask a second time
+      return page("<main>results</main>", { handedOff: true, handoff: "passed" });
+    });
+    let answer: "accept" | "declined" | "unanswered" = "declined";
+    const asked: string[] = [];
+    const gate = {
+      ask: async (i: { url: string; where: string }) => {
+        asked.push(i.where);
+        return answer;
+      },
+    };
+    const r = new EscalatingRenderer(settings(), audit(), routine, () => escalation, undefined, gate);
+    const declined = await r.render("https://x.test/", { isChallenge });
+    expect(declined.handoff).toBe("declined");
+    expect(escalation.calls).toBe(0);
+    answer = "unanswered";
+    const away = await r.render("https://x.test/", { isChallenge });
+    expect(away.handoff).toBe("unanswered");
+    expect(escalation.calls).toBe(0);
+    // no away backoff after an unanswered prompt: the next request asks again
+    answer = "accept";
+    const passed = await r.render("https://x.test/", { isChallenge });
+    expect(passed.handoff).toBe("passed");
+    expect(escalation.calls).toBe(1);
+    expect(asked).toEqual(Array(3).fill("a browser window on your screen"));
+  });
+
   it("never escalates when handoff is declined or nothing can be surfaced", async () => {
     const routine = tier(async () => page("<b>captcha</b>"));
     let built = 0;

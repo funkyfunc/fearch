@@ -224,37 +224,39 @@ describe("engine eligibility — the dials play together", () => {
         maxResults: 5,
       }),
     ).rejects.toThrow(/robots\.txt disallows/);
-    // Google with a person present is the person's own browsing: opened without consulting robots.txt.
+    // Google with a person present is the person's own browsing: the query they approved is opened
+    // without consulting robots.txt.
     const { results: g } = await provider("google", async () => ({ html: GOOGLE, status: 200 }), {
       FEARCH_BROWSER: "headed",
-    }).search({ query: "x", maxResults: 5 });
+    }).search({ query: "x", maxResults: 5 }, { submittedByPerson: true });
     expect(g[0].url).toContain("npmjs.com");
   });
 
-  it("treats a bot-check page as a final 'no' (rate-limited, no retry) and says how a person could pass it", async () => {
+  it("treats a bot-check page as the engine's 'no' (no retry) and says how a person could pass it", async () => {
     let calls = 0;
     const p = provider("duckduckgo", async () => {
       calls++;
       return { html: BOTCHECK, status: 202 };
     });
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(
-      /rate-limited.*no browser window can be shown/,
+      /bot-check page.*no browser window can be shown/,
     );
     expect(calls).toBe(1);
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(RateLimited);
   });
 
   it("tells an empty results page from a parser failure, and never writes a page to disk unless debugging", async () => {
+    const approved = { submittedByPerson: true };
     const empty = provider("google", async () => ({
       html: `<html><body><div id="search"><p>Your search - xqzv - did not match any documents.</p></div></body></html>`,
       status: 200,
     }));
-    await expect(empty.search({ query: "xqzv", maxResults: 5 })).rejects.toThrow(/no results for this query/);
+    await expect(empty.search({ query: "xqzv", maxResults: 5 }, approved)).rejects.toThrow(/no results for this query/);
     const odd = provider("google", async () => ({
       html: `<html><body><div id="search">${"<p>x</p>".repeat(40)}</div></body></html>`,
       status: 200,
     }));
-    await expect(odd.search({ query: "x", maxResults: 5 })).rejects.toThrow(
+    await expect(odd.search({ query: "x", maxResults: 5 }, approved)).rejects.toThrow(
       /markup may have changed; run with --log-level debug/,
     );
   });
@@ -323,7 +325,7 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
     expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
     expect(seen[0].opts.settleSelector).toBeUndefined();
     expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
-    expect(p.disclosure).toContain("approved by you");
+    expect(p.disclosure).toContain("approved or submitted by you");
   });
 
   it("says where the query is waiting when the person did not press search in time, without cooling the engine down", async () => {
@@ -342,34 +344,55 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
     );
   });
 
-  it("with a client that can ask: the person approves or edits the query, and it runs as their submission", async () => {
-    const seen: string[] = [];
+  it("a query the person approved in their client runs as their submission: no browser handoff", async () => {
+    const seen: { url: string; opts: import("../src/fetch/browser.js").RenderOptions }[] = [];
     const p = humanProvider(async (url, opts) => {
-      seen.push(url);
-      expect(opts.handToPerson).toBeUndefined(); // no browser handoff: the client asked instead
+      seen.push({ url, opts });
       return { html: GOOGLE, url: RESULTS_URL };
     });
-    p.confirmQuery = async (engine, query) => {
-      expect(engine).toBe("Google");
-      expect(query).toBe("turndown gfm");
-      return { query: "turndown gfm plugin" };
-    };
-    const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
-    expect(seen[0]).toContain("google.com/search?q=turndown%20gfm%20plugin");
+    const { results } = await p.search(
+      { query: "turndown gfm plugin", maxResults: 5 },
+      { submittedByPerson: true, incognito: true },
+    );
+    expect(seen[0].url).toContain("google.com/search?q=turndown%20gfm%20plugin");
+    expect(seen[0].opts.handToPerson).toBeUndefined(); // the client asked instead
+    expect(seen[0].opts.incognito).toBe(true); // the person's profile choice travels with the query
     expect(results.length).toBeGreaterThan(0);
-    // declined: the engine is skipped with a note, nothing is opened
-    const skipped = humanProvider(async () => {
-      throw new Error("must not render");
-    });
-    skipped.confirmQuery = async () => "declined";
-    await expect(skipped.search({ query: "x", maxResults: 5 })).rejects.toThrow(/you declined/);
-    // unavailable (client cannot ask): the browser handoff is the fallback
-    const fallback = humanProvider(async (_u, opts) => {
-      expect(opts.handToPerson?.message).toMatch(/press Enter/);
-      return { html: GOOGLE, url: RESULTS_URL, handedOff: true, handoffWhere: "a tab in your Chrome" };
-    });
-    fallback.confirmQuery = async () => "unavailable";
-    expect((await fallback.search({ query: "x", maxResults: 5 })).results.length).toBeGreaterThan(0);
+    expect(p.disclosure).toContain("approved or submitted by you");
+  });
+
+  it("Google always needs the person's act, --human-search or not: without a client that can ask, the search box is handed over", async () => {
+    const s = settings({ FEARCH_ENGINES: "google,duckduckgo", FEARCH_BROWSER: "headed" });
+    const seen: import("../src/fetch/browser.js").RenderOptions[] = [];
+    const browser = {
+      enabled: () => true,
+      headed: true,
+      browserUserAgent: "ua",
+      browserChannel: "chrome",
+      render: async (u: string, o: import("../src/fetch/browser.js").RenderOptions = {}) => {
+        seen.push(o);
+        return {
+          html: GOOGLE,
+          finalUrl: RESULTS_URL,
+          status: 200,
+          salvaged: false,
+          usedSession: false,
+          handedOff: true,
+        };
+      },
+      close: async () => {},
+    } as unknown as BrowserRenderer;
+    const p = new EngineProvider(
+      ENGINE_SPECS.google,
+      s,
+      browser,
+      new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" })),
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+      1,
+    );
+    expect(p.needsPerson).toBe(true);
+    await p.search({ query: "x", maxResults: 5 });
+    expect(seen[0].handToPerson?.message).toMatch(/press Enter/);
   });
 
   it("does not apply to DuckDuckGo lite, whose result pages robots.txt permits", async () => {
@@ -570,6 +593,8 @@ describe("google AI overview", () => {
     );
     const cache = new Cache(null);
     const reg = new SearchRegistry(s, cache, new Audit(s), engines);
+    // a client that approves each Google query as asked
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, useProfile: false, askAgain: true }));
     const out = await reg.search({ query: "what is a rest api", maxResults: 3 });
     expect(out.summary?.provider).toBe("google");
     expect(out.summary?.text).toMatch(/^A REST API/);

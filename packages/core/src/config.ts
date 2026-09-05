@@ -56,9 +56,10 @@ export interface Settings {
   /** Extension (also as auto's preferred tier): open pages in an incognito window, not the person's profile. */
   incognito: boolean;
   /**
-   * `--human-search`: Google queries are shown to the person in their MCP client (editable) and run
-   * only when accepted; where nobody can be asked that way, the search box is handed over in the
-   * browser and they press Enter. DuckDuckGo lite (robots-permitted) stays automatic.
+   * Google queries are always shown to the person in their MCP client (query, engine, profile) and
+   * run only when accepted; where nobody can be asked that way, the search box is handed over in the
+   * browser and they press Enter. `--human-search` extends the form to every query, DuckDuckGo lite
+   * (robots-permitted, otherwise automatic) included.
    */
   humanSearch: boolean;
   /** Extension only: how long to wait for the extension to show up before falling back (ms). */
@@ -277,14 +278,14 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "list",
     values: KNOWN_ENGINES,
     default: "duckduckgo",
-    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it; google needs a person on call to pass its checks and is opened as your own browsing.",
+    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it and runs without asking; every google query is shown to you first (query, engine, profile) and runs as your own browsing.",
   },
   {
     flag: "human-search",
     env: "FEARCH_HUMAN_SEARCH",
     kind: "bool",
     default: "false",
-    help: "Google: each query is shown to you in your MCP client, editable, and runs only when you accept it (in the CLI: the search box is handed over in your browser and you press Enter).",
+    help: "Show every query to you in your MCP client before it runs — editable, with the engine and profile to pick — not only Google queries, which always are (in the CLI: the search box is handed over in your browser and you press Enter).",
   },
   {
     flag: "incognito",

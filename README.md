@@ -11,10 +11,11 @@ a refusal as final. Free: no keys, no accounts.
 Two tools:
 
 - **`search`** — real search engines, honestly: DuckDuckGo lite by default (the one engine whose
-  robots.txt permits its result pages); Google when you list it, with you on call to pass any check
-  — or, with `--human-search`, with each query shown to you for approval first. `fetch_top=N`
-  inlines excerpts of the top results so one call replaces search-then-fetch. Every result names its
-  provider. Searches through Google include the page's AI Overview when present — labelled as
+  robots.txt permits its result pages), silently; Google when you list it, and then every Google
+  query is shown to you in your MCP client first — the query to edit, the engine to pick, your
+  profile or incognito — and runs only when you accept it (`--human-search` shows you every query,
+  DuckDuckGo included). `fetch_top=N` inlines excerpts of the top results so one call replaces
+  search-then-fetch. Every result names its provider. Searches through Google include the page's AI Overview when present — labelled as
   Google's unverified summary, with its sources. When no engine answers, the failure says exactly
   why and what to do next — nothing is ever silently substituted.
 - **`fetch`** — main content as markdown, **keeping code blocks and tables** (pure HTML→markdown on
@@ -104,21 +105,25 @@ crawler, and it is the one this tool will not cross.
 ## Headless until it matters
 
 `fearch` just does the right thing out of the box. Pages render in an invisible headless browser — nothing pops
-up, nothing flickers. The moment a site shows a bot check, that page opens **once** in a visible
-window for you: pass it the way you would in your own browsing, and everything continues; the
-clearance is remembered so the window doesn't come back. If nobody answers, no more windows for ten
-minutes. If nothing _can_ be shown (a server, CI, no display), the check is simply final, reported
-honestly. And if you've installed the bridge extension, your own Chrome is used instead whenever it's
-connected — no window management at all, just a tab that appears if a check ever needs you.
+up, nothing flickers. The moment a site shows a bot check, you are **asked** in your MCP client
+("A bot check appeared on example.com. Open it for you?"): say yes and that page comes to the front
+**once** — pass it the way you would in your own browsing, and everything continues; the clearance
+is remembered so it doesn't come back. Say no and that is the answer. If nobody answers, nothing is
+opened on your desk and the agent is told you are away; the next request asks again. If nothing
+_can_ be shown (a server, CI, no display), the check is simply final, reported honestly. And if
+you've installed the bridge extension, your own Chrome is used instead whenever it's connected — no
+window management at all, just a tab that appears when you say yes.
 
-Search is DuckDuckGo lite with zero flags, in every mode. Google (with its AI Overview) is a choice
-you make with `--engines google,duckduckgo`, and it needs a person on call: Google's robots.txt
-disallows result pages for crawlers, so fearch opens them only where a check can reach you — in
-your own Chrome through the extension, or in a visible window — and never headless. Two switches
-shape what that means: `--human-search` shows each Google query to you in your MCP client, editable,
-and runs it only when you accept it (from the CLI, it opens Google with the query in the box and
-**you press Enter**); `--incognito` keeps your profile (and your Google account) out of it. We
-recommend both. `--browser` pins one behaviour when you want it fixed:
+Search is DuckDuckGo lite with zero flags, in every mode, and it runs without asking. Google (with
+its AI Overview) is a choice you make with `--engines google,duckduckgo`, and every Google query is
+yours to approve: Google's robots.txt disallows result pages for crawlers, so before a query reaches
+Google you see a form in your MCP client — the query (edit it), the engine (DuckDuckGo or Google),
+your signed-in Chrome profile or incognito (incognito by default, when your own Chrome is the tier),
+and "ask me again next time" (untick it and your choice holds for the session). What you accept runs
+as your own browsing, in your own Chrome through the extension or in a visible window, never
+headless. From the CLI, or in a client that cannot show a form, Google opens with the query in the
+box and **you press Enter**. `--human-search` shows you the same form for every query, DuckDuckGo
+included; `--incognito` sets the profile default. `--browser` pins one behaviour when you want it fixed:
 
 | Mode                  | What it is                                                                       | Google if listed          |
 | --------------------- | -------------------------------------------------------------------------------- | ------------------------- |
@@ -129,8 +134,10 @@ recommend both. `--browser` pins one behaviour when you want it fixed:
 | `--browser off`       | no browser tier at all                                                           | no                        |
 
 Search tries the engines in order — and that's all: no hidden fallback ever substitutes a different
-source. A bot-check page is an engine's "no" (10-minute cooldown) unless you pass it. The tool never
-solves anything. The output says when a listed engine was skipped and why.
+source. A bot-check page is put to you to pass; if DuckDuckGo shows one and Google is listed, the
+form appears with Google preselected and the reason on it. Only where nobody can be asked at all
+(headless, no display, `--no-handoff`) does an engine sit out for five minutes after its check. The
+tool never solves anything. The output says when a listed engine was skipped and why.
 
 **The extension** opens pages in the Chrome you already have, through a bundled few-hundred-line
 extension you can read in full — auto mode prefers it whenever it's connected (`--browser extension`
@@ -159,8 +166,8 @@ that matter:
 --browser auto|headless|headed|extension|off   who renders pages (see the table above; default auto)
 --robots default|strict                        robots.txt for the tool's own fetching (default: default)
 --engines duckduckgo,google                    engine order (default: duckduckgo; google needs a person on call)
---human-search                                 Google: each query is shown to you, editable, and runs when you accept
---incognito                                    your own Chrome: an incognito window, not your profile
+--human-search                                 show every query to you before it runs (Google queries always are)
+--incognito                                    your own Chrome: default to an incognito window, not your profile
 --no-handoff                                   never surface a bot check to you; challenges are final
 --allow-domains a,b  --deny-domains c          host lists (subdomains included)
 --search off                                   no search tool at all (fetch only)
@@ -178,10 +185,10 @@ the OS trust store (on managed machines the CA is already there).
 
 ## Where queries go
 
-| Provider                  | When                                        | Notes                                                                                                                                                                     |
-| ------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DuckDuckGo lite (default) | always eligible                             | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches                                                              |
-| Google result pages       | listed in `--engines`, and a person present | its robots.txt disallows `/search` for crawlers — with you overseeing the browser it's your own browsing, and says so; `--human-search` makes each query one you approved |
+| Provider                  | When                                        | Notes                                                                                                                                                   |
+| ------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DuckDuckGo lite (default) | always eligible                             | its robots.txt permits `/lite/` (verified live); no automation clause in its Terms; DDG doesn't log searches                                            |
+| Google result pages       | listed in `--engines`, and a person present | its robots.txt disallows `/search` for crawlers — every query is shown to you first (query, engine, profile) and runs as your own browsing, and says so |
 
 No third-party search services — keyed or keyless — and no hidden fallback sources, by design: your
 queries reach an engine you chose, nothing else. Searches are cached 15 minutes. (Reading pages is a

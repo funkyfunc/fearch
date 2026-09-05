@@ -223,19 +223,14 @@ describe("query confirmation (--human-search)", () => {
       } as NodeJS.ProcessEnv),
     );
     const asked: Array<{ message: string; schema: unknown }> = [];
-    const ran: string[] = [];
+    const ran: Array<{ query: string; submitted?: boolean }> = [];
     // a fake engine that records what it was asked to run
-    const engine = (
-      state.search as unknown as { engines: Array<{ confirmQuery?: unknown; search: unknown; name: string }> }
-    ).engines.find((e) => e.name === "google")!;
+    const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(
+      (e) => e.name === "google",
+    )!;
     (state.search as unknown as { web: unknown[] }).web = [engine];
-    engine.search = async (q: { query: string }) => {
-      const answer = await (engine.confirmQuery as (e: string, q: string) => Promise<{ query: string } | string>)(
-        "Google",
-        q.query,
-      );
-      if (typeof answer === "string") throw new Error(answer);
-      ran.push(answer.query);
+    engine.search = async (q: { query: string }, o?: { submittedByPerson?: boolean }) => {
+      ran.push({ query: q.query, submitted: o?.submittedByPerson });
       return { results: [{ title: "t", url: "https://x.test/1", snippet: "s", provider: "google" }] };
     };
     const server = buildServer(state);
@@ -244,53 +239,60 @@ describe("query confirmation (--human-search)", () => {
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
     c.setRequestHandler(ElicitRequestSchema, async (req) => {
       asked.push({ message: req.params.message, schema: req.params.requestedSchema });
-      return { action: "accept" as const, content: { query: "edited query" } };
+      return { action: "accept" as const, content: { query: "edited query", engine: "google", ask_again: true } };
     });
     await c.connect(ct);
     const r = await c.callTool({ name: "search", arguments: { query: "original query" } });
     expect(asked.length).toBe(1);
-    expect(asked[0].message).toContain("Google");
-    expect(JSON.stringify(asked[0].schema)).toContain('"default":"original query"');
-    expect(ran).toEqual(["edited query"]);
+    expect(asked[0].message).toContain("Run this search as you?");
+    const schema = JSON.stringify(asked[0].schema);
+    expect(schema).toContain('"default":"original query"');
+    expect(schema).toContain('"enum":["google"]');
+    expect(schema).toContain('"ask_again"');
+    expect(schema).not.toContain("use_profile"); // no extension here: nothing to choose
+    expect(ran).toEqual([{ query: "edited query", submitted: true }]);
     expect(text(r)).toContain("https://x.test/1");
     await c.close();
   });
 });
 
-describe("handoff elicitation", () => {
-  it("notifies an elicitation-capable client when a challenge is handed to the person, and dismisses it when the handoff ends", async () => {
-    const state = fakeState();
+describe("the challenge prompt (handoff gate)", () => {
+  it("asks an elicitation-capable client before a check is surfaced; yes, no and silence are all answers", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_HANDOFF_TIMEOUT_MS: "150",
+      } as NodeJS.ProcessEnv),
+    );
     const server = buildServer(state);
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
     const seen: string[] = [];
-    let cancelled = false;
-    c.setRequestHandler(ElicitRequestSchema, async (req, extra) => {
+    let reply: "accept" | "decline" | "never" = "accept";
+    c.setRequestHandler(ElicitRequestSchema, async (req) => {
       seen.push(req.params.message);
-      // Hold the prompt open the way a real client would, until the server cancels it.
-      return await new Promise((resolve) => {
-        extra.signal.addEventListener("abort", () => {
-          cancelled = true;
-          resolve({ action: "cancel" as const });
-        });
-      });
+      if (reply === "never") return new Promise(() => {});
+      return { action: reply };
     });
     await c.connect(ct);
-
-    state.events.emit("handoff", { url: "https://www.google.com/sorry/x", where: "a browser window on your screen" });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(seen.length).toBe(1);
+    const info = { url: "https://www.google.com/sorry/x", where: "a browser window on your screen" };
+    expect(await state.gate.ask!(info)).toBe("accept");
     expect(seen[0]).toContain("www.google.com");
-    expect(seen[0]).toContain("a browser window on your screen");
-
-    state.events.emit("handoff-end", { url: "https://www.google.com/sorry/x", passed: true });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(cancelled).toBe(true);
+    expect(seen[0]).toContain("Open it for you in a browser window on your screen?");
+    reply = "decline";
+    expect(await state.gate.ask!(info)).toBe("declined");
+    reply = "never";
+    const started = Date.now();
+    expect(await state.gate.ask!(info)).toBe("unanswered");
+    expect(Date.now() - started).toBeLessThan(5000);
     await c.close();
+    await state.close();
   });
 
-  it("stays silent for clients without the elicitation capability", async () => {
+  it("is unavailable for clients without the elicitation capability, and sends them nothing", async () => {
     const state = fakeState();
     const server = buildServer(state);
     // Count outgoing server→client requests: none may be sent to a client that cannot show a prompt.
@@ -305,9 +307,7 @@ describe("handoff elicitation", () => {
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" });
     await c.connect(ct);
-    state.events.emit("handoff", { url: "https://x.test/", where: "a window" });
-    await new Promise((r) => setTimeout(r, 50));
-    state.events.emit("handoff-end", { url: "https://x.test/", passed: false });
+    expect(await state.gate.ask!({ url: "https://x.test/", where: "a window" })).toBe("unavailable");
     expect(sent).toBe(0);
     await c.close();
   });
@@ -326,15 +326,14 @@ describe("query confirmation — nobody answers", () => {
         FEARCH_HANDOFF_TIMEOUT_MS: "150",
       } as NodeJS.ProcessEnv),
     );
-    const engine = (
-      state.search as unknown as { engines: Array<{ confirmQuery?: unknown; search: unknown; name: string }> }
-    ).engines.find((e) => e.name === "google")!;
+    const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(
+      (e) => e.name === "google",
+    )!;
     (state.search as unknown as { web: unknown[] }).web = [engine];
-    const answers: unknown[] = [];
-    engine.search = async (q: { query: string }) => {
-      const answer = await (engine.confirmQuery as (e: string, q: string) => Promise<unknown>)("Google", q.query);
-      answers.push(answer);
-      throw new Error(`google: ${String(answer)}`);
+    let ran = 0;
+    engine.search = async () => {
+      ran++;
+      return { results: [] };
     };
     const server = buildServer(state);
     const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -345,8 +344,8 @@ describe("query confirmation — nobody answers", () => {
     const started = Date.now();
     const r = await c.callTool({ name: "search", arguments: { query: "quiet query" } });
     expect(Date.now() - started).toBeLessThan(5000); // the SDK's own 60 s timeout is not what bounds this
-    expect(answers, text(r)).toEqual(["unanswered"]);
-    expect(text(r)).toContain("unanswered");
+    expect(ran).toBe(0); // nothing ran under the person's name without their answer
+    expect(text(r)).toMatch(/nobody answered within \d+ s/);
     expect(text(r)).not.toContain("-32001");
     await c.close();
   });

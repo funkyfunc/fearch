@@ -23,10 +23,13 @@ import type { Audit } from "../audit.js";
 import type { AppEvents } from "../app.js";
 import type { Settings } from "../config.js";
 import {
+  askToSurface,
   AWAY_COOLDOWN_MS,
   BrowserUnavailable,
   waitForHuman,
   type BrowserTier,
+  type HandoffGate,
+  type HandoffOutcome,
   type Rendered,
   type RenderOptions,
 } from "./browser.js";
@@ -345,6 +348,7 @@ export class ExtensionRenderer implements BrowserTier {
     readonly bridge: ExtensionBridge,
     private readonly fallback?: BrowserTier,
     private readonly events?: AppEvents,
+    private readonly handoffGate?: HandoffGate,
   ) {
     this.installedHint = existsSync(extensionInstalledMarker(settings.cacheDir));
   }
@@ -416,11 +420,12 @@ export class ExtensionRenderer implements BrowserTier {
     }
     this.warnedFallback = false;
     const started = Date.now();
+    const incognito = opts.incognito ?? this.settings.incognito;
     const opened = await this.bridge.request(
       {
         op: "open",
         url: target,
-        incognito: this.settings.incognito,
+        incognito,
         settleSelector: opts.settleSelector,
         timeoutMs: this.settings.browserTimeoutMs,
       },
@@ -433,6 +438,7 @@ export class ExtensionRenderer implements BrowserTier {
     let finalUrl = opened.url ?? target;
     let handedOff = false;
     let handoffWhere: string | undefined;
+    let handoff: HandoffOutcome = "none";
     try {
       if (opts.settleUntil) {
         const deadline = Date.now() + (opts.settleUntilMs ?? 2500);
@@ -465,46 +471,66 @@ export class ExtensionRenderer implements BrowserTier {
         html = r.html;
         finalUrl = r.url;
         handedOff = r.passed;
+        handoff = r.passed ? "passed" : "timeout";
         this.audit.log(
           r.passed ? "info" : "warn",
           `${target}: ${r.passed ? "done by you; continuing" : "not done within the handoff window"}`,
         );
         this.events?.emit("handoff-end", { url: target, passed: r.passed });
-      } else if (challenged && Date.now() < this.awayUntil) {
-        this.audit.log(
-          "warn",
-          `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,
-        );
       } else if (challenged) {
         handoffWhere = "a tab in your Chrome";
-        this.audit.log(
-          "warn",
-          `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
-        );
-        this.events?.emit("handoff", { url: target, where: handoffWhere });
-        await this.bridge.request({ op: "activate", tabId });
-        const r = await waitForHuman(
-          async () => {
-            const s = await this.bridge.request({ op: "read", tabId }, 10_000);
-            return { html: s.ok ? (s.html ?? "") : "", status: 200, url: s.url ?? finalUrl };
-          },
-          (h, s, u) => !h || isChallenge(h, s, u),
-          this.settings.handoffTimeoutMs,
-        );
-        if (r.passed) {
-          html = r.html;
-          finalUrl = r.url;
-          handedOff = true;
-          this.awayUntil = 0;
-          this.audit.log("info", `challenge on ${target} passed by you; continuing`);
-        } else {
-          this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
+        // Ask first, through the client. Only when nobody can be asked does the tab itself become the
+        // question — and then an unanswered one earns the away backoff, so tabs are not activated on
+        // an empty desk every few seconds.
+        const answer = opts.handoffApproved
+          ? "accept"
+          : await askToSurface(this.handoffGate, { url: target, where: handoffWhere });
+        if (answer === "declined" || answer === "unanswered") {
+          handoff = answer;
           this.audit.log(
             "warn",
-            `challenge on ${target} not passed within the handoff window; not activating another tab for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
+            `challenge on ${target}: ${answer === "declined" ? "you declined to see it" : "nobody answered the prompt"}`,
           );
+        } else if (answer === "unavailable" && Date.now() < this.awayUntil) {
+          this.audit.log(
+            "warn",
+            `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,
+          );
+          handoffWhere = undefined;
+        } else {
+          this.audit.log(
+            "warn",
+            `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+          );
+          this.events?.emit("handoff", { url: target, where: handoffWhere });
+          await this.bridge.request({ op: "activate", tabId });
+          const r = await waitForHuman(
+            async () => {
+              const s = await this.bridge.request({ op: "read", tabId }, 10_000);
+              return { html: s.ok ? (s.html ?? "") : "", status: 200, url: s.url ?? finalUrl };
+            },
+            (h, s, u) => !h || isChallenge(h, s, u),
+            this.settings.handoffTimeoutMs,
+          );
+          if (r.passed) {
+            html = r.html;
+            finalUrl = r.url;
+            handedOff = true;
+            handoff = "passed";
+            this.awayUntil = 0;
+            this.audit.log("info", `challenge on ${target} passed by you; continuing`);
+          } else {
+            handoff = "timeout";
+            if (answer === "unavailable") {
+              this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
+              this.audit.log(
+                "warn",
+                `challenge on ${target} not passed within the handoff window; not activating another tab for ${Math.round(AWAY_COOLDOWN_MS / 60_000)} min`,
+              );
+            } else this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
+          }
+          this.events?.emit("handoff-end", { url: target, passed: r.passed });
         }
-        this.events?.emit("handoff-end", { url: target, passed: r.passed });
       }
       const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
       if (
@@ -517,16 +543,16 @@ export class ExtensionRenderer implements BrowserTier {
         url: target,
         status: 200,
         bytes: html.length,
-        provider: this.settings.incognito ? "extension (incognito)" : "extension",
+        provider: incognito ? "extension (incognito)" : "extension",
         ms: Date.now() - started,
         note:
           [
             handoffWhere
               ? handedOff
                 ? "challenge passed by the person"
-                : "challenge handed to the person, not passed"
+                : `challenge handed to the person, not passed (${handoff})`
               : "",
-            this.settings.incognito ? "" : "sent the person's session cookies (their Chrome profile)",
+            incognito ? "" : "sent the person's session cookies (their Chrome profile)",
           ]
             .filter(Boolean)
             .join("; ") || undefined,
@@ -537,10 +563,11 @@ export class ExtensionRenderer implements BrowserTier {
         status: 200,
         salvaged: false,
         // A non-incognito tab is the person's own profile — their logins ride along, so say so.
-        usedSession: !this.settings.incognito,
+        usedSession: !incognito,
         handedOff,
         handoffWhere,
-        label: this.settings.incognito ? "your Chrome, incognito" : "your Chrome",
+        handoff,
+        label: incognito ? "your Chrome, incognito" : "your Chrome",
       };
     } finally {
       // Awaited (bounded) so a tab never outlives the request that opened it.

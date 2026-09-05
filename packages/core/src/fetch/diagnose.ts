@@ -90,11 +90,35 @@ export function finalizeAfterBrowser(d: Diagnosis, attempts: string[]): Diagnosi
 }
 
 /**
- * The rendered page is still a bot check. If it was handed to the person and they did not pass it in
- * time, the next step is theirs — the same URL, retried once they are there, is the one retry that is
- * correct. Without a handoff the refusal is final as for any other challenge.
+ * The rendered page is still a bot check. If the person could be asked, the next step is theirs — the
+ * same URL, retried once they are there, is the one retry that is correct. Without a handoff the
+ * refusal is final as for any other challenge.
  */
-export function diagnoseUnpassedChallenge(attempts: string[], handoffWhere?: string): Diagnosis {
+export function diagnoseUnpassedChallenge(
+  attempts: string[],
+  handoffWhere?: string,
+  outcome: "timeout" | "declined" | "unanswered" | "none" = handoffWhere ? "timeout" : "none",
+): Diagnosis {
+  if (outcome === "declined") {
+    return {
+      kind: "captcha_or_challenge",
+      retryable: false,
+      attempts,
+      message: "The site showed a bot check and the user declined to open it.",
+      nextAction: "That is the user's answer: use a different source or ask them. " + BOOK,
+    };
+  }
+  if (outcome === "unanswered") {
+    return {
+      kind: "captcha_or_challenge",
+      retryable: true,
+      attempts,
+      message: `The site showed a bot check; the user was asked (${new Date().toISOString().slice(11, 16)} UTC) whether to open it and nobody answered, so nothing was opened.`,
+      nextAction:
+        "Tell the user a bot check is waiting on this page. When they are at the screen, call fetch again on this same URL and they will be asked again. The tool never solves checks itself. " +
+        BOOK,
+    };
+  }
   if (handoffWhere) {
     return {
       kind: "captcha_or_challenge",
