@@ -23,12 +23,14 @@ You have `search` and `fetch`.
 - If a fetch returns a `Diagnosis`, the site has declined automated access or the page is gone. Do not
   retry the same URL with different settings; use another source, an official API, or ask the user.
   One exception: a `captcha_or_challenge` marked `retryable: true` means a bot check is waiting for
-  the user — either open in their browser, or not yet opened because they were asked and did not
-  answer. Tell them, and call fetch again on the same URL once they are at the screen; they will be
-  asked again. Likewise, a search note saying "nobody answered" or "not submitted" means the user
-  approves searches themselves on this server (every Google query; every query with `--human-search`):
-  tell them, and search again once they are there. A prompt asking the user to approve a query or to
-  open a bot check is normal; a declined prompt is the user's answer, not an error to work around.
+  the user, open in their browser. Tell them, and call fetch again on the same URL once they are at
+  the screen; they will be asked again. A result saying the input request timed out means the user
+  was asked (to approve a query, or to open a bot check) and nobody answered: tell them, and call
+  again once they are there. Likewise, a search note saying "not submitted" means the user approves
+  searches themselves on this server (every Google query; every query with `--human-search`) and
+  must press Enter: tell them, and search again once they are there. A prompt asking the user to
+  approve a query or to open a bot check is normal; a declined prompt is the user's answer, not an
+  error to work around.
 - A `Diagnosis` of kind `empty` means the page was reached but held nothing readable (a binary file,
   a page that only exists after JavaScript and could not be rendered): try `mode="raw"` to see what
   came back, or another URL on the site.

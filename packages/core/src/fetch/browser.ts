@@ -31,10 +31,11 @@ import { BlockedURL, isBlockedHostname, isPrivateAddress, normalizeUrl } from ".
 
 /**
  * What became of a bot check: `passed` (the person cleared it), `timeout` (they said yes but it was
- * not passed in time), `declined` (they said no), `unanswered` (nobody answered the prompt, nothing
- * was opened), `none` (no check, or nothing could be surfaced).
+ * not passed in time), `declined` (they said no), `none` (no check, or nothing could be surfaced).
+ * A prompt nobody answers never reaches a tier: the client reports the timed-out round and the
+ * suspended render expires (see `PendingChecks`).
  */
-export type HandoffOutcome = "passed" | "timeout" | "declined" | "unanswered" | "none";
+export type HandoffOutcome = "passed" | "timeout" | "declined" | "none";
 
 export interface Rendered {
   html: string;
@@ -52,7 +53,7 @@ export interface Rendered {
   label?: string;
 }
 
-export type HandoffAnswer = "accept" | "declined" | "unanswered" | "unavailable";
+export type HandoffAnswer = "accept" | "declined" | "unavailable";
 
 /**
  * How a suspended render continues once the person has answered: `resume("accept")` brings the check
@@ -756,10 +757,7 @@ export class BrowserRenderer implements BrowserTier {
           deferred = true;
           throw new HandoffPending(answer.deferred, target, where);
         }
-        if (answer === "unanswered") {
-          handoff = "unanswered";
-          this.audit.log("warn", `challenge on ${target}: nobody answered the prompt`);
-        } else await runHandoff(answer === "declined" ? "declined" : "accept");
+        await runHandoff(answer === "declined" ? "declined" : "accept");
       }
       return finishRender();
     } finally {
@@ -878,12 +876,9 @@ export class EscalatingRenderer implements BrowserTier {
       return first;
     }
     const where = "a browser window on your screen";
-    const declined = (handoff: "declined" | "unanswered"): Rendered => {
-      this.audit.log(
-        "warn",
-        `challenge on ${url}: ${handoff === "declined" ? "you declined to see it" : "nobody answered the prompt"}; the challenge stands`,
-      );
-      return { ...first, handoffWhere: where, handoff };
+    const declined = (): Rendered => {
+      this.audit.log("warn", `challenge on ${url}: you declined to see it; the challenge stands`);
+      return { ...first, handoffWhere: where, handoff: "declined" };
     };
     /** Open the same page once in a visible window and hand it to the person. */
     const escalate = async (asked: boolean): Promise<Rendered> => {
@@ -929,12 +924,12 @@ export class EscalatingRenderer implements BrowserTier {
           this.handoffGate,
           { url, where },
           {
-            resume: (a) => (a === "accept" ? escalate(true) : Promise.resolve(declined("declined"))),
+            resume: (a) => (a === "accept" ? escalate(true) : Promise.resolve(declined())),
             cancel: async () => {},
           },
         );
     if (typeof answer === "object") throw new HandoffPending(answer.deferred, url, where);
-    if (answer === "declined" || answer === "unanswered") return declined(answer);
+    if (answer === "declined") return declined();
     return escalate(answer === "accept");
   }
 

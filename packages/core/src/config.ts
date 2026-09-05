@@ -426,7 +426,7 @@ export const FLAGS: readonly FlagSpec[] = [
     env: "FEARCH_HANDOFF_TIMEOUT_MS",
     kind: "int",
     default: "45000",
-    help: "How long a handed-off check waits for you before answering 'waiting for you; call again'.",
+    help: "How long a prompt to you, or a handed-off check, waits before the tool answers 'waiting for you; call again'.",
     tuning: true,
   },
   {

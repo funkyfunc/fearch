@@ -97,7 +97,7 @@ export function finalizeAfterBrowser(d: Diagnosis, attempts: string[]): Diagnosi
 export function diagnoseUnpassedChallenge(
   attempts: string[],
   handoffWhere?: string,
-  outcome: "timeout" | "declined" | "unanswered" | "none" = handoffWhere ? "timeout" : "none",
+  outcome: "timeout" | "declined" | "none" = handoffWhere ? "timeout" : "none",
 ): Diagnosis {
   if (outcome === "declined") {
     return {
@@ -106,17 +106,6 @@ export function diagnoseUnpassedChallenge(
       attempts,
       message: "The site showed a bot check and the user declined to open it.",
       nextAction: "That is the user's answer: use a different source or ask them. " + BOOK,
-    };
-  }
-  if (outcome === "unanswered") {
-    return {
-      kind: "captcha_or_challenge",
-      retryable: true,
-      attempts,
-      message: `The site showed a bot check; the user was asked (${new Date().toISOString().slice(11, 16)} UTC) whether to open it and nobody answered, so nothing was opened.`,
-      nextAction:
-        "Tell the user a bot check is waiting on this page. When they are at the screen, call fetch again on this same URL and they will be asked again. The tool never solves checks itself. " +
-        BOOK,
     };
   }
   if (handoffWhere) {

@@ -214,13 +214,6 @@ export class SearchRegistry {
         notes.push(`${p.name}: you declined to run this query`);
         return null;
       }
-      if (answer === "unanswered") {
-        const at = new Date().toISOString().slice(11, 16) + " UTC";
-        notes.push(
-          `${p.name}: needs your approval in your MCP client and nobody answered within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s (asked at ${at}) — search again when you are at the screen`,
-        );
-        return null;
-      }
       return this.apply(
         answer,
         p,

@@ -467,13 +467,11 @@ export class EngineProvider implements SearchProvider {
         ? "handoff is disabled (--no-handoff); with it on you would be handed the page to pass yourself"
         : rendered.handoff === "declined"
           ? "you declined to open it"
-          : rendered.handoff === "unanswered"
-            ? `you were asked at ${at} whether to open it and nobody answered — search again when you are at the screen`
-            : rendered.handoffWhere
-              ? `it was opened in ${rendered.handoffWhere} at ${at} but not passed in time — pass it there and search again`
-              : this.settings.canSurface
-                ? "the last check went unanswered, so it was not handed to you again yet"
-                : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
+          : rendered.handoffWhere
+            ? `it was opened in ${rendered.handoffWhere} at ${at} but not passed in time — pass it there and search again`
+            : this.settings.canSurface
+              ? "the last check went unanswered, so it was not handed to you again yet"
+              : "no browser window can be shown in this environment; run fearch where one can appear (or pair the extension) to pass it yourself";
       throw new RateLimited(
         `${this.name}: ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); ${hint}`,
       );

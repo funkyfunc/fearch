@@ -114,7 +114,9 @@ possible (a server, CI, no display) means no engine search — reported honestly
 ("A bot check appeared on example.com. Open it for you?"): say yes and that page comes to the front
 **once** — pass it the way you would in your own browsing, and everything continues; the clearance
 is remembered so it doesn't come back. Say no and that is the answer. If nobody answers, nothing is
-opened on your desk and the agent is told you are away; the next request asks again. If nothing
+opened on your desk: the page waits in the background for a little longer than the prompt (about 45
+s plus a minute) and then closes, the agent is told the prompt timed out, and the next request asks
+again. If nothing
 _can_ be shown (a server, CI, no display), the check is simply final, reported honestly. And if
 you've installed the bridge extension, your own Chrome is used instead whenever it's connected — no
 window management at all, just a tab that appears when you say yes.

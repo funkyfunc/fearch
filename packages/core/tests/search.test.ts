@@ -245,16 +245,11 @@ describe("registry", () => {
       expect(out.notes.join(" ")).toContain("bot-check page");
     });
 
-    it("stops at a decline or an unanswered prompt, and says which", async () => {
+    it("stops at a decline and says so; a client that cannot ask gets the search box handed over", async () => {
       const google = person("google", [r("https://x.com/g")], { needsPerson: true });
       const declined = registry([google], { DISPLAY: ":0" });
       declined.onConfirmQuery(async () => "declined");
       await expect(declined.search({ query: "q", maxResults: 1 })).rejects.toThrow(/you declined to run this query/);
-      const away = registry([google], { DISPLAY: ":0" });
-      away.onConfirmQuery(async () => "unanswered");
-      await expect(away.search({ query: "q", maxResults: 1 })).rejects.toThrow(
-        /nobody answered within \d+ s \(asked at \d\d:\d\d UTC\)/,
-      );
       expect(google.calls).toBe(0);
       // a client that cannot ask: the engine gets the query un-submitted and hands the box over itself
       const cli = registry([google], { DISPLAY: ":0" });

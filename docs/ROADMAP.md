@@ -14,6 +14,17 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **MCP SDK v2 and protocol revision 2026-07-28 (2026-09-05).** `@modelcontextprotocol/sdk` 1.x gave
+  way to `@modelcontextprotocol/server` 2.0 (`/client` in tests). The revision has no server→client
+  request channel, so the two questions to the person — the query form and "open this bot check?" —
+  now travel as `input_required` results: the tool returns the prompt with a sealed request state,
+  the client's next call carries the answer, and the render that hit the check is suspended in
+  between (`PendingChecks`; it closes itself if nobody comes back). On 2025-era connections the SDK's
+  shim turns the same result into an elicitation request, so older clients see no difference except
+  the wording of an unanswered prompt (the SDK's "timed out" rather than fearch's own line). `fearch`
+  serves both eras over stdio through `serveStdio`; a child-process test pins 2026-07-28. Retired
+  with it: the in-process "unanswered" outcome (a prompt nobody answers never reaches a tier now).
+
 - **The person decides (2026-09-04/05, from the second outside review).** Fixes first: an SSRF hole for
   hex-form IPv6-mapped literals, browser escalation on empty extraction, honest handoff messages, flag
   validation, a robots probe that can fall back to http. Then the design: a query form (query, engine,

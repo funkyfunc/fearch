@@ -628,10 +628,7 @@ export class ExtensionRenderer implements BrowserTier {
           deferred = true;
           throw new HandoffPending(answer.deferred, target, where);
         }
-        if (answer === "unanswered") {
-          handoff = "unanswered";
-          this.audit.log("warn", `challenge on ${target}: nobody answered the prompt`);
-        } else await runHandoff(answer);
+        await runHandoff(answer);
       }
       return finishRender();
     } finally {

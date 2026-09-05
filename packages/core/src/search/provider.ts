@@ -74,11 +74,11 @@ export interface QueryChoice {
 }
 
 /**
- * Resolves to the person's choice, `"declined"`, `"unanswered"` when the client could ask but nobody
- * answered in time, or `"unavailable"` when nobody can be asked this way — then the engine hands the
- * search box over in the browser instead and the person presses Enter.
+ * Resolves to the person's choice, `"declined"`, or `"unavailable"` when nobody can be asked this
+ * way — then the engine hands the search box over in the browser instead and the person presses
+ * Enter. A question that must travel as the tool's result throws `QueryFormRequired` instead.
  */
-export type ConfirmQuery = (ask: QueryAsk) => Promise<QueryChoice | "declined" | "unanswered" | "unavailable">;
+export type ConfirmQuery = (ask: QueryAsk) => Promise<QueryChoice | "declined" | "unavailable">;
 
 /**
  * Thrown by a `ConfirmQuery` whose question travels as an `input_required` result: the search stops
