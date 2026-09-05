@@ -108,6 +108,11 @@ function wireHandoffGate(app: App, server: McpServer): void {
   // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
   // and the first handoff prompt would otherwise be exactly that request.
   server.server.oninitialized = () => {
+    const c = server.server.getClientVersion();
+    app.audit.log(
+      "info",
+      `client: ${c?.name ?? "unknown"} ${c?.version ?? ""} — can show prompts: ${server.server.getClientCapabilities()?.elicitation ? "yes" : "no"}`,
+    );
     void server.server.ping().catch(() => {});
   };
   app.gate.ask = async ({ url, where, message }) => {
