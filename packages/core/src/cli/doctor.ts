@@ -65,6 +65,11 @@ export async function doctor(app: App, opts: { json?: boolean } = {}): Promise<n
         ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
       } else if (s.browser === "extension")
         warn("extension", `not connected on port ${port} — run \`fearch extension install\`; falling back meanwhile`);
+      else if (process.platform === "darwin" && s.canSurface && s.searchMode !== "off")
+        warn(
+          "extension",
+          `not connected — on macOS, Chrome brings itself forward whenever it is driven over the DevTools protocol (a Chromium bug, worse since Chrome 146), so engine searches through the background window will interrupt you; \`fearch extension install\` routes them through your own Chrome, which never does`,
+        );
       else
         ok("extension", `not connected (optional — \`fearch extension install\` routes pages through your own Chrome)`);
     } catch (e) {

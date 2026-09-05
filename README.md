@@ -146,6 +146,12 @@ form appears with Google preselected and the reason on it. Only where nobody can
 (headless, no display, `--no-handoff`) does an engine sit out for five minutes after its check. The
 tool never solves anything. The output says when a listed engine was skipped and why.
 
+**On macOS, install the extension.** Without it, engine searches run in a background window of the
+installed Chrome driven over the DevTools protocol, and current macOS Chrome (146 and later) brings
+itself forward on that traffic — a Chromium bug, not something fearch can suppress — so every search
+interrupts you. Through the extension nothing is driven over DevTools and nothing comes forward;
+`fearch doctor` warns when this applies.
+
 **The extension** opens pages in the Chrome you already have, through a bundled few-hundred-line
 extension you can read in full — auto mode prefers it whenever it's connected (`--browser extension`
 pins it). No automation flags, no DevTools — it is your

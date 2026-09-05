@@ -106,7 +106,10 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   the challenge is final. **Engine result pages are never rendered headless**: with the extension
   connected they open in the person's own Chrome; otherwise in a background window of the installed
   Chrome with the tool profile, which comes forward only when a check needs the person (or they must
-  press Enter). Where no window can be shown, no engine is available and `search` says so. The
+  press Enter). On macOS, Chrome activates itself on DevTools-protocol traffic (a Chromium bug, worse
+  since Chrome 146), so that window comes forward on every engine search; the extension tier, which
+  drives nothing over DevTools, is the quiet path there and `doctor` says so. Where no window can be
+  shown, no engine is available and `search` says so. The
   person's own Chrome via the paired bridge extension is preferred over all of this whenever it is
   connected. `headless`: never a window, no engine search, no state survives the process
   (Chromium itself is downloaded lazily on first need, never in a postinstall). `headed`: every render
