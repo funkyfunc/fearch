@@ -231,8 +231,8 @@ function queryFormSchema(
   if (names.includes("google") && other && names.length === 2)
     properties.google = {
       type: "boolean",
-      title: `Search on Google (off: ${other.label})`,
-      description: "Google's result pages are your own browsing: the query is submitted as you.",
+      title: "Search on Google",
+      description: `Off: ${other.label}.`,
       default: ask.engine === "google",
     };
   else if (names.length > 1)
@@ -245,23 +245,23 @@ function queryFormSchema(
     };
   if (ask.offerProfile) {
     const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
-    const alternative =
-      ask.profileKind === "own-chrome"
-        ? "your signed-in Chrome (logins and history ride along; Google ties the query to your account)"
-        : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows) — enable the fearch bridge extension to use your own Chrome instead";
+    // One line each: what "on" and "off" mean for this person's setup.
+    const description = noIncognito
+      ? "Not available: the fearch extension lacks incognito permission (chrome://extensions). Off: your Chrome, signed in."
+      : ask.profileKind === "own-chrome"
+        ? "On: a private window. Off: your Chrome, signed in as you."
+        : "On: a private window. Off: fearch's own Chrome profile.";
     properties.incognito = {
       type: "boolean",
       title: "Incognito",
-      description: noIncognito
-        ? `Not available: Chrome does not let the fearch extension open incognito windows (enable "Allow in Incognito" at chrome://extensions). The page opens in ${alternative}.`
-        : `On: a private window with no logins, nothing kept. Off: ${alternative}.`,
+      description,
       default: noIncognito ? false : s.incognito,
     };
   }
   properties.ask_again = {
     type: "boolean",
     title: "Ask me again next time",
-    description: "Off: keep this engine and incognito choice for the rest of the session without asking.",
+    description: "Off: keep these choices for this session.",
     default: true,
   };
   return { properties, required: ["query"], names, other };
@@ -293,7 +293,7 @@ function queryFormRequest(e: QueryFormRequired, s: Settings): { params: ElicitRe
   const { properties, required } = queryFormSchema(e.ask, s);
   return {
     params: {
-      message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
+      message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query if you like.`,
       requestedSchema: { type: "object", properties, required } as unknown as ElicitSchema,
     },
     state: { kind: "search", ask: e.ask, tried: e.tried, errors: e.errors, notes: e.notes },
@@ -324,7 +324,8 @@ function searchRound(state: SearchState, answer: QueryChoice | "declined"): Sear
 const utcNow = () => new Date().toISOString().slice(11, 16) + " UTC";
 
 /** No answer to the form: nothing ran under the person's name. `how`: what became of the prompt. */
-function unansweredSearch(engine: string, how: string): CallToolResult {
+function unansweredSearch(ask: QueryAsk, how: string): CallToolResult {
+  const engine = ask.engines.find((e) => e.name === ask.engine)?.label ?? ask.engine;
   return failure(
     `${engine}: needs your approval in your MCP client and ${how} (asked at ${utcNow()}) — search again when you are at the screen. Nothing ran.`,
   );
@@ -428,7 +429,7 @@ export function buildServer(app: App): McpServer {
         const v = inputResponse(ctx.mcpReq.inputResponses, "form");
         // `cancel` is the client's word for a prompt dismissed or timed out without a choice — not a no.
         if (v.kind !== "elicit" || v.action === "cancel")
-          return unansweredSearch(state.ask.engine, "the prompt was dismissed or timed out without an answer");
+          return unansweredSearch(state.ask, "the prompt was dismissed or timed out without an answer");
         round = searchRound(state, v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined");
       }
       for (let i = 0; i < 8; i++) {
@@ -441,9 +442,8 @@ export function buildServer(app: App): McpServer {
             requestState: await stateCodec.mint(next, ctx),
           });
         const r = await askLegacy(server, params, timeoutMs);
-        if (r === "unanswered") return unansweredSearch(out.ask.engine, `nobody answered within ${waited}`);
-        if (r.action === "cancel")
-          return unansweredSearch(out.ask.engine, "the prompt was dismissed without an answer");
+        if (r === "unanswered") return unansweredSearch(out.ask, `nobody answered within ${waited}`);
+        if (r.action === "cancel") return unansweredSearch(out.ask, "the prompt was dismissed without an answer");
         round = searchRound(next, r.action === "accept" ? choiceFrom(r.content ?? {}, next.ask) : "declined");
       }
       return failure(`search:${query}: asked ${8} times without a search running; giving up.`);

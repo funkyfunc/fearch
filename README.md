@@ -6,7 +6,9 @@
 
 Web search and page reading for agents — an MCP server and CLI that are **respectful enough to run
 at work**. It identifies itself honestly, honours `robots.txt`, waits between requests, and treats
-a refusal as final. Free: no keys, no accounts.
+a refusal as final. Free: no keys, no accounts. And your searches stay yours: the query goes from
+your own browser to the engine you chose, incognito if you like, never to an AI company's search
+endpoint that logs it against an account.
 
 Two tools:
 

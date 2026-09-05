@@ -260,7 +260,7 @@ describe("query confirmation (--human-search)", () => {
     expect(schema).not.toContain('"enum"'); // one engine: nothing to pick
     expect(schema).toContain('"ask_again"');
     expect(schema).toContain('"title":"Incognito"'); // no extension here: the alternative is fearch's own profile
-    expect(schema).toContain("fearch's own Chrome profile");
+    expect(schema).toContain("Off: fearch's own Chrome profile.");
     expect(ran).toEqual([{ query: "edited query", submitted: true }]);
     expect(text(r)).toContain("https://x.test/1");
     await c.close();
