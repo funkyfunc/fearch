@@ -3,7 +3,9 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { describe, expect, it } from "vitest";
 import { settingsFromEnv } from "../src/config.js";
-import type { PageDoc } from "../src/fetch/pipeline.js";
+import { PendingCheck, type PageDoc } from "../src/fetch/pipeline.js";
+import type { HandoffContinuation, Rendered } from "../src/fetch/browser.js";
+import { RateLimited } from "../src/search/provider.js";
 import { createApp, type App } from "../src/app.js";
 import { buildServer } from "../src/server.js";
 
@@ -255,8 +257,70 @@ describe("query confirmation (--human-search)", () => {
   });
 });
 
+/** A fetcher whose first read hits a bot check: it suspends like the browser tier does and resumes on the answer. */
+function checkingFetcher(state: App) {
+  const answers: string[] = [];
+  let cancelled = 0;
+  const fake = {
+    async fetch(url: string): Promise<PageDoc> {
+      const cont: HandoffContinuation = {
+        async resume(answer) {
+          answers.push(answer);
+          const rendered: Rendered = {
+            html: `<html><body><h1>Behind the check</h1><p>${answer === "accept" ? "You passed it." : "Still the check page."}</p></body></html>`,
+            finalUrl: url,
+            status: 200,
+            salvaged: false,
+            usedSession: false,
+            handedOff: answer === "accept",
+            handoffWhere: "a window",
+            handoff: answer === "accept" ? "passed" : "declined",
+          };
+          return rendered;
+        },
+        async cancel() {
+          cancelled++;
+        },
+      };
+      const asked = await state.gate.ask!({ url, where: "a browser window on your screen" }, cont);
+      if (typeof asked === "object")
+        throw new PendingCheck(asked.deferred, url, "a browser window on your screen", [
+          "direct: captcha_or_challenge",
+          "browser: handed to you",
+        ]);
+      return {
+        url,
+        finalUrl: url,
+        title: "No prompt",
+        source: "fake",
+        markdown: `# No prompt (${asked})`,
+        note: "",
+        robots: "allowed",
+        licence: [],
+        cached: false,
+      };
+    },
+    async completePending(url: string, r: Rendered, attempts: string[]): Promise<PageDoc> {
+      const passed = r.handoff === "passed";
+      return {
+        url,
+        finalUrl: url,
+        title: "Behind the check",
+        source: passed ? "browser, bot check cleared in your browser" : "browser",
+        markdown: passed ? "# Behind the check\n\nYou passed it." : "# Still the check page",
+        note: attempts.join("; "),
+        robots: "allowed",
+        licence: [],
+        cached: false,
+      };
+    },
+  };
+  (state as unknown as { fetcher: unknown }).fetcher = fake;
+  return { answers, cancelled: () => cancelled };
+}
+
 describe("the challenge prompt (handoff gate)", () => {
-  it("asks an elicitation-capable client before a check is surfaced; yes, no and silence are all answers", async () => {
+  it("asks an elicitation-capable client before a check is surfaced; yes and no resume the render, silence leaves it waiting", async () => {
     const state = createApp(
       settingsFromEnv({
         FEARCH_NO_CACHE: "1",
@@ -265,6 +329,7 @@ describe("the challenge prompt (handoff gate)", () => {
         FEARCH_HANDOFF_TIMEOUT_MS: "150",
       } as NodeJS.ProcessEnv),
     );
+    const fetcher = checkingFetcher(state);
     const server = buildServer(state);
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
@@ -277,22 +342,37 @@ describe("the challenge prompt (handoff gate)", () => {
       return { action: reply };
     });
     await c.connect(ct);
-    const info = { url: "https://www.google.com/sorry/x", where: "a browser window on your screen" };
-    expect(await state.gate.ask!(info)).toBe("accept");
+    const url = "https://www.google.com/sorry/x";
+    const yes = await c.callTool({ name: "fetch", arguments: { url } });
+    expect(seen).toHaveLength(1);
     expect(seen[0]).toContain("www.google.com");
     expect(seen[0]).toContain("Open it for you in a browser window on your screen?");
+    expect(fetcher.answers).toEqual(["accept"]);
+    expect(text(yes)).toContain("You passed it.");
+    expect(text(yes)).toContain("handed to you");
+    expect(state.pending.size).toBe(0);
+
     reply = "decline";
-    expect(await state.gate.ask!(info)).toBe("declined");
+    const no = await c.callTool({ name: "fetch", arguments: { url } });
+    expect(fetcher.answers).toEqual(["accept", "declined"]);
+    expect(text(no)).toContain("Still the check page");
+
     reply = "never";
     const started = Date.now();
-    expect(await state.gate.ask!(info)).toBe("unanswered");
+    const silence = await c.callTool({ name: "fetch", arguments: { url } });
     expect(Date.now() - started).toBeLessThan(5000);
+    expect(silence.isError).toBe(true);
+    expect(fetcher.answers).toHaveLength(2); // nothing resumed without an answer
+    expect(state.pending.size).toBe(1); // the check waits for the person until it expires
     await c.close();
-    await state.close();
+    await state.close(); // shutdown cancels what is still waiting
+    expect(state.pending.size).toBe(0);
+    expect(fetcher.cancelled()).toBe(1);
   });
 
   it("is unavailable for clients without the elicitation capability, and sends them nothing", async () => {
     const state = fakeState();
+    const fetcher = checkingFetcher(state);
     const server = buildServer(state);
     // Count outgoing server→client requests: none may be sent to a client that cannot show a prompt.
     const inner = server.server as unknown as { request: (...a: unknown[]) => Promise<unknown> };
@@ -306,14 +386,17 @@ describe("the challenge prompt (handoff gate)", () => {
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" });
     await c.connect(ct);
-    expect(await state.gate.ask!({ url: "https://x.test/", where: "a window" })).toBe("unavailable");
+    const r = await c.callTool({ name: "fetch", arguments: { url: "https://x.test/" } });
+    expect(text(r)).toContain("No prompt (unavailable)");
+    expect(fetcher.answers).toEqual([]);
     expect(sent).toBe(0);
+    expect(state.pending.size).toBe(0);
     await c.close();
   });
 });
 
 describe("query confirmation — nobody answers", () => {
-  it("gives up after the handoff timeout and says so in plain words, then falls through", async () => {
+  it("gives up after the handoff timeout without running anything under the person's name", async () => {
     const state = createApp(
       settingsFromEnv({
         FEARCH_NO_CACHE: "1",
@@ -344,8 +427,90 @@ describe("query confirmation — nobody answers", () => {
     const r = await c.callTool({ name: "search", arguments: { query: "quiet query" } });
     expect(Date.now() - started).toBeLessThan(5000); // the SDK's own 60 s timeout is not what bounds this
     expect(ran).toBe(0); // nothing ran under the person's name without their answer
-    expect(text(r)).toMatch(/nobody answered within \d+ s/);
-    expect(text(r)).not.toContain("-32001");
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatch(/timed out/i); // the SDK's legacy shim words it; the instructions explain it
+    await c.close();
+  });
+
+  it("declining the form is an answer: the search stops with a note, nothing runs", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_ENGINES: "google",
+        FEARCH_BROWSER: "headed",
+      } as NodeJS.ProcessEnv),
+    );
+    const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(
+      (e) => e.name === "google",
+    )!;
+    (state.search as unknown as { web: unknown[] }).web = [engine];
+    let ran = 0;
+    engine.search = async () => {
+      ran++;
+      return { results: [] };
+    };
+    const c = await elicitingClient(state, async () => ({ action: "decline" as const }));
+    const r = await c.callTool({ name: "search", arguments: { query: "private query" } });
+    expect(ran).toBe(0);
+    expect(text(r)).toMatch(/declined/i);
+    await c.close();
+  });
+});
+
+async function elicitingClient(
+  state: App,
+  answer: (req: {
+    params: { message: string; requestedSchema: unknown };
+  }) => Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>,
+): Promise<Client> {
+  const server = buildServer(state);
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await server.connect(st);
+  const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
+  c.setRequestHandler("elicitation/create", answer as never);
+  await c.connect(ct);
+  return c;
+}
+
+describe("query confirmation across engines", () => {
+  it("a bot check on the first engine asks about the second with the reason; the first is not run twice", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_ENGINES: "duckduckgo,google",
+        FEARCH_BROWSER: "headed",
+      } as NodeJS.ProcessEnv),
+    );
+    const engines = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines;
+    const ddg = engines.find((e) => e.name === "duckduckgo")!;
+    const google = engines.find((e) => e.name === "google")!;
+    (state.search as unknown as { web: unknown[] }).web = [ddg, google];
+    const ran: string[] = [];
+    ddg.search = async () => {
+      ran.push("duckduckgo");
+      throw new RateLimited("DuckDuckGo showed its bot check");
+    };
+    google.search = async (q: { query: string }) => {
+      ran.push(`google:${q.query}`);
+      return { results: [{ title: "t", url: "https://x.test/g", snippet: "s", provider: "google" }] };
+    };
+    const asked: Array<{ message: string; schema: string }> = [];
+    const c = await elicitingClient(state, async (req) => {
+      asked.push({ message: req.params.message, schema: JSON.stringify(req.params.requestedSchema) });
+      return { action: "accept", content: { query: "second query", google: true, ask_again: true } };
+    });
+    const r = await c.callTool({ name: "search", arguments: { query: "first query" } });
+    expect(asked).toHaveLength(1);
+    expect(asked[0].message).toContain("bot check");
+    expect(asked[0].schema).not.toContain("Search on Google"); // DuckDuckGo was tried: only Google is left to offer
+    expect(asked[0].schema).toContain('"default":"first query"');
+    expect(ran).toEqual(["duckduckgo", "google:second query"]);
+    expect(text(r)).toContain("https://x.test/g");
+    expect(text(r)).toContain("bot check"); // the first engine's failure is still reported
     await c.close();
   });
 });

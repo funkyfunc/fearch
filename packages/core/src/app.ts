@@ -6,6 +6,7 @@ import { Cache } from "./cache.js";
 import { settingsFromEnv, type Settings } from "./config.js";
 import { BrowserRenderer, EscalatingRenderer, type BrowserTier, type HandoffGate } from "./fetch/browser.js";
 import { ExtensionBridge, ExtensionRenderer, loadOrCreateExtensionToken } from "./fetch/extension.js";
+import { PendingChecks } from "./fetch/pending.js";
 import { Fetcher } from "./fetch/pipeline.js";
 import { RobotsChecker } from "./fetch/robots.js";
 import { Transport } from "./fetch/transport.js";
@@ -27,6 +28,8 @@ export interface App {
   events: AppEvents;
   /** How a bot check is put to the person before anything is surfaced; the MCP server installs the ask. */
   gate: HandoffGate;
+  /** Renders suspended on a bot check, waiting for the person's answer on the next tool call. */
+  pending: PendingChecks;
   audit: Audit;
   cache: Cache;
   transport: Transport;
@@ -41,6 +44,8 @@ export interface App {
 export function createApp(settings: Settings = settingsFromEnv()): App {
   const events = new EventEmitter() as AppEvents;
   const gate: HandoffGate = {};
+  // A suspended check outlives the prompt's own timeout by a little, so a late "yes" still lands.
+  const pending = new PendingChecks(settings.handoffTimeoutMs + 60_000);
   const audit = new Audit(settings);
   const cache = new Cache(settings.noCache ? null : `${settings.cacheDir}/cache-v2.sqlite`);
   const transport = new Transport(settings, audit);
@@ -74,6 +79,7 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
     settings,
     events,
     gate,
+    pending,
     audit,
     cache,
     transport,
@@ -83,6 +89,7 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
     search,
     browser,
     async close() {
+      await pending.close();
       await browser.close();
       cache.close();
     },

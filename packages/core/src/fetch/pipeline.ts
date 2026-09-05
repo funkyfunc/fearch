@@ -12,7 +12,7 @@ import type { Audit } from "../audit.js";
 import type { Cache, CachedPage } from "../cache.js";
 import { domainMatches, type Settings } from "../config.js";
 import { BudgetExceeded, type Politeness } from "../politeness.js";
-import { BrowserUnavailable, type BrowserTier } from "./browser.js";
+import { BrowserUnavailable, HandoffPending, type BrowserTier, type Rendered } from "./browser.js";
 import {
   BROWSER_RETRY_KINDS,
   diagnose,
@@ -70,6 +70,22 @@ export class DiagnosedError extends Error {
 export interface FetchOptions {
   raw?: boolean;
   via?: "archive";
+}
+
+/**
+ * The browser hit a bot check and the question went to the person as an `input_required` result:
+ * the render is suspended under `id` until their answer resumes it (`completePending`).
+ */
+export class PendingCheck extends Error {
+  constructor(
+    readonly id: string,
+    readonly url: string,
+    readonly where: string,
+    readonly attempts: string[],
+  ) {
+    super(`bot check on ${url} is waiting for the person (${id})`);
+    this.name = "PendingCheck";
+  }
 }
 
 const PAGE_FRESH_MS = 24 * 3600_000;
@@ -456,6 +472,7 @@ export class Fetcher {
       );
     } catch (e) {
       if (e instanceof BlockedURL) throw e;
+      if (e instanceof HandoffPending) throw new PendingCheck(e.id, url, e.where, attempts);
       if (e instanceof BrowserUnavailable) this.audit.log("warn", `browser tier unavailable: ${e.message}`);
       const why =
         e instanceof BrowserUnavailable
@@ -463,6 +480,25 @@ export class Fetcher {
           : `error (${(e as Error).message.split("\n")[0]})`;
       throw new DiagnosedError(url, { ...plain, attempts: [...attempts, `browser: ${why}`] });
     }
+    return this.afterRender(url, rendered, attempts);
+  }
+
+  /**
+   * Finish a page whose render was suspended on a bot check and has now been resumed with the
+   * person's answer: the same judgement as any browser render, then extraction and the cache.
+   */
+  async completePending(url: string, rendered: Rendered, attempts: string[]): Promise<PageDoc> {
+    const fetched = this.afterRender(url, rendered, attempts);
+    const decision = await this.checkRobots(url);
+    return this.finish(url, {
+      fetched,
+      robots: robotsLabel(decision),
+      signals: licenceSignals(fetched.headers, fetchedText(fetched)),
+    });
+  }
+
+  /** What a browser render came back with, judged: a passed check is content; a standing one is a refusal. */
+  private afterRender(url: string, rendered: Rendered, attempts: string[]): Fetched {
     // "cleared", not "passed by you": a managed challenge can clear itself in a real Chrome with
     // nobody at the keyboard, and the tool cannot tell the two apart.
     const provenance = [

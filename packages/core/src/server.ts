@@ -1,12 +1,25 @@
 /** The MCP server: two tools, `search` and `fetch`, over the app. stdio framing lives in cli.ts. */
 
-import { McpServer, SdkError, SdkErrorCode, type ServerContext } from "@modelcontextprotocol/server";
+import {
+  createRequestStateCodec,
+  inputRequired,
+  inputResponse,
+  McpServer,
+  type CallToolResult,
+  type InputRequiredResult,
+  type ServerContext,
+} from "@modelcontextprotocol/server";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { App } from "./app.js";
 import { personPresent, type Settings } from "./config.js";
 import { describeError } from "./errors.js";
+import { PendingCheckGone } from "./fetch/pending.js";
+import { PendingCheck, type PageDoc } from "./fetch/pipeline.js";
 import { READ_MODES, readDocument, type ReadOptions } from "./fetch/read.js";
 import { attachExcerpts } from "./search/excerpt.js";
+import { QueryFormRequired, type QueryAsk, type QueryChoice } from "./search/provider.js";
+import type { SearchRound } from "./search/registry.js";
 import { renderResults } from "./search/render.js";
 
 /**
@@ -15,7 +28,7 @@ import { renderResults } from "./search/render.js";
  */
 export function searchDescription(s: Settings): string {
   const posture = personPresent(s)
-    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — opened in their own Chrome or a window of it, never headless, at human pace, with any bot check put to them first and opened for them to pass${s.engines.includes("google") ? "; each Google query is shown to them for approval before it runs" : ""}${s.humanSearch ? " (every query, with --human-search)" : ""}; the tool never solves anything. A note saying nobody answered means the user is away: tell them, and search again when they are back.`
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — opened in their own Chrome or a window of it, never headless, at human pace, with any bot check put to them first and opened for them to pass${s.engines.includes("google") ? "; each Google query is shown to them for approval before it runs" : ""}${s.humanSearch ? " (every query, with --human-search)" : ""}; the tool never solves anything. A result saying the input request timed out means the user is away: tell them, and search again when they are back.`
     : s.canSurface
       ? `Engine result pages (DuckDuckGo lite) open in a browser window on the person's machine; bot checks are final here (handoff off).`
       : `No search engine is available on this server: engine result pages open only in a browser a person could see, and none can be shown here (headless, or no display). Search calls fail with that reason; work from URLs you already have.`;
@@ -93,57 +106,6 @@ type ToolResult = { content: [{ type: "text"; text: string }]; isError?: true };
 const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
 const failure = (t: string): ToolResult => ({ content: [{ type: "text", text: t }], isError: true });
 
-/**
- * Before a bot check is brought in front of the person (a window comes forward, a Chrome tab
- * activates), ask them through their MCP client. The prompt is the test of presence: yes surfaces
- * the check and starts the wait; no is their answer; no reply within the handoff timeout means they
- * are away, and nothing is opened on their desk. URL-mode elicitation is deliberately NOT used: it
- * would navigate the person to a fresh copy of the page in their default browser, whose cookie jar
- * is not the one the render is waiting on. Clients without elicitation get the pre-prompt behaviour
- * (the tab or window is surfaced straight away).
- */
-function wireHandoffGate(app: App, server: McpServer): void {
-  // Burn outgoing request id 0 on a ping: the SDK's cancellation handler treats `requestId: 0` as
-  // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
-  // and the first handoff prompt would otherwise be exactly that request.
-  server.server.oninitialized = () => {
-    const c = server.server.getClientVersion();
-    app.audit.log(
-      "info",
-      `client: ${c?.name ?? "unknown"} ${c?.version ?? ""} — can show prompts: ${server.server.getClientCapabilities()?.elicitation ? "yes" : "no"}`,
-    );
-    void server.server.ping().catch(() => {});
-  };
-  app.gate.ask = async ({ url, where, message }) => {
-    if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
-    let host = url;
-    try {
-      host = new URL(url).host;
-    } catch {
-      // keep the raw url
-    }
-    try {
-      // Raw request rather than elicitInput(): clients predating the form/url split declare the
-      // legacy empty `elicitation: {}` capability (spec: equivalent to form-only), which the SDK's
-      // helper would reject.
-      const r = await server.server.request(
-        {
-          method: "elicitation/create",
-          params: {
-            message: `${message ?? `A bot check appeared on ${host}.`} Open it for you in ${where}? You then pass it yourself; the tool never solves checks.`,
-            requestedSchema: { type: "object", properties: {} },
-          },
-        },
-        { timeout: app.settings.handoffTimeoutMs },
-      );
-      return r.action === "accept" ? "accept" : "declined";
-    } catch (e) {
-      if (e instanceof SdkError && e.code === SdkErrorCode.RequestTimeout) return "unanswered";
-      return "unavailable";
-    }
-  };
-}
-
 /** MCP progress notifications, when the client asked for them (`_meta.progressToken`). Never throws. */
 function progressReporter(ctx: ServerContext, total: number): (progress: number, message: string) => Promise<void> {
   const token = ctx.mcpReq._meta?.progressToken;
@@ -161,92 +123,6 @@ function progressReporter(ctx: ServerContext, total: number): (progress: number,
 }
 
 /**
- * The query form: before a query reaches an engine that needs the person's act (Google always;
- * every engine with `--human-search`), ask through their client — the query in an editable field,
- * the engine with the one about to run preselected, their profile or incognito when their own Chrome
- * is the tier, and whether to ask again. What they accept runs as their submission; a decline skips
- * the engine. Clients without elicitation get "unavailable", and the engine hands the search box
- * over in the browser instead.
- */
-function wireQueryForm(app: App, server: McpServer): void {
-  app.search.onConfirmQuery(async (ask) => {
-    if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
-    const names = ask.engines.map((e) => e.name);
-    const other = ask.engines.find((e) => e.name !== "google");
-    const properties: Record<string, unknown> = {
-      query: { type: "string", title: "Query", default: ask.query },
-    };
-    // Two engines, one of them Google: a checkbox says it all. More than two (none today): a picker.
-    if (names.includes("google") && other && names.length === 2)
-      properties.google = {
-        type: "boolean",
-        title: `Search on Google (off: ${other.label})`,
-        description: "Google's result pages are your own browsing: the query is submitted as you.",
-        default: ask.engine === "google",
-      };
-    else if (names.length > 1)
-      properties.engine = {
-        type: "string",
-        title: "Engine",
-        enum: names,
-        enumNames: ask.engines.map((e) => e.label),
-        default: names.includes(ask.engine) ? ask.engine : names[0],
-      };
-    if (ask.offerProfile) {
-      const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
-      const alternative =
-        ask.profileKind === "own-chrome"
-          ? "your signed-in Chrome (logins and history ride along; Google ties the query to your account)"
-          : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows) — enable the fearch bridge extension to use your own Chrome instead";
-      properties.incognito = {
-        type: "boolean",
-        title: "Incognito",
-        description: noIncognito
-          ? `Not available: Chrome does not let the fearch extension open incognito windows (enable "Allow in Incognito" at chrome://extensions). The page opens in ${alternative}.`
-          : `On: a private window with no logins, nothing kept. Off: ${alternative}.`,
-        default: noIncognito ? false : app.settings.incognito,
-      };
-    }
-    properties.ask_again = {
-      type: "boolean",
-      title: "Ask me again next time",
-      description: "Off: keep this engine and incognito choice for the rest of the session without asking.",
-      default: true,
-    };
-    let r;
-    try {
-      r = await server.server.request(
-        {
-          method: "elicitation/create",
-          params: {
-            message: `${ask.reason ? `${ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
-            requestedSchema: { type: "object", properties, required: ["query"] },
-          },
-        },
-        // The same patience as a handed-off bot check: an unattended agent gets an answer, not a hang.
-        { timeout: app.settings.handoffTimeoutMs },
-      );
-    } catch (e) {
-      if (e instanceof SdkError && e.code === SdkErrorCode.RequestTimeout) return "unanswered";
-      throw e;
-    }
-    if (r.action !== "accept") return "declined";
-    const c = (r.content ?? {}) as Record<string, unknown>;
-    const query = typeof c.query === "string" && c.query.trim() ? c.query.trim() : ask.query;
-    const engine =
-      typeof c.google === "boolean"
-        ? c.google
-          ? "google"
-          : (other?.name ?? ask.engine)
-        : typeof c.engine === "string" && names.includes(c.engine)
-          ? c.engine
-          : ask.engine;
-    const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
-    return { query, engine, incognito: !noIncognito && c.incognito === true, askAgain: c.ask_again !== false };
-  });
-}
-
-/**
  * Served in the `initialize` result: clients that honour `instructions` (Claude Code, Claude Desktop)
  * put this into the model's context, so the guidance in docs/AGENT-GUIDANCE.md reaches every agent
  * without anyone pasting it. Built from the effective settings, like the tool descriptions.
@@ -260,7 +136,7 @@ export function serverInstructions(s: Settings): string {
   if (s.searchMode === "off") lines.push("Search is disabled on this server: work from URLs the user gives you.");
   else if (personPresent(s))
     lines.push(
-      `Searches on this server are the user's own browsing${s.engines.includes("google") ? "; every Google query is shown to them for approval first" : ""}${s.humanSearch ? " (every query is)" : ""}. A search note saying nobody answered or not submitted means the user is away or must press Enter: tell them, and search again when they are there. A declined prompt is their answer, not an error to work around.`,
+      `Searches on this server are the user's own browsing${s.engines.includes("google") ? "; every Google query is shown to them for approval first" : ""}${s.humanSearch ? " (every query is)" : ""}. A result saying the input request timed out, or a search note saying not submitted, means the user is away or must press Enter: tell them, and search again when they are there. A declined prompt is their answer, not an error to work around.`,
     );
   else if (!s.canSurface)
     lines.push("No search engine is available here (no browser window can be shown); search fails with that reason.");
@@ -270,13 +146,180 @@ export function serverInstructions(s: Settings): string {
   return lines.join("\n\n");
 }
 
+/**
+ * What a tool call is waiting on across a round trip: the person's answer to the query form, or to
+ * the "open this bot check?" prompt. Sealed by the codec (HMAC, TTL) and echoed back by the client.
+ */
+type RoundState =
+  | { kind: "search"; ask: QueryAsk; tried: string[]; errors: string[]; notes: string[] }
+  | { kind: "check"; id: string; url: string; target: string; where: string; attempts: string[] };
+
+const stateCodec = createRequestStateCodec<RoundState>({ key: randomBytes(32), ttlSeconds: 900 });
+
+/** The client of this call can show a prompt: declared at the 2025 handshake, or in the 2026 per-request envelope. */
+function canAsk(server: McpServer, ctx: ServerContext): boolean {
+  const legacy = server.server.getClientCapabilities()?.elicitation;
+  const modern = (ctx.mcpReq.envelope as { clientCapabilities?: { elicitation?: unknown } } | undefined)
+    ?.clientCapabilities?.elicitation;
+  return !!(legacy ?? modern);
+}
+
+/**
+ * Questions to the person travel as `input_required` results: the tool returns the prompt, the
+ * client's next call carries the answer. A bot check therefore cannot be asked about from inside a
+ * render — the render registers how to continue and is suspended (see `PendingChecks`), and the
+ * next call resumes it. Clients that cannot show a prompt get the pre-prompt behaviour (the tab or
+ * window is surfaced straight away; the search box is handed over for Google).
+ */
+function wireGate(app: App, server: McpServer): void {
+  // Burn outgoing request id 0 on a ping: the SDK's cancellation handler treats `requestId: 0` as
+  // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
+  // on a 2025-era connection the shim's first elicitation would otherwise be exactly that request.
+  server.server.oninitialized = () => {
+    const c = server.server.getClientVersion();
+    app.audit.log(
+      "info",
+      `client: ${c?.name ?? "unknown"} ${c?.version ?? ""} — can show prompts: ${server.server.getClientCapabilities()?.elicitation ? "yes" : "no"}`,
+    );
+    void server.server.ping().catch(() => {});
+  };
+  app.gate.ask = async (_info, cont) => {
+    if (!app.gate.askable || !cont) return "unavailable";
+    return { deferred: app.pending.register(_info, cont) };
+  };
+  app.search.onConfirmQuery(async (ask) => {
+    if (!app.gate.askable) return "unavailable";
+    throw new QueryFormRequired(ask);
+  });
+}
+
+/**
+ * The query form: the query in an editable field, "Search on Google" when there is a choice, incognito
+ * or not when a browser profile is in play, and whether to ask again.
+ */
+function queryFormSchema(
+  ask: QueryAsk,
+  s: Settings,
+): {
+  properties: Record<string, unknown>;
+  required: string[];
+  names: string[];
+  other?: { name: string; label: string };
+} {
+  const names = ask.engines.map((e) => e.name);
+  const other = ask.engines.find((e) => e.name !== "google");
+  const properties: Record<string, unknown> = {
+    query: { type: "string", title: "Query", default: ask.query },
+  };
+  // Two engines, one of them Google: a checkbox says it all. More than two (none today): a picker.
+  if (names.includes("google") && other && names.length === 2)
+    properties.google = {
+      type: "boolean",
+      title: `Search on Google (off: ${other.label})`,
+      description: "Google's result pages are your own browsing: the query is submitted as you.",
+      default: ask.engine === "google",
+    };
+  else if (names.length > 1)
+    properties.engine = {
+      type: "string",
+      title: "Engine",
+      enum: names,
+      enumNames: ask.engines.map((e) => e.label),
+      default: names.includes(ask.engine) ? ask.engine : names[0],
+    };
+  if (ask.offerProfile) {
+    const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
+    const alternative =
+      ask.profileKind === "own-chrome"
+        ? "your signed-in Chrome (logins and history ride along; Google ties the query to your account)"
+        : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows) — enable the fearch bridge extension to use your own Chrome instead";
+    properties.incognito = {
+      type: "boolean",
+      title: "Incognito",
+      description: noIncognito
+        ? `Not available: Chrome does not let the fearch extension open incognito windows (enable "Allow in Incognito" at chrome://extensions). The page opens in ${alternative}.`
+        : `On: a private window with no logins, nothing kept. Off: ${alternative}.`,
+      default: noIncognito ? false : s.incognito,
+    };
+  }
+  properties.ask_again = {
+    type: "boolean",
+    title: "Ask me again next time",
+    description: "Off: keep this engine and incognito choice for the rest of the session without asking.",
+    default: true,
+  };
+  return { properties, required: ["query"], names, other };
+}
+
+/** The person's form answer, read back into a choice; anything malformed falls back to what was proposed. */
+function choiceFrom(content: Record<string, unknown>, ask: QueryAsk): QueryChoice {
+  const { names, other } = queryFormSchema(ask, { incognito: false } as Settings);
+  const c = content;
+  const query = typeof c.query === "string" && c.query.trim() ? c.query.trim() : ask.query;
+  const engine =
+    typeof c.google === "boolean"
+      ? c.google
+        ? "google"
+        : (other?.name ?? ask.engine)
+      : typeof c.engine === "string" && names.includes(c.engine)
+        ? c.engine
+        : ask.engine;
+  const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
+  return { query, engine, incognito: !noIncognito && c.incognito === true, askAgain: c.ask_again !== false };
+}
+
+type ElicitSchema = Parameters<typeof inputRequired.elicit>[0]["requestedSchema"];
+
+/** The form as an `input_required` result; the search resumes on the next call with the answer. */
+async function askQueryForm(e: QueryFormRequired, s: Settings, ctx: ServerContext): Promise<InputRequiredResult> {
+  const { properties, required } = queryFormSchema(e.ask, s);
+  return inputRequired({
+    inputRequests: {
+      form: inputRequired.elicit({
+        message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
+        requestedSchema: { type: "object", properties, required } as unknown as ElicitSchema,
+      }),
+    },
+    requestState: await stateCodec.mint(
+      { kind: "search", ask: e.ask, tried: e.tried, errors: e.errors, notes: e.notes },
+      ctx,
+    ),
+  });
+}
+
+/** The "open this bot check?" prompt as an `input_required` result; the render resumes on the next call. */
+async function askToOpen(e: PendingCheck, target: string, ctx: ServerContext): Promise<InputRequiredResult> {
+  let host = e.url;
+  try {
+    host = new URL(e.url).host;
+  } catch {
+    // keep the raw url
+  }
+  return inputRequired({
+    inputRequests: {
+      open: inputRequired.elicit({
+        message: `A bot check appeared on ${host}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
+        requestedSchema: { type: "object", properties: {} } as unknown as ElicitSchema,
+      }),
+    },
+    requestState: await stateCodec.mint(
+      { kind: "check", id: e.id, url: e.url, target, where: e.where, attempts: e.attempts },
+      ctx,
+    ),
+  });
+}
+
 export function buildServer(app: App): McpServer {
   const server = new McpServer(
     { name: "fearch", version: app.settings.version },
-    { instructions: serverInstructions(app.settings) },
+    {
+      instructions: serverInstructions(app.settings),
+      requestState: { verify: stateCodec.verify },
+      // A prompt waits as long as a handed-off check does: an unattended agent gets an answer, not a hang.
+      inputRequired: { roundTimeoutMs: app.settings.handoffTimeoutMs, maxRounds: 8 },
+    },
   );
-  wireHandoffGate(app, server);
-  wireQueryForm(app, server);
+  wireGate(app, server);
 
   server.registerTool(
     "search",
@@ -286,24 +329,40 @@ export function buildServer(app: App): McpServer {
       inputSchema: z.object(SEARCH_INPUT),
       annotations: READ_ONLY,
     },
-    async (args, ctx) => {
+    async (args, ctx): Promise<CallToolResult | InputRequiredResult> => {
+      app.gate.askable = canAsk(server, ctx);
       const query = args.query.trim();
       const progress = progressReporter(ctx, 1 + args.fetch_top);
+      // Re-entered with the person's answer to the form the previous round returned.
+      const state = ctx.mcpReq.requestState<RoundState>();
+      const round: SearchRound = {};
+      if (state?.kind === "search") {
+        const v = inputResponse(ctx.mcpReq.inputResponses, "form");
+        round.answer =
+          v.kind === "elicit" && v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined";
+        round.skip = state.tried;
+        round.priorErrors = state.errors;
+        round.priorNotes = state.notes;
+      }
       try {
-        const outcome = await app.search.search({
-          query,
-          maxResults: args.max_results,
-          recency: args.recency,
-          site: args.site?.trim() || undefined,
-          allowedDomains: args.allowed_domains,
-          blockedDomains: args.blocked_domains,
-        });
+        const outcome = await app.search.search(
+          {
+            query,
+            maxResults: args.max_results,
+            recency: args.recency,
+            site: args.site?.trim() || undefined,
+            allowedDomains: args.allowed_domains,
+            blockedDomains: args.blocked_domains,
+          },
+          round,
+        );
         await progress(1, `search done via ${outcome.providers.map((p) => p.name).join("+") || "cache"}`);
         await attachExcerpts(app, outcome.results, query, args.fetch_top, (done, r) =>
           progress(1 + done, `excerpt ${done}/${args.fetch_top}: ${r.url}`),
         );
         return text(renderResults(query, outcome));
       } catch (e) {
+        if (e instanceof QueryFormRequired) return askQueryForm(e, app.settings, ctx);
         return failure(describeError(`search:${query}`, e));
       }
     },
@@ -317,7 +376,8 @@ export function buildServer(app: App): McpServer {
       inputSchema: z.object(FETCH_INPUT),
       annotations: READ_ONLY,
     },
-    async (args, ctx) => {
+    async (args, ctx): Promise<CallToolResult | InputRequiredResult> => {
+      app.gate.askable = canAsk(server, ctx);
       const targets = [...(args.url ? [args.url] : []), ...(args.urls ?? [])].map((u) => u.trim()).filter(Boolean);
       if (!targets.length) return failure("Provide `url` or `urls`.");
       if (targets.length > MAX_URLS_PER_CALL) return failure(`At most ${MAX_URLS_PER_CALL} URLs per call.`);
@@ -336,11 +396,25 @@ export function buildServer(app: App): McpServer {
         includeLinks: args.include_links,
         contextChars: args.context_chars,
       };
+      // Re-entered with the person's answer to "open this bot check?": that one page resumes its
+      // suspended render; the others are read normally (finished ones come from the cache).
+      const state = ctx.mcpReq.requestState<RoundState>();
+      let resumed: { target: string; doc: Promise<PageDoc> } | null = null;
+      if (state?.kind === "check") {
+        const v = inputResponse(ctx.mcpReq.inputResponses, "open");
+        const answer = v.kind === "elicit" && v.action === "accept" ? "accept" : "declined";
+        const { id, url, attempts } = state;
+        resumed = {
+          target: state.target,
+          doc: app.pending.resume(id, answer).then((r) => app.fetcher.completePending(url, r, attempts)),
+        };
+        resumed.doc.catch(() => {}); // surfaced where it is read, not as an unhandled rejection
+      }
       const readOne = async (url: string) => {
-        const doc = await app.fetcher.fetch(url, {
-          raw: options.mode === "raw",
-          via: args.archive ? "archive" : undefined,
-        });
+        const doc =
+          resumed && resumed.target === url
+            ? await resumed.doc
+            : await app.fetcher.fetch(url, { raw: options.mode === "raw", via: args.archive ? "archive" : undefined });
         return readDocument(doc, options);
       };
       const progress = progressReporter(ctx, targets.length);
@@ -351,6 +425,8 @@ export function buildServer(app: App): McpServer {
           await progress(1, `fetched ${targets[0]}`);
           return text(out);
         } catch (e) {
+          if (e instanceof PendingCheck) return askToOpen(e, targets[0], ctx);
+          if (e instanceof PendingCheckGone) return failure(e.message);
           return failure(describeError(targets[0], e));
         }
       }
@@ -364,6 +440,9 @@ export function buildServer(app: App): McpServer {
           }
         }),
       );
+      const waiting = outcomes.findIndex((r) => r.status === "rejected" && r.reason instanceof PendingCheck);
+      if (waiting >= 0)
+        return askToOpen((outcomes[waiting] as PromiseRejectedResult).reason as PendingCheck, targets[waiting], ctx);
       const parts = outcomes.map((r, i) =>
         r.status === "fulfilled" ? r.value : `# (failed) ${targets[i]}\n${describeError(targets[i], r.reason)}\n`,
       );

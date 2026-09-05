@@ -19,6 +19,7 @@ import type { BrowserTier } from "../fetch/browser.js";
 import type { EngineProvider } from "./engines.js";
 import {
   dedupe,
+  QueryFormRequired,
   RateLimited,
   SearchError,
   type ConfirmQuery,
@@ -28,6 +29,18 @@ import {
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
+
+/** A search call re-entered with what the person answered in the form, and what earlier rounds already tried. */
+export interface SearchRound {
+  noCache?: boolean;
+  /** The person's answer to the form the previous round returned; consumed by the first engine that needs one. */
+  answer?: QueryChoice | "declined";
+  /** Engines already run in earlier rounds of this call, with their failure lines. */
+  skip?: string[];
+  priorErrors?: string[];
+  /** What earlier rounds noted (an engine's bot check, a cooldown): shown with this round's results. */
+  priorNotes?: string[];
+}
 
 export interface SearchOutcome {
   /** The query that actually ran — the person may have edited it in the form. */
@@ -95,7 +108,7 @@ export class SearchRegistry {
     return this.settings.humanSearch || !!p.needsPerson;
   }
 
-  async search(q: SearchQuery, opts: { noCache?: boolean } = {}): Promise<SearchOutcome> {
+  async search(q: SearchQuery, opts: SearchRound = {}): Promise<SearchOutcome> {
     if (this.settings.searchMode === "off") {
       throw new SearchError(
         "Search is disabled on this server (--search off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
@@ -121,8 +134,8 @@ export class SearchRegistry {
       };
     }
 
-    const errors: string[] = [];
-    const notes: string[] = [];
+    const errors: string[] = [...(opts.priorErrors ?? [])];
+    const notes: string[] = [...(opts.priorNotes ?? [])];
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
     let summary: EngineSummary | undefined;
@@ -141,7 +154,8 @@ export class SearchRegistry {
     let query = q.query;
     let submittedByPerson = false;
     let incognito: boolean | undefined;
-    const tried = new Set<string>();
+    const tried = new Set<string>(opts.skip ?? []);
+    let answer = opts.answer;
 
     const runOne = async (p: SearchProvider): Promise<SearchResult[]> => {
       const cd = this.cooldown.get(p.name);
@@ -223,7 +237,36 @@ export class SearchRegistry {
       if (results.length >= q.maxResults) break;
       if (tried.has(p.name)) continue;
       if (this.mustAsk(p) && this.confirm) {
-        const chosen = await ask(p);
+        let chosen: SearchProvider | null;
+        if (answer !== undefined) {
+          // The form from the previous round of this call, answered.
+          const a = answer;
+          answer = undefined;
+          if (a === "declined") {
+            notes.push(`${p.name}: you declined to run this query`);
+            chosen = null;
+          } else {
+            chosen = this.apply(
+              a,
+              p,
+              providers,
+              (i) => (incognito = i),
+              (s) => (query = s),
+              () => (submittedByPerson = true),
+            );
+          }
+        } else {
+          try {
+            chosen = await ask(p);
+          } catch (e) {
+            if (e instanceof QueryFormRequired) {
+              e.tried = [...tried];
+              e.errors = [...errors];
+              e.notes = [...notes];
+            }
+            throw e;
+          }
+        }
         if (!chosen) break;
         p = chosen;
       } else if (this.remembered?.engine === p.name) {

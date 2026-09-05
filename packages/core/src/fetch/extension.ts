@@ -26,6 +26,7 @@ import {
   askToSurface,
   AWAY_COOLDOWN_MS,
   BrowserUnavailable,
+  HandoffPending,
   waitForHuman,
   type BrowserTier,
   type HandoffGate,
@@ -465,6 +466,55 @@ export class ExtensionRenderer implements BrowserTier {
     let handedOff = false;
     let handoffWhere: string | undefined;
     let handoff: HandoffOutcome = "none";
+    let deferred = false;
+    let closed = false;
+    // Awaited (bounded) so a tab never outlives the request that opened it — or, for a render
+    // suspended on a bot check, the answer that resumes it.
+    const closeTab = async () => {
+      if (closed) return;
+      closed = true;
+      await this.bridge.request({ op: "close", tabId }, 5_000);
+    };
+    /** The end of a render: the private-address check, the audit line, the result. */
+    const finishRender = (): Rendered => {
+      const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
+      if (
+        !this.settings.allowPrivate &&
+        (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))
+      ) {
+        throw new BlockedURL(`browser navigation ended at a private address (${finalUrl})`);
+      }
+      this.audit.record({
+        url: target,
+        status: 200,
+        bytes: html.length,
+        provider: incognito ? "extension (incognito)" : "extension",
+        ms: Date.now() - started,
+        note:
+          [
+            handoffWhere
+              ? handedOff
+                ? "challenge passed by the person"
+                : `challenge handed to the person, not passed (${handoff})`
+              : "",
+            incognito ? "" : "sent the person's session cookies (their Chrome profile)",
+          ]
+            .filter(Boolean)
+            .join("; ") || undefined,
+      });
+      return {
+        html,
+        finalUrl,
+        status: 200,
+        salvaged: false,
+        // A non-incognito tab is the person's own profile — their logins ride along, so say so.
+        usedSession: !incognito,
+        handedOff,
+        handoffWhere,
+        handoff,
+        label: incognito ? "your Chrome, incognito" : "your Chrome",
+      };
+    };
     try {
       if (opts.settleUntil) {
         const deadline = Date.now() + (opts.settleUntilMs ?? 2500);
@@ -505,30 +555,26 @@ export class ExtensionRenderer implements BrowserTier {
         this.events?.emit("handoff-end", { url: target, passed: r.passed });
       } else if (challenged) {
         handoffWhere = "a tab in your Chrome";
-        // Ask first, through the client. Only when nobody can be asked does the tab itself become the
-        // question — and then an unanswered one earns the away backoff, so tabs are not activated on
-        // an empty desk every few seconds.
-        const answer = opts.handoffApproved
-          ? "accept"
-          : await askToSurface(this.handoffGate, { url: target, where: handoffWhere });
-        if (answer === "declined" || answer === "unanswered") {
-          handoff = answer;
-          this.audit.log(
-            "warn",
-            `challenge on ${target}: ${answer === "declined" ? "you declined to see it" : "nobody answered the prompt"}`,
-          );
-        } else if (answer === "unavailable" && Date.now() < this.awayUntil) {
-          this.audit.log(
-            "warn",
-            `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,
-          );
-          handoffWhere = undefined;
-        } else {
+        const where = handoffWhere;
+        const runHandoff = async (answer: "accept" | "declined" | "unavailable"): Promise<void> => {
+          if (answer === "declined") {
+            handoff = "declined";
+            this.audit.log("warn", `challenge on ${target}: you declined to see it`);
+            return;
+          }
+          if (answer === "unavailable" && Date.now() < this.awayUntil) {
+            this.audit.log(
+              "warn",
+              `challenge on ${target}: not handed to you — the last one went unanswered (${Math.ceil((this.awayUntil - Date.now()) / 60_000)} min left)`,
+            );
+            handoffWhere = undefined;
+            return;
+          }
           this.audit.log(
             "warn",
             `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
           );
-          this.events?.emit("handoff", { url: target, where: handoffWhere });
+          this.events?.emit("handoff", { url: target, where });
           await this.bridge.request({ op: "activate", tabId });
           const r = await waitForHuman(
             async () => {
@@ -548,6 +594,8 @@ export class ExtensionRenderer implements BrowserTier {
           } else {
             handoff = "timeout";
             if (answer === "unavailable") {
+              // Nobody could be asked first, so the tab itself was the question and it went
+              // unanswered: no more tabs activated on an empty desk for a while.
               this.awayUntil = Date.now() + AWAY_COOLDOWN_MS;
               this.audit.log(
                 "warn",
@@ -556,48 +604,38 @@ export class ExtensionRenderer implements BrowserTier {
             } else this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
           }
           this.events?.emit("handoff-end", { url: target, passed: r.passed });
+        };
+        // Ask first, through the client. When the question travels as an input_required result the
+        // render is suspended, tab open, until the client's next call brings the answer.
+        const answer = opts.handoffApproved
+          ? "accept"
+          : await askToSurface(
+              this.handoffGate,
+              { url: target, where },
+              {
+                resume: async (a) => {
+                  try {
+                    await runHandoff(a);
+                    return finishRender();
+                  } finally {
+                    await closeTab();
+                  }
+                },
+                cancel: closeTab,
+              },
+            );
+        if (typeof answer === "object") {
+          deferred = true;
+          throw new HandoffPending(answer.deferred, target, where);
         }
+        if (answer === "unanswered") {
+          handoff = "unanswered";
+          this.audit.log("warn", `challenge on ${target}: nobody answered the prompt`);
+        } else await runHandoff(answer);
       }
-      const finalHost = new URL(finalUrl).hostname.replace(/^\[|\]$/g, "");
-      if (
-        !this.settings.allowPrivate &&
-        (isBlockedHostname(finalHost) || (isIP(finalHost) && isPrivateAddress(finalHost)))
-      ) {
-        throw new BlockedURL(`browser navigation ended at a private address (${finalUrl})`);
-      }
-      this.audit.record({
-        url: target,
-        status: 200,
-        bytes: html.length,
-        provider: incognito ? "extension (incognito)" : "extension",
-        ms: Date.now() - started,
-        note:
-          [
-            handoffWhere
-              ? handedOff
-                ? "challenge passed by the person"
-                : `challenge handed to the person, not passed (${handoff})`
-              : "",
-            incognito ? "" : "sent the person's session cookies (their Chrome profile)",
-          ]
-            .filter(Boolean)
-            .join("; ") || undefined,
-      });
-      return {
-        html,
-        finalUrl,
-        status: 200,
-        salvaged: false,
-        // A non-incognito tab is the person's own profile — their logins ride along, so say so.
-        usedSession: !incognito,
-        handedOff,
-        handoffWhere,
-        handoff,
-        label: incognito ? "your Chrome, incognito" : "your Chrome",
-      };
+      return finishRender();
     } finally {
-      // Awaited (bounded) so a tab never outlives the request that opened it.
-      await this.bridge.request({ op: "close", tabId }, 5_000);
+      if (!deferred) await closeTab();
     }
   }
 

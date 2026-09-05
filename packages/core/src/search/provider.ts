@@ -80,6 +80,21 @@ export interface QueryChoice {
  */
 export type ConfirmQuery = (ask: QueryAsk) => Promise<QueryChoice | "declined" | "unanswered" | "unavailable">;
 
+/**
+ * Thrown by a `ConfirmQuery` whose question travels as an `input_required` result: the search stops
+ * here, the tool returns the form, and the client's next call brings the answer. `tried`, `errors` and
+ * `notes` let the next round skip the engines already run and keep what they said.
+ */
+export class QueryFormRequired extends Error {
+  tried: string[] = [];
+  errors: string[] = [];
+  notes: string[] = [];
+  constructor(readonly ask: QueryAsk) {
+    super(`the query needs the person's approval (${ask.engine})`);
+    this.name = "QueryFormRequired";
+  }
+}
+
 /** What the registry tells a provider about the person's part in this query. */
 export interface SearchOptions {
   /** The person approved (and may have edited) this query in their client: it runs as their submission. */
