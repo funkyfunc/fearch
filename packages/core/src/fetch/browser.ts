@@ -113,7 +113,7 @@ export interface RenderOptions {
   /** The person already said yes to seeing this check (an outer tier asked); do not ask again. */
   handoffApproved?: boolean;
   /**
-   * Headed only: open the window minimized and bring it forward only when the person says yes to a
+   * Headed only: open the window off-screen and bring it forward only when the person says yes to a
    * check (or must press Enter). Engine result pages use this — a real browser, not a visible one.
    */
   background?: boolean;
@@ -138,6 +138,14 @@ export class BrowserUnavailable extends Error {
     this.name = "BrowserUnavailable";
   }
 }
+
+/**
+ * Where a background engine window lives: far to the left of any display. Chrome clamps the value
+ * (to about −2800 on a two-display Mac) but keeps the window out of sight; `ONSCREEN` is where a
+ * handoff brings it.
+ */
+const OFFSCREEN = { left: -10_000, top: 0, width: 1200, height: 800 };
+const ONSCREEN = { left: 120, top: 80, width: 1200, height: 800 };
 
 const BLOCKED_RESOURCES = new Set(["image", "media", "font", "manifest", "texttrack", "eventsource", "websocket"]);
 
@@ -293,11 +301,9 @@ export class BrowserRenderer implements BrowserTier {
           `Chromium could not be launched (${lastErr}). Run: npx playwright install chromium`,
         );
       }
-      // Read the UA the browser sends, for doctor and the log; it is never set or edited.
-      const probe = await this.browser.newContext();
-      const page = await probe.newPage();
-      this.userAgent = await page.evaluate(() => navigator.userAgent);
-      await probe.close();
+      // Read the UA the browser sends, for doctor and the log; it is never set or edited. Asked of
+      // the browser itself over CDP — opening a page for it would flash a window in headed mode.
+      this.userAgent = await this.reportedUserAgent(this.browser);
       this.audit.log(
         "info",
         `browser tier ready (${this.channel} ${this.browser.version()}, ${headless ? "headless" : "headed"}); UA: ${this.userAgent}; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}` +
@@ -418,6 +424,23 @@ export class BrowserRenderer implements BrowserTier {
     return ctx;
   }
 
+  private async reportedUserAgent(browser: Browser): Promise<string> {
+    try {
+      this.browserCdp ??= await (
+        browser as Browser & { newBrowserCDPSession(): Promise<CDPSession> }
+      ).newBrowserCDPSession();
+      const v = (await this.browserCdp.send("Browser.getVersion")) as { userAgent: string };
+      if (v.userAgent) return v.userAgent;
+    } catch {
+      // not Chromium over CDP: fall through to a page
+    }
+    const probe = await browser.newContext();
+    const page = await probe.newPage();
+    const ua = await page.evaluate(() => navigator.userAgent);
+    await probe.close();
+    return ua;
+  }
+
   private async browserContextIds(): Promise<string[] | null> {
     try {
       this.browserCdp ??= await (
@@ -431,42 +454,62 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   /**
-   * A page whose window is born minimised: `Target.createTarget` with `windowState: "minimized"`
-   * (experimental in CDP), so nothing flashes on screen. Falls back to a visible page minimised right
-   * after creation when the browser does not take the parameter.
+   * A page whose window is born off-screen: `Target.createTarget` with a far-left position, in normal
+   * state. Measured 2026-09-05 on macOS: a window created *minimised* still flashes (the minimise is
+   * animated), an off-screen one never shows. Falls back to a visible page moved off-screen right
+   * after creation when the browser does not take the position.
    */
   private async newBackgroundPage(ctx: BrowserContext): Promise<Page> {
     const id = this.contextIds.get(ctx);
     if (id && this.browserCdp) {
       try {
         const opened = ctx.waitForEvent("page", { timeout: 10_000 });
-        await this.browserCdp.send("Target.createTarget", {
+        const { targetId } = (await this.browserCdp.send("Target.createTarget", {
           url: "about:blank",
           browserContextId: id,
           newWindow: true,
           background: true,
-          windowState: "minimized",
-        });
-        return await opened;
+          ...OFFSCREEN,
+        })) as { targetId: string };
+        const page = await opened;
+        try {
+          const w = (await this.browserCdp.send("Browser.getWindowForTarget", { targetId })) as {
+            bounds: { left?: number; top?: number; width?: number; windowState?: string };
+          };
+          this.audit.log("debug", `engine window created at ${JSON.stringify(w.bounds)}`);
+        } catch {
+          // informational only
+        }
+        return page;
       } catch (e) {
         this.audit.log(
           "debug",
-          `minimised window creation unavailable (${(e as Error).message.split("\n")[0]}); minimising after`,
+          `off-screen window creation unavailable (${(e as Error).message.split("\n")[0]}); moving it after`,
         );
       }
     }
     const page = await ctx.newPage();
-    await this.setWindowState(page, "minimized");
+    await this.setWindowBounds(page, OFFSCREEN);
     return page;
   }
 
-  /** Minimise or restore the window a page lives in (CDP; best effort — a headless page has no window). */
-  private async setWindowState(page: Page, state: "minimized" | "normal"): Promise<void> {
+  /** Bring a background window in front of the person: on-screen, normal state, focused. */
+  private async showWindow(page: Page): Promise<void> {
+    await this.setWindowBounds(page, ONSCREEN);
+    await this.setWindowBounds(page, { windowState: "normal" });
+    await page.bringToFront().catch(() => {});
+  }
+
+  /** Move or restore the window a page lives in (CDP; best effort — a headless page has no window). */
+  private async setWindowBounds(
+    page: Page,
+    bounds: { left?: number; top?: number; width?: number; height?: number; windowState?: "minimized" | "normal" },
+  ): Promise<void> {
     if (!this.headed) return;
     try {
       const cdp = await page.context().newCDPSession(page);
       const { windowId } = (await cdp.send("Browser.getWindowForTarget")) as { windowId: number };
-      await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+      await cdp.send("Browser.setWindowBounds", { windowId, bounds });
       await cdp.detach();
     } catch {
       // not Chromium, or the window is gone: the page still renders
@@ -544,8 +587,7 @@ export class BrowserRenderer implements BrowserTier {
         handoffWhere = "a browser window on your screen";
         this.audit.log("warn", `${target}: handed to you (${opts.handToPerson.message})`);
         this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
-        await this.setWindowState(page, "normal");
-        await page.bringToFront().catch(() => {});
+        await this.showWindow(page);
         const p = page;
         const ready = opts.handToPerson.ready;
         const r = await waitForHuman(
@@ -588,8 +630,7 @@ export class BrowserRenderer implements BrowserTier {
             `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
           );
           this.events?.emit("handoff", { url: target, where: handoffWhere });
-          await this.setWindowState(page, "normal");
-          await page.bringToFront().catch(() => {});
+          await this.showWindow(page);
           const p = page;
           const r = await waitForHuman(
             async () => ({ html: await p.content().catch(() => ""), status: 200, url: p.url() }),
