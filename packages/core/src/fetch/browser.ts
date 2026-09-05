@@ -95,6 +95,8 @@ export interface BrowserTier {
   profileChoice?(): "own-chrome" | "tool-profile" | null;
   /** Whether Chrome lets the extension open incognito windows ("Allow in Incognito"); undefined until known. */
   incognitoAllowed?(): boolean | undefined;
+  /** Get ready to answer `profileChoice`/`incognitoAllowed` (the extension tier waits for its first poll). */
+  prepare?(): Promise<void>;
   render(url: string, opts?: RenderOptions): Promise<Rendered>;
   close(): Promise<void>;
 }

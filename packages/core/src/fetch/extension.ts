@@ -375,6 +375,16 @@ export class ExtensionRenderer implements BrowserTier {
     return this.bridge.extensionInfo()?.incognitoAllowed;
   }
 
+  /** Before the first form: give a paired extension its connect window, so its incognito answer is known. */
+  async prepare(): Promise<void> {
+    if (!this.installedHint || this.bridge.connected()) return;
+    try {
+      await this.bridge.waitForConnection(this.settings.extensionConnectMs);
+    } catch {
+      // no bridge: the fallback tier answers instead
+    }
+  }
+
   /** Auto mode, an ordinary page read: the fallback tier is the first try (see the class comment). */
   private headlessFirst(opts: RenderOptions): boolean {
     return this.settings.browser === "auto" && !!this.fallback && !opts.session && !opts.handToPerson;

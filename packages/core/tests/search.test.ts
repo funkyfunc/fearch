@@ -274,6 +274,16 @@ describe("registry", () => {
       await reg.search({ query: "q", maxResults: 1 });
       expect(asks).toBe(1);
       expect(ddg.seen[0]).toMatchObject({ submitted: true });
+      // "ask me again: off" holds even here — the checkbox must mean what it says
+      const quiet = registry([ddg], { DISPLAY: ":0", FEARCH_HUMAN_SEARCH: "1" });
+      let quietAsks = 0;
+      quiet.onConfirmQuery(async (a) => {
+        quietAsks++;
+        return { query: a.query, engine: a.engine, useProfile: false, askAgain: false };
+      });
+      await quiet.search({ query: "q1", maxResults: 1 });
+      await quiet.search({ query: "q2", maxResults: 1 });
+      expect(quietAsks).toBe(1);
     });
   });
 

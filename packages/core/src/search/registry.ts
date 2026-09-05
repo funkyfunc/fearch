@@ -86,10 +86,13 @@ export class SearchRegistry {
     });
   }
 
-  /** Does this query need the person's say-so before it reaches `p`? */
+  /**
+   * Does this query need the person's say-so before it reaches `p`? "Ask me again: off" holds for the
+   * engine they chose, `--human-search` or not; any other engine the chain reaches is a new decision.
+   */
   private mustAsk(p: SearchProvider): boolean {
-    if (this.settings.humanSearch) return true;
-    return !!p.needsPerson && this.remembered?.engine !== p.name;
+    if (this.remembered?.engine === p.name) return false;
+    return this.settings.humanSearch || !!p.needsPerson;
   }
 
   async search(q: SearchQuery, opts: { noCache?: boolean } = {}): Promise<SearchOutcome> {
@@ -134,8 +137,7 @@ export class SearchRegistry {
       const i = providers.findIndex((p) => p.name === this.remembered!.engine);
       if (i > 0) providers.unshift(...providers.splice(i, 1));
     }
-    const profileKind = this.browser?.profileChoice?.() ?? null;
-    const offerProfile = profileKind !== null;
+    const offerProfile = (this.browser?.profileChoice?.() ?? null) !== null;
     let query = q.query;
     let submittedByPerson = false;
     let incognito: boolean | undefined;
@@ -182,12 +184,14 @@ export class SearchRegistry {
     /** Ask the person before `p` runs. Returns the provider to run (they may have chosen another), or null to stop. */
     const ask = async (p: SearchProvider): Promise<SearchProvider | null> => {
       const reason = errors.length ? `${errors[errors.length - 1].split("\n")[0].slice(0, 200)}.` : undefined;
+      await this.browser?.prepare?.();
+      const profileKind = this.browser?.profileChoice?.() ?? null;
       const answer = await this.confirm!({
         query,
         engine: p.name,
         engines: providers.filter((x) => !tried.has(x.name)).map((x) => ({ name: x.name, label: x.label ?? x.name })),
         reason,
-        offerProfile,
+        offerProfile: profileKind !== null,
         profileKind: profileKind ?? undefined,
         incognitoAllowed: profileKind === "own-chrome" ? this.browser?.incognitoAllowed?.() : undefined,
       });
