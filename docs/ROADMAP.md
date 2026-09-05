@@ -20,7 +20,7 @@ is not a goal to get through them.
   profile, ask-again) before any Google query and, with `--human-search`, before every query; a
   prompt before any bot check is surfaced (yes opens it, no is the answer, silence means away and the
   next request asks again); the engine cooldown only where nobody can be asked (5 min). Then engine
-  result pages moved out of headless entirely — the person's Chrome, or a minimised window of the
+  result pages moved out of headless entirely — the person's Chrome, or a background window of the
   installed Chrome — which retired the headless tier's `HeadlessChrome`→`Chrome` UA rewrite; `search`
   is unavailable where no window can be shown and says so. The server now sends MCP `instructions`
   built from the settings, so `docs/AGENT-GUIDANCE.md` reaches every client without pasting.

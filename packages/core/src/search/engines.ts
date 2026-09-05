@@ -8,7 +8,7 @@
  * crawlers, not a browser someone oversees). Robots-permitted engines are still verified live before
  * every request.
  *
- * Engine pages are never opened headless: the person's own Chrome via the extension, or a minimised
+ * Engine pages are never opened headless: the person's own Chrome via the extension, or a background
  * window of the installed Chrome with the tool profile. One page per search call, ≥3 s between
  * requests to an engine. A challenge page is the engine's "no": the person is asked whether to see
  * it and may pass it themselves — the tool never does; where nobody can be asked, the provider stops
@@ -353,7 +353,7 @@ export class EngineProvider implements SearchProvider {
           ? "your own Chrome, incognito"
           : "your own Chrome, your profile"
         : ch === "auto"
-          ? `a minimised window of your installed Chrome (${incognito ? "fresh incognito context" : "tool profile"}; a check brings it forward for you)`
+          ? `a background window of your installed Chrome (${incognito ? "fresh incognito context" : "tool profile"}; a check brings it forward for you)`
           : this.settings.browser === "headed"
             ? "the visible browser window"
             : "a browser window";
@@ -377,7 +377,7 @@ export class EngineProvider implements SearchProvider {
 
   /**
    * An engine page is opened only in a browser a person could see — their own Chrome, or a window of
-   * the installed Chrome (minimised until a check needs them) — never headless. So a display (or the
+   * the installed Chrome (background until a check needs them) — never headless. So a display (or the
    * extension) is needed for any engine; Google additionally needs the person on call for its checks.
    */
   eligible(): boolean {

@@ -109,7 +109,7 @@ crawler, and it is the one this tool will not cross.
 `fearch` just does the right thing out of the box. Pages that need JavaScript render in an invisible headless
 browser — nothing pops up, nothing flickers. Search engine result pages never do: they are your
 browsing, so they open in your own Chrome (through the bridge extension) or, without it, in a
-minimised window of your installed Chrome that only comes forward when a check needs you. No window
+background window of your installed Chrome, opened once when Chrome starts and kept off to the side (it may show briefly then), that only comes forward when a check needs you. No window
 possible (a server, CI, no display) means no engine search — reported honestly, never faked headless. The moment a site shows a bot check, you are **asked** in your MCP client
 ("A bot check appeared on example.com. Open it for you?"): say yes and that page comes to the front
 **once** — pass it the way you would in your own browsing, and everything continues; the clearance
@@ -132,13 +132,13 @@ headless. From the CLI, or in a client that cannot show a form, Google opens wit
 box and **you press Enter**. `--human-search` shows you the same form for every query, DuckDuckGo
 included; `--incognito` sets the profile default. `--browser` pins one behaviour when you want it fixed:
 
-| Mode                  | What it is                                                                                     | Search                                     |
-| --------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `fearch` (auto)       | pages headless; checks and engine pages in your Chrome (extension) or a minimised window of it | DuckDuckGo; Google if listed (you approve) |
-| `--browser headless`  | never a window; challenges are final — for servers and CI                                      | none (engine pages are never headless)     |
-| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                                      | DuckDuckGo; Google if listed (you approve) |
-| `--browser extension` | your own Chrome only (a minimised window of the installed Chrome while disconnected)           | DuckDuckGo; Google if listed (you approve) |
-| `--browser off`       | no browser tier at all                                                                         | none                                       |
+| Mode                  | What it is                                                                                      | Search                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `fearch` (auto)       | pages headless; checks and engine pages in your Chrome (extension) or a background window of it | DuckDuckGo; Google if listed (you approve) |
+| `--browser headless`  | never a window; challenges are final — for servers and CI                                       | none (engine pages are never headless)     |
+| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                                       | DuckDuckGo; Google if listed (you approve) |
+| `--browser extension` | your own Chrome only (a background window of the installed Chrome while disconnected)           | DuckDuckGo; Google if listed (you approve) |
+| `--browser off`       | no browser tier at all                                                                          | none                                       |
 
 Search tries the engines in order — and that's all: no hidden fallback ever substitutes a different
 source. A bot-check page is put to you to pass; if DuckDuckGo shows one and Google is listed, the

@@ -64,7 +64,7 @@ rewrote that to `Chrome/<v>` — the "headless + stock Chrome UA → results" ro
 edited string. Re-measured 2026-09-03 against DuckDuckGo lite: unedited `HeadlessChrome` UA → 202
 bot-check; edited → results; edited + token → 202; the plain `fearch/` client → 202. The edit hid an
 automation signal, contrary to POLICY, and was removed: engine result pages now open in a real
-window (the person's Chrome, or a minimised window of the installed Chrome), never headless, and
+window (the person's Chrome, or a background window of the installed Chrome), never headless, and
 where no window can be shown there is no engine search.
 
 **Using the person's own Chrome instead (considered, rejected).** Driving the user's real, logged-in

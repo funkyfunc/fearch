@@ -104,7 +104,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   reappear; unanswered, no further windows are opened (and no further tabs activated in the person's
   Chrome) for 10 minutes; where no window can be shown,
   the challenge is final. **Engine result pages are never rendered headless**: with the extension
-  connected they open in the person's own Chrome; otherwise in a minimised window of the installed
+  connected they open in the person's own Chrome; otherwise in a background window of the installed
   Chrome with the tool profile, which comes forward only when a check needs the person (or they must
   press Enter). Where no window can be shown, no engine is available and `search` says so. The
   person's own Chrome via the paired bridge extension is preferred over all of this whenever it is
@@ -221,7 +221,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   Web Bot Auth (signed requests) is **not** used: a locally-run open-source tool cannot hold a private
   signing key without publishing it, which would be extracted and revoked.
 - **Search engines.** Engine result pages are opened only in a browser a person could see (their own
-  Chrome, or a minimised window of the installed Chrome), never headless; with no display there is no
+  Chrome, or a background window of the installed Chrome), never headless; with no display there is no
   engine search. With no person on call for checks, the only engine result pages this server requests
   are DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live
   before every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).

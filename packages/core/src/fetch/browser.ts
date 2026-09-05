@@ -140,9 +140,8 @@ export class BrowserUnavailable extends Error {
 }
 
 /**
- * Where a background engine window lives: far to the left of any display. Chrome clamps the value
- * (to about −2800 on a two-display Mac) but keeps the window out of sight; `ONSCREEN` is where a
- * handoff brings it.
+ * Where the background engine window lives: as far left as Chrome will put it (it clamps the value so
+ * a strip stays on some display). `ONSCREEN` is where a handoff brings it.
  */
 const OFFSCREEN = { left: -10_000, top: 0, width: 1200, height: 800 };
 const ONSCREEN = { left: 120, top: 80, width: 1200, height: 800 };
@@ -199,10 +198,12 @@ export async function waitForHuman(
 
 export class BrowserRenderer implements BrowserTier {
   private browser: Browser | null = null;
-  /** A browser-level CDP session (Chromium only), for creating windows already minimised. */
+  /** A browser-level CDP session (Chromium only), for creating windows and tabs off to the side. */
   private browserCdp: CDPSession | null = null;
   /** Playwright contexts → their CDP browserContextId, learned by diffing `Target.getBrowserContexts`. */
   private readonly contextIds = new WeakMap<BrowserContext, string>();
+  /** The blank tab that keeps the one background window alive; engine pages open as tabs beside it. */
+  private anchor: Page | null = null;
   private plain: BrowserContext | null = null;
   private profile: BrowserContext | null = null;
   private launching: Promise<Browser> | null = null;
@@ -252,11 +253,14 @@ export class BrowserRenderer implements BrowserTier {
   /** Free the ~200 MB browser process after inactivity; it relaunches lazily (state is on disk). */
   private scheduleIdleClose(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    // A background engine window is opened once per browser session and may show on some display
+    // arrangements, so the browser that holds one stays up for 20 min of idle rather than 3.
+    const engineWindow = !!this.anchor && !this.anchor.isClosed();
     this.idleTimer = setTimeout(
       () => {
         if (this.inFlight === 0) void this.close();
       },
-      this.headed ? 180_000 : 60_000,
+      this.headed ? (engineWindow ? 20 * 60_000 : 180_000) : 60_000,
     );
     this.idleTimer.unref();
   }
@@ -408,7 +412,7 @@ export class BrowserRenderer implements BrowserTier {
   /**
    * `browser.newContext()` plus the CDP id Chromium gave it, found by diffing the context list around
    * the call (Playwright does not expose the id). Best effort: without it a background page is
-   * created visible and minimised a moment later.
+   * created visible and moved aside a moment later.
    */
   private async trackedContext(
     browser: Browser,
@@ -454,37 +458,48 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   /**
-   * A page whose window is born off-screen: `Target.createTarget` with a far-left position, in normal
-   * state. Measured 2026-09-05 on macOS: a window created *minimised* still flashes (the minimise is
-   * animated), an off-screen one never shows. Falls back to a visible page moved off-screen right
-   * after creation when the browser does not take the position.
+   * A page for an engine result: a background tab in the one engine window, which is created once
+   * per browser session — `Target.createTarget` with a far-left position — and kept alive by a blank
+   * anchor tab. Measured 2026-09-05 on macOS: a window created *minimised* still shows (the minimise
+   * is animated); an off-screen one is clamped by Chrome to leave a strip on some display, so it can
+   * show on a multi-display desk — once, when Chrome starts, never per search. Falls back to a
+   * visible page moved aside when the browser does not take the parameters.
    */
   private async newBackgroundPage(ctx: BrowserContext): Promise<Page> {
     const id = this.contextIds.get(ctx);
     if (id && this.browserCdp) {
       try {
+        if (!this.anchor || this.anchor.isClosed() || this.anchor.context() !== ctx) {
+          const opened = ctx.waitForEvent("page", { timeout: 10_000 });
+          const { targetId } = (await this.browserCdp.send("Target.createTarget", {
+            url: "about:blank",
+            browserContextId: id,
+            newWindow: true,
+            background: true,
+            ...OFFSCREEN,
+          })) as { targetId: string };
+          this.anchor = await opened;
+          try {
+            const w = (await this.browserCdp.send("Browser.getWindowForTarget", { targetId })) as {
+              bounds: { left?: number; top?: number; width?: number };
+            };
+            this.audit.log("debug", `engine window created once for this session at ${JSON.stringify(w.bounds)}`);
+          } catch {
+            // informational only
+          }
+        }
         const opened = ctx.waitForEvent("page", { timeout: 10_000 });
-        const { targetId } = (await this.browserCdp.send("Target.createTarget", {
+        await this.browserCdp.send("Target.createTarget", {
           url: "about:blank",
           browserContextId: id,
-          newWindow: true,
+          newWindow: false,
           background: true,
-          ...OFFSCREEN,
-        })) as { targetId: string };
-        const page = await opened;
-        try {
-          const w = (await this.browserCdp.send("Browser.getWindowForTarget", { targetId })) as {
-            bounds: { left?: number; top?: number; width?: number; windowState?: string };
-          };
-          this.audit.log("debug", `engine window created at ${JSON.stringify(w.bounds)}`);
-        } catch {
-          // informational only
-        }
-        return page;
+        });
+        return await opened;
       } catch (e) {
         this.audit.log(
           "debug",
-          `off-screen window creation unavailable (${(e as Error).message.split("\n")[0]}); moving it after`,
+          `background tab creation unavailable (${(e as Error).message.split("\n")[0]}); opening a page and moving it aside`,
         );
       }
     }
@@ -604,6 +619,7 @@ export class BrowserRenderer implements BrowserTier {
           `${target}: ${r.passed ? "done by you; continuing" : "not done within the handoff window"}`,
         );
         this.events?.emit("handoff-end", { url: target, passed: r.passed });
+        if (opts.background) await this.setWindowBounds(page, OFFSCREEN);
       } else if (
         this.headed &&
         this.settings.handoff &&
@@ -652,6 +668,7 @@ export class BrowserRenderer implements BrowserTier {
             this.audit.log("warn", `challenge on ${target} not passed within the handoff window`);
           }
           this.events?.emit("handoff-end", { url: target, passed: r.passed });
+          if (opts.background) await this.setWindowBounds(page, OFFSCREEN);
         }
       }
       const finalUrl = page.url();
@@ -700,6 +717,7 @@ export class BrowserRenderer implements BrowserTier {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     await this.saveProfile();
+    this.anchor = null;
     await this.browserCdp?.detach().catch(() => {});
     this.browserCdp = null;
     await this.plain?.close().catch(() => {});
@@ -772,7 +790,7 @@ export class EscalatingRenderer implements BrowserTier {
       return this.escalation.render(url, { ...opts, session: true, handoff: true });
     }
     // An engine result page is the person's browsing and never headless: it opens in the installed
-    // Chrome with the tool profile, minimised, and comes forward only when a check needs them.
+    // Chrome with the tool profile, kept off to the side, and comes forward only when a check needs them.
     if (opts.session) {
       if (!this.canShow())
         throw new BrowserUnavailable("engine result pages need a browser window and none can be shown here");

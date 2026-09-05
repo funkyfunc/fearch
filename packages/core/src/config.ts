@@ -262,7 +262,7 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "enum",
     values: BROWSER_MODES,
     default: "auto",
-    help: "auto: pages read headless; a site's challenge, and every engine result page, opens in your own Chrome via the bridge extension when it is connected, else in a minimised window of your installed Chrome that comes forward when a check needs you (no display: no engine search, challenges final). Or pin one: headless (never a window, no engine search) · headed (your installed Chrome, always visible) · extension (your Chrome only) · off.",
+    help: "auto: pages read headless; a site's challenge, and every engine result page, opens in your own Chrome via the bridge extension when it is connected, else in a background window of your installed Chrome — opened once when Chrome starts, kept off to the side, brought forward when a check needs you (no display: no engine search, challenges final). Or pin one: headless (never a window, no engine search) · headed (your installed Chrome, always visible) · extension (your Chrome only) · off.",
   },
   {
     flag: "robots",

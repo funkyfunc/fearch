@@ -107,7 +107,7 @@ function createBrowser(settings: Settings, audit: Audit, events: AppEvents, gate
 
 /**
  * Headless-first page reads with a real window where one can be shown (a challenge escalates to it;
- * engine pages open in it, minimised); plain headless where nothing can be shown.
+ * engine pages open in it as background tabs); plain headless where nothing can be shown.
  */
 function adaptive(settings: Settings, audit: Audit, events: AppEvents, gate: HandoffGate): BrowserTier {
   const auto: Settings = { ...settings, browser: "auto" };
