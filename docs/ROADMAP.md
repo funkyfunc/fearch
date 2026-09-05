@@ -19,9 +19,10 @@ is not a goal to get through them.
   request channel, so the two questions to the person — the query form and "open this bot check?" —
   now travel as `input_required` results: the tool returns the prompt with a sealed request state,
   the client's next call carries the answer, and the render that hit the check is suspended in
-  between (`PendingChecks`; it closes itself if nobody comes back). On 2025-era connections the SDK's
-  shim turns the same result into an elicitation request, so older clients see no difference except
-  the wording of an unanswered prompt (the SDK's "timed out" rather than fearch's own line). `fearch`
+  between (`PendingChecks`; it closes itself if nobody comes back). On 2025-era connections (Claude Code
+  today: it negotiates 2025-11-25 and sends no discover probe) fearch asks through an elicitation
+  request itself, on its own clock, so an unanswered prompt keeps fearch's own wording rather than
+  the SDK shim's "Request timed out"; on 2026-07-28 the client owns the wait. `fearch`
   serves both eras over stdio through `serveStdio`; a child-process test pins 2026-07-28. Retired
   with it: the in-process "unanswered" outcome (a prompt nobody answers never reaches a tier now).
 

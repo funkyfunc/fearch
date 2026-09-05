@@ -24,9 +24,9 @@ You have `search` and `fetch`.
   retry the same URL with different settings; use another source, an official API, or ask the user.
   One exception: a `captcha_or_challenge` marked `retryable: true` means a bot check is waiting for
   the user, open in their browser. Tell them, and call fetch again on the same URL once they are at
-  the screen; they will be asked again. A result saying the input request timed out means the user
-  was asked (to approve a query, or to open a bot check) and nobody answered: tell them, and call
-  again once they are there. Likewise, a search note saying "not submitted" means the user approves
+  the screen; they will be asked again. A result saying nobody answered (or, on some clients, that
+  the input request timed out) means the user was asked, to approve a query or to open a bot check,
+  and did not respond: tell them, and call again once they are there. Likewise, a search note saying "not submitted" means the user approves
   searches themselves on this server (every Google query; every query with `--human-search`) and
   must press Enter: tell them, and search again once they are there. A prompt asking the user to
   approve a query or to open a bot check is normal; a declined prompt is the user's answer, not an

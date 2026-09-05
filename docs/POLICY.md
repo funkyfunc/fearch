@@ -136,15 +136,17 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 - **Human handoff** (on by default whenever a window could reach the person — auto with a display,
   headed, or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
   the person is asked first, through their MCP client: "A bot check appeared on host. Open it for
-  you?" The question is the tool's result — an MCP `input_required` round (protocol revision
-  2026-07-28; on a 2025-era connection the SDK turns it into an elicitation request) — and the page
-  that hit the check waits in the background, suspended, for the answer to come back on the next
-  call. On yes the check is surfaced — the auto tier brings that one page forward in a window;
+  you?" On a 2025-era connection (Claude Code today) the server holds the call and asks through an
+  elicitation request, on fearch's own clock. On a 2026-07-28 connection the question is the tool's
+  result — an `input_required` round — and the client's next call brings the answer; the page that
+  hit the check waits in the background, suspended, in between. On yes the check is surfaced — the auto tier brings that one page forward in a window;
   headed brings the tab to the front; the extension activates the tab in the person's Chrome — and
   the tool waits (default 45 s from the yes, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with
-  it, then continues with what they were shown. On no, that is the answer. If nobody answers, the
-  client reports the timed-out prompt (the same timeout bounds each round), the suspended page waits
-  ten minutes for a late answer and then closes, and the next request asks again — there is no backoff, because the prompt itself
+  it, then continues with what they were shown. On no, that is the answer. If nobody answers within
+  that timeout on a 2025-era connection, fearch withdraws the prompt and says so in its own words
+  (which engine or page, when it asked, and to call again when the person is there); on a 2026-07-28
+  connection the client owns the wait and its own wording. Either way the suspended page waits ten
+  minutes for a late answer and then closes, and the next request asks again — there is no backoff, because the prompt itself
   is the test of presence. A client that cannot show a prompt gets the pre-prompt behaviour (the tab
   or window is surfaced straight away, and an unanswered one earns a 10-minute pause on further
   windows). If the check is still there, the answer is a `captcha_or_challenge` diagnosis marked

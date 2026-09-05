@@ -7,7 +7,11 @@ import {
   inputRequired,
   inputResponse,
   McpServer,
+  SdkError,
+  SdkErrorCode,
   type CallToolResult,
+  type ElicitRequestFormParams,
+  type ElicitResult,
   type InputRequiredResult,
   type ServerContext,
 } from "@modelcontextprotocol/server";
@@ -16,8 +20,9 @@ import { z } from "zod";
 import type { App } from "./app.js";
 import { personPresent, type Settings } from "./config.js";
 import { describeError } from "./errors.js";
+import { renderDiagnosis } from "./fetch/diagnose.js";
 import { PendingCheckGone } from "./fetch/pending.js";
-import { PendingCheck, type PageDoc } from "./fetch/pipeline.js";
+import { PendingCheck } from "./fetch/pipeline.js";
 import { READ_MODES, readDocument, type ReadOptions } from "./fetch/read.js";
 import { attachExcerpts } from "./search/excerpt.js";
 import { QueryFormRequired, type QueryAsk, type QueryChoice } from "./search/provider.js";
@@ -30,7 +35,7 @@ import { renderResults } from "./search/render.js";
  */
 export function searchDescription(s: Settings): string {
   const posture = personPresent(s)
-    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — opened in their own Chrome or a window of it, never headless, at human pace, with any bot check put to them first and opened for them to pass${s.engines.includes("google") ? "; each Google query is shown to them for approval before it runs" : ""}${s.humanSearch ? " (every query, with --human-search)" : ""}; the tool never solves anything. A result saying the input request timed out means the user is away: tell them, and search again when they are back.`
+    ? `Engine result pages${s.engines.length ? ` (${s.engines.join(", ")})` : ""} are the person's own browsing — opened in their own Chrome or a window of it, never headless, at human pace, with any bot check put to them first and opened for them to pass${s.engines.includes("google") ? "; each Google query is shown to them for approval before it runs" : ""}${s.humanSearch ? " (every query, with --human-search)" : ""}; the tool never solves anything. A note saying nobody answered means the user is away: tell them, and search again when they are back.`
     : s.canSurface
       ? `Engine result pages (DuckDuckGo lite) open in a browser window on the person's machine; bot checks are final here (handoff off).`
       : `No search engine is available on this server: engine result pages open only in a browser a person could see, and none can be shown here (headless, or no display). Search calls fail with that reason; work from URLs you already have.`;
@@ -138,7 +143,7 @@ export function serverInstructions(s: Settings): string {
   if (s.searchMode === "off") lines.push("Search is disabled on this server: work from URLs the user gives you.");
   else if (personPresent(s))
     lines.push(
-      `Searches on this server are the user's own browsing${s.engines.includes("google") ? "; every Google query is shown to them for approval first" : ""}${s.humanSearch ? " (every query is)" : ""}. A result saying the input request timed out, or a search note saying not submitted, means the user is away or must press Enter: tell them, and search again when they are there. A declined prompt is their answer, not an error to work around.`,
+      `Searches on this server are the user's own browsing${s.engines.includes("google") ? "; every Google query is shown to them for approval first" : ""}${s.humanSearch ? " (every query is)" : ""}. A note saying nobody answered (or, on some clients, that the input request timed out), or a note saying not submitted, means the user is away or must press Enter: tell them, and search again when they are there. A declined prompt is their answer, not an error to work around.`,
     );
   else if (!s.canSurface)
     lines.push("No search engine is available here (no browser window can be shown); search fails with that reason.");
@@ -279,45 +284,67 @@ function choiceFrom(content: Record<string, unknown>, ask: QueryAsk): QueryChoic
   return { query, engine, incognito: !noIncognito && c.incognito === true, askAgain: c.ask_again !== false };
 }
 
-type ElicitSchema = Parameters<typeof inputRequired.elicit>[0]["requestedSchema"];
+type ElicitSchema = ElicitRequestFormParams["requestedSchema"];
+type SearchState = Extract<RoundState, { kind: "search" }>;
+type CheckState = Extract<RoundState, { kind: "check" }>;
 
-/** The form as an `input_required` result; the search resumes on the next call with the answer. */
-async function askQueryForm(e: QueryFormRequired, s: Settings, ctx: ServerContext): Promise<InputRequiredResult> {
+/** The two questions, as elicitation params plus the state the answer must come back with. */
+function queryFormRequest(e: QueryFormRequired, s: Settings): { params: ElicitRequestFormParams; state: SearchState } {
   const { properties, required } = queryFormSchema(e.ask, s);
-  return inputRequired({
-    inputRequests: {
-      form: inputRequired.elicit({
-        message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
-        requestedSchema: { type: "object", properties, required } as unknown as ElicitSchema,
-      }),
+  return {
+    params: {
+      message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
+      requestedSchema: { type: "object", properties, required } as unknown as ElicitSchema,
     },
-    requestState: await stateCodec.mint(
-      { kind: "search", ask: e.ask, tried: e.tried, errors: e.errors, notes: e.notes },
-      ctx,
-    ),
-  });
+    state: { kind: "search", ask: e.ask, tried: e.tried, errors: e.errors, notes: e.notes },
+  };
 }
 
-/** The "open this bot check?" prompt as an `input_required` result; the render resumes on the next call. */
-async function askToOpen(e: PendingCheck, target: string, ctx: ServerContext): Promise<InputRequiredResult> {
+function openRequest(e: PendingCheck, target: string): { params: ElicitRequestFormParams; state: CheckState } {
   let host = e.url;
   try {
     host = new URL(e.url).host;
   } catch {
     // keep the raw url
   }
-  return inputRequired({
-    inputRequests: {
-      open: inputRequired.elicit({
-        message: `A bot check appeared on ${host}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
-        requestedSchema: { type: "object", properties: {} } as unknown as ElicitSchema,
-      }),
+  return {
+    params: {
+      message: `A bot check appeared on ${host}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
+      requestedSchema: { type: "object", properties: {} } as unknown as ElicitSchema,
     },
-    requestState: await stateCodec.mint(
-      { kind: "check", id: e.id, url: e.url, target, where: e.where, attempts: e.attempts },
-      ctx,
-    ),
-  });
+    state: { kind: "check", id: e.id, url: e.url, target, where: e.where, attempts: e.attempts },
+  };
+}
+
+/** The answer to the form, as the next search round. */
+function searchRound(state: SearchState, answer: QueryChoice | "declined"): SearchRound {
+  return { answer, skip: state.tried, priorErrors: state.errors, priorNotes: state.notes };
+}
+
+const utcNow = () => new Date().toISOString().slice(11, 16) + " UTC";
+
+/**
+ * A 2025-era connection (an `initialize` handshake happened) still has the server→client request
+ * channel, and the server holds the call while the person is asked: fearch asks through it on its
+ * own clock and words the silence itself, rather than handing the round to the SDK's shim (whose
+ * "Request timed out" is an error to the agent, with no time and no next step). A 2026-07-28
+ * connection has no such channel: the question is the tool's result and the client owns the wait.
+ */
+function isLegacy(server: McpServer): boolean {
+  return server.server.getClientCapabilities() !== undefined;
+}
+
+async function askLegacy(
+  server: McpServer,
+  params: ElicitRequestFormParams,
+  timeoutMs: number,
+): Promise<ElicitResult | "unanswered"> {
+  try {
+    return await server.server.elicitInput(params, { timeout: timeoutMs });
+  } catch (e) {
+    if (e instanceof SdkError && e.code === SdkErrorCode.RequestTimeout) return "unanswered";
+    throw e;
+  }
 }
 
 export function buildServer(app: App): McpServer {
@@ -326,11 +353,14 @@ export function buildServer(app: App): McpServer {
     {
       instructions: serverInstructions(app.settings),
       requestState: { verify: stateCodec.verify },
-      // A prompt waits as long as a handed-off check does: an unattended agent gets an answer, not a hang.
+      // Safety net only: on 2025-era connections fearch asks directly (see isLegacy) and this shim
+      // never engages; the bound matches in case it ever does.
       inputRequired: { roundTimeoutMs: app.settings.handoffTimeoutMs, maxRounds: 8 },
     },
   );
   const begin = wireGate(app, server);
+  const timeoutMs = app.settings.handoffTimeoutMs;
+  const waited = `${Math.round(timeoutMs / 1000)} s`;
 
   server.registerTool(
     "search",
@@ -344,38 +374,56 @@ export function buildServer(app: App): McpServer {
       begin(ctx);
       const query = args.query.trim();
       const progress = progressReporter(ctx, 1 + args.fetch_top);
-      // Re-entered with the person's answer to the form the previous round returned.
+      const run = async (round: SearchRound): Promise<CallToolResult | QueryFormRequired> => {
+        try {
+          const outcome = await app.search.search(
+            {
+              query,
+              maxResults: args.max_results,
+              recency: args.recency,
+              site: args.site?.trim() || undefined,
+              allowedDomains: args.allowed_domains,
+              blockedDomains: args.blocked_domains,
+            },
+            round,
+          );
+          await progress(1, `search done via ${outcome.providers.map((p) => p.name).join("+") || "cache"}`);
+          await attachExcerpts(app, outcome.results, query, args.fetch_top, (done, r) =>
+            progress(1 + done, `excerpt ${done}/${args.fetch_top}: ${r.url}`),
+          );
+          return text(renderResults(query, outcome));
+        } catch (e) {
+          if (e instanceof QueryFormRequired) return e;
+          return failure(describeError(`search:${query}`, e));
+        }
+      };
+      // Re-entered (2026-07-28) with the person's answer to the form the previous round returned.
       const state = ctx.mcpReq.requestState<RoundState>();
-      const round: SearchRound = {};
+      let round: SearchRound = {};
       if (state?.kind === "search") {
         const v = inputResponse(ctx.mcpReq.inputResponses, "form");
-        round.answer =
-          v.kind === "elicit" && v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined";
-        round.skip = state.tried;
-        round.priorErrors = state.errors;
-        round.priorNotes = state.notes;
-      }
-      try {
-        const outcome = await app.search.search(
-          {
-            query,
-            maxResults: args.max_results,
-            recency: args.recency,
-            site: args.site?.trim() || undefined,
-            allowedDomains: args.allowed_domains,
-            blockedDomains: args.blocked_domains,
-          },
-          round,
+        round = searchRound(
+          state,
+          v.kind === "elicit" && v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined",
         );
-        await progress(1, `search done via ${outcome.providers.map((p) => p.name).join("+") || "cache"}`);
-        await attachExcerpts(app, outcome.results, query, args.fetch_top, (done, r) =>
-          progress(1 + done, `excerpt ${done}/${args.fetch_top}: ${r.url}`),
-        );
-        return text(renderResults(query, outcome));
-      } catch (e) {
-        if (e instanceof QueryFormRequired) return askQueryForm(e, app.settings, ctx);
-        return failure(describeError(`search:${query}`, e));
       }
+      for (let i = 0; i < 8; i++) {
+        const out = await run(round);
+        if (!(out instanceof QueryFormRequired)) return out;
+        const { params, state: next } = queryFormRequest(out, app.settings);
+        if (!isLegacy(server))
+          return inputRequired({
+            inputRequests: { form: inputRequired.elicit(params) },
+            requestState: await stateCodec.mint(next, ctx),
+          });
+        const r = await askLegacy(server, params, timeoutMs);
+        if (r === "unanswered")
+          return failure(
+            `${out.ask.engine}: needs your approval in your MCP client and nobody answered within ${waited} (asked at ${utcNow()}) — search again when you are at the screen. Nothing ran.`,
+          );
+        round = searchRound(next, r.action === "accept" ? choiceFrom(r.content ?? {}, next.ask) : "declined");
+      }
+      return failure(`search:${query}: asked ${8} times without a search running; giving up.`);
     },
   );
 
@@ -407,57 +455,92 @@ export function buildServer(app: App): McpServer {
         includeLinks: args.include_links,
         contextChars: args.context_chars,
       };
-      // Re-entered with the person's answer to "open this bot check?": that one page resumes its
-      // suspended render; the others are read normally (finished ones come from the cache).
-      const state = ctx.mcpReq.requestState<RoundState>();
-      let resumed: { target: string; doc: Promise<PageDoc> } | null = null;
-      if (state?.kind === "check") {
-        const v = inputResponse(ctx.mcpReq.inputResponses, "open");
-        const answer = v.kind === "elicit" && v.action === "accept" ? "accept" : "declined";
-        const { id, url, attempts } = state;
-        resumed = {
-          target: state.target,
-          doc: app.pending.resume(id, answer).then((r) => app.fetcher.completePending(url, r, attempts)),
-        };
-        resumed.doc.catch(() => {}); // surfaced where it is read, not as an unhandled rejection
-      }
-      const readOne = async (url: string) => {
-        const doc =
-          resumed && resumed.target === url
-            ? await resumed.doc
-            : await app.fetcher.fetch(url, { raw: options.mode === "raw", via: args.archive ? "archive" : undefined });
-        return readDocument(doc, options);
-      };
       const progress = progressReporter(ctx, targets.length);
 
-      if (targets.length === 1) {
-        try {
-          const out = await readOne(targets[0]);
-          await progress(1, `fetched ${targets[0]}`);
-          return text(out);
-        } catch (e) {
-          if (e instanceof PendingCheck) return askToOpen(e, targets[0], ctx);
-          if (e instanceof PendingCheckGone) return failure(e.message);
-          return failure(describeError(targets[0], e));
-        }
-      }
-      let done = 0;
-      const outcomes = await Promise.allSettled(
-        targets.map(async (t) => {
+      /** The person's answer to "open this bot check?" resumes that one page; the others are read normally. */
+      const resume = (st: CheckState, answer: "accept" | "declined") => {
+        const doc = app.pending.resume(st.id, answer).then((r) => app.fetcher.completePending(st.url, r, st.attempts));
+        doc.catch(() => {}); // surfaced where it is read, not as an unhandled rejection
+        return { target: st.target, doc };
+      };
+      type Waiting = { pending: PendingCheck; target: string };
+      const isWaiting = (o: CallToolResult | Waiting): o is Waiting => (o as Waiting).pending instanceof PendingCheck;
+      const run = async (resumed: ReturnType<typeof resume> | null): Promise<CallToolResult | Waiting> => {
+        const readOne = async (url: string) => {
+          const doc =
+            resumed && resumed.target === url
+              ? await resumed.doc
+              : await app.fetcher.fetch(url, {
+                  raw: options.mode === "raw",
+                  via: args.archive ? "archive" : undefined,
+                });
+          return readDocument(doc, options);
+        };
+        if (targets.length === 1) {
           try {
-            return await readOne(t);
-          } finally {
-            await progress(++done, `${done}/${targets.length}: ${t}`);
+            const out = await readOne(targets[0]);
+            await progress(1, `fetched ${targets[0]}`);
+            return text(out);
+          } catch (e) {
+            if (e instanceof PendingCheck) return { pending: e, target: targets[0] };
+            if (e instanceof PendingCheckGone) return failure(e.message);
+            return failure(describeError(targets[0], e));
           }
-        }),
-      );
-      const waiting = outcomes.findIndex((r) => r.status === "rejected" && r.reason instanceof PendingCheck);
-      if (waiting >= 0)
-        return askToOpen((outcomes[waiting] as PromiseRejectedResult).reason as PendingCheck, targets[waiting], ctx);
-      const parts = outcomes.map((r, i) =>
-        r.status === "fulfilled" ? r.value : `# (failed) ${targets[i]}\n${describeError(targets[i], r.reason)}\n`,
-      );
-      return text(parts.join("\n\n=====\n\n"));
+        }
+        let done = 0;
+        const outcomes = await Promise.allSettled(
+          targets.map(async (t) => {
+            try {
+              return await readOne(t);
+            } finally {
+              await progress(++done, `${done}/${targets.length}: ${t}`);
+            }
+          }),
+        );
+        const waiting = outcomes.findIndex((r) => r.status === "rejected" && r.reason instanceof PendingCheck);
+        if (waiting >= 0)
+          return {
+            pending: (outcomes[waiting] as PromiseRejectedResult).reason as PendingCheck,
+            target: targets[waiting],
+          };
+        const parts = outcomes.map((r, i) =>
+          r.status === "fulfilled" ? r.value : `# (failed) ${targets[i]}\n${describeError(targets[i], r.reason)}\n`,
+        );
+        return text(parts.join("\n\n=====\n\n"));
+      };
+
+      // Re-entered (2026-07-28) with the person's answer from the previous round.
+      const state = ctx.mcpReq.requestState<RoundState>();
+      let resumed: ReturnType<typeof resume> | null = null;
+      if (state?.kind === "check") {
+        const v = inputResponse(ctx.mcpReq.inputResponses, "open");
+        resumed = resume(state, v.kind === "elicit" && v.action === "accept" ? "accept" : "declined");
+      }
+      for (let i = 0; i < 8; i++) {
+        const out = await run(resumed);
+        if (!isWaiting(out)) return out;
+        const { params, state: next } = openRequest(out.pending, out.target);
+        if (!isLegacy(server))
+          return inputRequired({
+            inputRequests: { open: inputRequired.elicit(params) },
+            requestState: await stateCodec.mint(next, ctx),
+          });
+        const r = await askLegacy(server, params, timeoutMs);
+        if (r === "unanswered")
+          return failure(
+            `Fetch refused or failed for ${out.target}\n` +
+              renderDiagnosis({
+                kind: "captcha_or_challenge",
+                retryable: true,
+                attempts: out.pending.attempts,
+                message: `The site showed a bot check; the user was asked (${utcNow()}) whether to open it and nobody answered within ${waited}, so nothing was opened. The page waits in the background for ten minutes.`,
+                nextAction:
+                  "Tell the user a bot check is waiting on this page. When they are at the screen, call fetch again on this same URL and they will be asked again. The tool never solves checks itself.",
+              }),
+          );
+        resumed = resume(next, r.action === "accept" ? "accept" : "declined");
+      }
+      return failure(`${targets[0]}: asked ${8} times without an answer that finished the read; giving up.`);
     },
   );
 

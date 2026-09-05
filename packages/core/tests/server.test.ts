@@ -362,6 +362,8 @@ describe("the challenge prompt (handoff gate)", () => {
     const silence = await c.callTool({ name: "fetch", arguments: { url } });
     expect(Date.now() - started).toBeLessThan(5000);
     expect(silence.isError).toBe(true);
+    expect(text(silence)).toContain("nobody answered within");
+    expect(text(silence)).toContain("call fetch again on this same URL");
     expect(fetcher.answers).toHaveLength(2); // nothing resumed without an answer
     expect(state.pending.size).toBe(1); // the check waits for the person until it expires
     await c.close();
@@ -428,7 +430,8 @@ describe("query confirmation — nobody answers", () => {
     expect(Date.now() - started).toBeLessThan(5000); // the SDK's own 60 s timeout is not what bounds this
     expect(ran).toBe(0); // nothing ran under the person's name without their answer
     expect(r.isError).toBe(true);
-    expect(text(r)).toMatch(/timed out/i); // the SDK's legacy shim words it; the instructions explain it
+    expect(text(r)).toMatch(/nobody answered within \d+ s \(asked at \d\d:\d\d UTC\)/); // fearch's own words, not the SDK shim's
+    expect(text(r)).not.toContain("Fulfilling input required");
     await c.close();
   });
 
