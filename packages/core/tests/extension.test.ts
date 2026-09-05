@@ -154,6 +154,42 @@ describe("extension tier — the handoff", () => {
     }
   }
 
+  it("incognito asked for but not allowed to the extension: the page opens in a private context of the installed Chrome instead", async () => {
+    const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47498, 47499]);
+    const port = await bridge.start();
+    const log: string[] = [];
+    // reports incognitoAllowed: false; its last poll is cut off when the bridge closes, which is fine
+    const client = fakeExtension(port, () => "<main>never</main>", log).catch(() => {});
+    const seen: import("../src/fetch/browser.js").RenderOptions[] = [];
+    const fallback = {
+      enabled: () => true,
+      headed: false,
+      browserUserAgent: "x",
+      browserChannel: "auto",
+      async render(u: string, o: import("../src/fetch/browser.js").RenderOptions = {}) {
+        seen.push(o);
+        return {
+          html: "<main>private window</main>",
+          finalUrl: u,
+          status: 200,
+          salvaged: false,
+          usedSession: false,
+          handedOff: false,
+        };
+      },
+      async close() {},
+    } as BrowserTier;
+    const r = new ExtensionRenderer(settings({ FEARCH_ALLOW_PRIVATE: "1" }), audit(), bridge, fallback);
+    await bridge.waitForConnection(5000);
+    expect(r.incognitoAllowed()).toBe(false);
+    const out = await r.render("https://x.test/", { session: true, incognito: true });
+    expect(out.html).toContain("private window");
+    expect(seen).toEqual([{ session: true, incognito: true }]);
+    expect(log).not.toContain("open"); // the signed-in Chrome was not used behind the person's back
+    await bridge.close();
+    await client;
+  });
+
   it("activates the tab once, reports where the check is waiting, and does not activate again while the person is away", async () => {
     const bridge = new ExtensionBridge(audit(), TOKEN, EXTENSION_ID, [47474, 47475]);
     const port = await bridge.start();

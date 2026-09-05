@@ -350,7 +350,9 @@ export class EngineProvider implements SearchProvider {
     const how =
       ch === "extension"
         ? incognito
-          ? "your own Chrome, incognito"
+          ? this.browser.incognitoAllowed?.() === false
+            ? "a background window of your installed Chrome (fresh incognito context; the extension lacks incognito permission)"
+            : "your own Chrome, incognito"
           : "your own Chrome, your profile"
         : ch === "auto"
           ? `a background window of your installed Chrome (${incognito ? "fresh incognito context" : "tool profile"}; a check brings it forward for you)`

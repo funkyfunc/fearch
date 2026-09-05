@@ -247,16 +247,11 @@ function queryFormSchema(
     const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
     // One line each: what "on" and "off" mean for this person's setup.
     const description = noIncognito
-      ? "Not available: the fearch extension lacks incognito permission (chrome://extensions). Off: your Chrome, signed in."
+      ? "On: a private window of your installed Chrome (the extension lacks incognito permission). Off: your Chrome, signed in as you."
       : ask.profileKind === "own-chrome"
         ? "On: a private window. Off: your Chrome, signed in as you."
         : "On: a private window. Off: fearch's own Chrome profile.";
-    properties.incognito = {
-      type: "boolean",
-      title: "Incognito",
-      description,
-      default: noIncognito ? false : s.incognito,
-    };
+    properties.incognito = { type: "boolean", title: "Incognito", description, default: s.incognito };
   }
   properties.ask_again = {
     type: "boolean",
@@ -280,8 +275,7 @@ function choiceFrom(content: Record<string, unknown>, ask: QueryAsk): QueryChoic
       : typeof c.engine === "string" && names.includes(c.engine)
         ? c.engine
         : ask.engine;
-  const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
-  return { query, engine, incognito: !noIncognito && c.incognito === true, askAgain: c.ask_again !== false };
+  return { query, engine, incognito: c.incognito === true, askAgain: c.ask_again !== false };
 }
 
 type ElicitSchema = ElicitRequestFormParams["requestedSchema"];

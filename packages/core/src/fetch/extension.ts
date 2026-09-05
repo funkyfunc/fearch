@@ -332,6 +332,7 @@ export class ExtensionBridge {
 export class ExtensionRenderer implements BrowserTier {
   readonly headed = true;
   private warnedFallback = false;
+  private warnedIncognito = false;
   private everConnected = false;
   /** After a handed-off tab went unanswered, no more tabs are activated until this time. */
   private awayUntil = 0;
@@ -448,6 +449,18 @@ export class ExtensionRenderer implements BrowserTier {
     this.warnedFallback = false;
     const started = Date.now();
     const incognito = opts.incognito ?? this.settings.incognito;
+    // The person wants incognito and Chrome does not let the extension open incognito windows: a
+    // fresh context in the installed Chrome's window gives them the same thing (no logins, nothing
+    // kept) without silently using their signed-in profile instead.
+    if (incognito && this.incognitoAllowed() === false && this.fallback) {
+      if (!this.warnedIncognito)
+        this.audit.log(
+          "info",
+          'incognito asked for, but Chrome forbids the fearch extension incognito windows ("Allow in Incognito" at chrome://extensions): opening it in a private context of the installed Chrome instead',
+        );
+      this.warnedIncognito = true;
+      return this.fallback.render(url, { ...opts, incognito: true });
+    }
     const opened = await this.bridge.request(
       {
         op: "open",

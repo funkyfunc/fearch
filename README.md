@@ -166,9 +166,12 @@ fearch extension install     # writes the pairing token, opens chrome://extensio
 ```
 
 Pages open with your real profile (your logins, your Google history) and results say so;
-`--incognito` keeps your profile out of it (in `auto` too, whenever the extension is the tier). Without
-the extension, engine pages and checks open in your installed Chrome with a tool-owned empty profile
-at `~/.cache/fearch/browser-state.json` — delete the file to forget it.
+`--incognito` keeps your profile out of it (in `auto` too, whenever the extension is the tier); if
+Chrome does not allow the extension in incognito, an incognito query opens in a private context of
+your installed Chrome instead. Without the extension — disable it in Chrome, or never pair it, if you
+would rather fearch kept out of your own browser — engine pages and checks open in your installed
+Chrome with a tool-owned empty profile at `~/.cache/fearch/browser-state.json`; delete the file to
+forget it.
 
 ## Flags
 
