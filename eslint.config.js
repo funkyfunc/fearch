@@ -12,6 +12,7 @@ export default tseslint.config(
       "docs/",
       "packages/core/extension/",
       "packages/core/tests/__golden__/",
+      "**/.invisible/**",
     ],
   },
   eslint.configs.recommended,

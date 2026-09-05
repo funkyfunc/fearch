@@ -7,3 +7,4 @@ package-lock.json
 **/__golden__/
 docs/
 evals/results/
+.invisible/
