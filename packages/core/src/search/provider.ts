@@ -59,6 +59,10 @@ export interface QueryAsk {
   /** Why the person is being asked now, when an earlier engine already failed ("DuckDuckGo showed its bot check…"). */
   reason?: string;
   offerProfile: boolean;
+  /** Whose profile "use my profile" means: the person's signed-in Chrome, or the tool-owned profile of the installed Chrome. */
+  profileKind?: "own-chrome" | "tool-profile";
+  /** Chrome's "Allow in Incognito" for the extension: false means an incognito window cannot open, so the profile is the working default. */
+  incognitoAllowed?: boolean;
 }
 
 export interface QueryChoice {

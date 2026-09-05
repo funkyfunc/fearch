@@ -353,7 +353,7 @@ export class EngineProvider implements SearchProvider {
           ? "your own Chrome, incognito"
           : "your own Chrome, your profile"
         : ch === "auto"
-          ? "a minimised window of your installed Chrome (tool profile; a check brings it forward for you)"
+          ? `a minimised window of your installed Chrome (${incognito ? "fresh incognito context" : "tool profile"}; a check brings it forward for you)`
           : this.settings.browser === "headed"
             ? "the visible browser window"
             : "a browser window";

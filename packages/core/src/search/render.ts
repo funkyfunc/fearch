@@ -5,7 +5,9 @@ import type { SearchOutcome } from "./registry.js";
 export function renderResults(query: string, o: SearchOutcome): string {
   const via = o.fromCache ? "cache" : o.providers.map((p) => p.name).join(" + ") || "none";
   const disclosures = o.fromCache ? [] : [...new Set(o.providers.map((p) => p.disclosure))];
-  const lines = [`Results for "${query}" (${o.results.length}, via ${via}):`];
+  const ran = o.query ?? query;
+  const edited = ran !== query ? ` — the user edited your query "${query}" to this before running it` : "";
+  const lines = [`Results for "${ran}" (${o.results.length}, via ${via})${edited}:`];
   if (o.summary) {
     const label =
       o.summary.provider === "google" ? "Google's AI Overview" : `${o.summary.provider}'s generated summary`;

@@ -87,6 +87,14 @@ export interface BrowserTier {
   readonly headed: boolean;
   readonly browserUserAgent: string;
   readonly browserChannel: string;
+  /**
+   * Which profile an engine page would open in, so the query form can offer "profile or incognito":
+   * `own-chrome` (the person's signed-in Chrome via the extension), `tool-profile` (the tool-owned
+   * profile of the installed Chrome: passed checks, logins done in its windows), or null (headless: no choice).
+   */
+  profileChoice?(): "own-chrome" | "tool-profile" | null;
+  /** Whether Chrome lets the extension open incognito windows ("Allow in Incognito"); undefined until known. */
+  incognitoAllowed?(): boolean | undefined;
   render(url: string, opts?: RenderOptions): Promise<Rendered>;
   close(): Promise<void>;
 }
@@ -216,6 +224,10 @@ export class BrowserRenderer implements BrowserTier {
   /** The exact User-Agent the browser sends. Empty until first launch. */
   get browserUserAgent(): string {
     return this.userAgent;
+  }
+
+  profileChoice(): "tool-profile" | null {
+    return this.profileAllowed ? "tool-profile" : null;
   }
 
   /** Which browser binary was launched ("chrome" = the installed one, "chromium" = bundled). */
@@ -399,8 +411,11 @@ export class BrowserRenderer implements BrowserTier {
     if (opts.handToPerson && !this.headed)
       throw new BrowserUnavailable("handing a page to the person needs a visible browser (headed or the extension)");
     const target = normalizeUrl(url);
-    const useProfile = this.profileAllowed && !!opts.session;
-    const ctx = await this.context(useProfile ? "profile" : "plain");
+    // The person chose incognito for this engine page: a context of its own, closed when the page is,
+    // so nothing from the tool profile rides along and nothing is kept.
+    const incognito = !!opts.session && opts.incognito === true;
+    const useProfile = this.profileAllowed && !!opts.session && !incognito;
+    const ctx = incognito ? await this.freshContext() : await this.context(useProfile ? "profile" : "plain");
     const usedSession = useProfile && (await ctx.cookies(target)).length > 0;
     if (this.inFlight >= this.settings.browserMaxConcurrent) {
       throw new BrowserUnavailable("browser tier busy; try again in a moment");
@@ -559,9 +574,19 @@ export class BrowserRenderer implements BrowserTier {
     } finally {
       this.inFlight--;
       await page?.close().catch(() => {});
+      if (incognito) await ctx.close().catch(() => {});
       if (useProfile) await this.saveProfile();
       this.scheduleIdleClose();
     }
+  }
+
+  /** A one-off context with nothing in it, for an engine page the person wants incognito. */
+  private async freshContext(): Promise<BrowserContext> {
+    const browser = await this.launch();
+    const ctx = await browser.newContext(this.contextOptions());
+    ctx.setDefaultTimeout(this.settings.browserTimeoutMs);
+    await ctx.route("**/*", (route) => this.gate(route));
+    return ctx;
   }
 
   async close(): Promise<void> {
@@ -614,6 +639,10 @@ export class EscalatingRenderer implements BrowserTier {
 
   get browserUserAgent(): string {
     return this.routine.browserUserAgent;
+  }
+
+  profileChoice(): "tool-profile" | null {
+    return this.canShow() ? "tool-profile" : null;
   }
 
   /** A real window could be opened here at all (a display exists; Chrome launched last time). */

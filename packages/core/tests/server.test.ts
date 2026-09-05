@@ -249,7 +249,7 @@ describe("query confirmation (--human-search)", () => {
     expect(schema).toContain('"default":"original query"');
     expect(schema).toContain('"enum":["google"]');
     expect(schema).toContain('"ask_again"');
-    expect(schema).not.toContain("use_profile"); // no extension here: nothing to choose
+    expect(schema).toContain("Use fearch's Chrome profile"); // headed here: the tool profile is the choice
     expect(ran).toEqual([{ query: "edited query", submitted: true }]);
     expect(text(r)).toContain("https://x.test/1");
     await c.close();

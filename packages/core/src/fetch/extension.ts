@@ -361,6 +361,20 @@ export class ExtensionRenderer implements BrowserTier {
     return "your Chrome (fearch bridge extension)";
   }
 
+  /**
+   * The extension is paired here (or polling right now): engine pages will open in the person's own
+   * Chrome, so the query form offers their profile or incognito. Checked before the first render,
+   * when the bridge may not be listening yet — hence the install marker, not only `connected()`.
+   */
+  profileChoice(): "own-chrome" | "tool-profile" | null {
+    if (this.bridge.connected() || this.installedHint) return "own-chrome";
+    return this.fallback?.profileChoice?.() ?? null;
+  }
+
+  incognitoAllowed(): boolean | undefined {
+    return this.bridge.extensionInfo()?.incognitoAllowed;
+  }
+
   /** Auto mode, an ordinary page read: the fallback tier is the first try (see the class comment). */
   private headlessFirst(opts: RenderOptions): boolean {
     return this.settings.browser === "auto" && !!this.fallback && !opts.session && !opts.handToPerson;

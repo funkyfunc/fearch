@@ -161,6 +161,51 @@ describe("registry", () => {
       ]);
       expect(google.seen[0]).toMatchObject({ query: "q2 edited", submitted: true });
       expect(out.providers.map((p) => p.name)).toEqual(["google"]);
+      // the output names the query that ran, and says the person edited it
+      expect(out.query).toBe("q2 edited");
+      expect(renderResults("q2", out)).toContain(
+        'Results for "q2 edited" (1, via google) — the user edited your query "q2"',
+      );
+    });
+
+    it("offers the profile choice when the tier says the person's own Chrome is in play", async () => {
+      const google = person("google", [r("https://x.com/g")], { needsPerson: true });
+      const settings = settingsFromEnv({ DISPLAY: ":0" } as NodeJS.ProcessEnv, "linux");
+      const tier = { profileChoice: () => "own-chrome" } as unknown as import("../src/fetch/browser.js").BrowserTier;
+      const reg = new SearchRegistry(
+        settings,
+        new Cache(null),
+        new Audit({ auditLog: "off", logLevel: "error" }),
+        [],
+        tier,
+      );
+      (reg as unknown as { web: SearchProvider[] }).web = [google];
+      const asked: Array<{ offerProfile: boolean }> = [];
+      reg.onConfirmQuery(async (a) => {
+        asked.push({ offerProfile: a.offerProfile });
+        return { query: a.query, engine: a.engine, useProfile: false, askAgain: true };
+      });
+      await reg.search({ query: "q", maxResults: 1 });
+      expect(asked).toEqual([{ offerProfile: true }]);
+      // and the window path offers the tool profile the same way
+      const win = { profileChoice: () => "tool-profile" } as unknown as import("../src/fetch/browser.js").BrowserTier;
+      const reg2 = new SearchRegistry(
+        settings,
+        new Cache(null),
+        new Audit({ auditLog: "off", logLevel: "error" }),
+        [],
+        win,
+      );
+      (reg2 as unknown as { web: SearchProvider[] }).web = [google];
+      const kinds: unknown[] = [];
+      reg2.onConfirmQuery(async (a) => {
+        kinds.push(a.profileKind);
+        return { query: a.query, engine: a.engine, useProfile: true, askAgain: true };
+      });
+      await reg2.search({ query: "q", maxResults: 1 });
+      expect(kinds).toEqual(["tool-profile"]);
+      expect(google.seen[1]).toMatchObject({ incognito: false });
+      expect(google.seen[0]).toMatchObject({ incognito: true }); // profile left unticked → incognito
     });
 
     it("lets the person switch the engine in the form, and remembers the choice when they say so", async () => {

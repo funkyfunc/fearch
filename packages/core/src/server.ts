@@ -181,14 +181,26 @@ function wireQueryForm(app: App, server: McpServer): void {
         default: names.includes(ask.engine) ? ask.engine : names[0],
       },
     };
-    if (ask.offerProfile)
-      properties.use_profile = {
-        type: "boolean",
-        title: "Use my signed-in Chrome profile",
-        description:
-          "Off: an incognito window. On: your logins and history ride along (Google ties the query to your account).",
-        default: false,
-      };
+    if (ask.offerProfile) {
+      const noIncognito = ask.incognitoAllowed === false;
+      properties.use_profile =
+        ask.profileKind === "tool-profile"
+          ? {
+              type: "boolean",
+              title: "Use fearch's Chrome profile",
+              description:
+                "On: the tool-owned profile of your installed Chrome — it keeps bot checks you passed and anything you logged into in its windows. Off: a fresh incognito context with nothing in it.",
+              default: !app.settings.incognito,
+            }
+          : {
+              type: "boolean",
+              title: "Use my signed-in Chrome profile",
+              description: noIncognito
+                ? 'On (Chrome does not let the extension open incognito windows — enable "Allow in Incognito" at chrome://extensions to get the choice). Your logins and history ride along; Google ties the query to your account.'
+                : "Off: an incognito window. On: your logins and history ride along (Google ties the query to your account).",
+              default: noIncognito, // incognito unless Chrome cannot open one
+            };
+    }
     properties.ask_again = {
       type: "boolean",
       title: "Ask me again next time",

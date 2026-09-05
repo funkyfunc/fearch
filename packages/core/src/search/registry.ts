@@ -30,6 +30,8 @@ import {
 } from "./provider.js";
 
 export interface SearchOutcome {
+  /** The query that actually ran — the person may have edited it in the form. */
+  query?: string;
   results: SearchResult[];
   providers: SearchProvider[];
   fromCache: boolean;
@@ -132,7 +134,8 @@ export class SearchRegistry {
       const i = providers.findIndex((p) => p.name === this.remembered!.engine);
       if (i > 0) providers.unshift(...providers.splice(i, 1));
     }
-    const offerProfile = this.browser?.browserChannel === "extension";
+    const profileKind = this.browser?.profileChoice?.() ?? null;
+    const offerProfile = profileKind !== null;
     let query = q.query;
     let submittedByPerson = false;
     let incognito: boolean | undefined;
@@ -185,6 +188,8 @@ export class SearchRegistry {
         engines: providers.filter((x) => !tried.has(x.name)).map((x) => ({ name: x.name, label: x.label ?? x.name })),
         reason,
         offerProfile,
+        profileKind: profileKind ?? undefined,
+        incognitoAllowed: profileKind === "own-chrome" ? this.browser?.incognitoAllowed?.() : undefined,
       });
       if (answer === "unavailable") return p; // the engine hands the search box over in the browser instead
       if (answer === "declined") {
@@ -236,7 +241,7 @@ export class SearchRegistry {
     // lower one answered, the next call should get another chance at the preferred one rather than
     // 15 minutes of the fallback's answer.
     if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
-    return { results, providers: used, fromCache: false, notes, summary };
+    return { query, results, providers: used, fromCache: false, notes, summary };
   }
 
   /** Apply the person's form answer: the query they settled on, the engine, the profile, and whether to remember. */
@@ -250,7 +255,7 @@ export class SearchRegistry {
   ): SearchProvider {
     setQuery(answer.query.trim() || proposed.name);
     markSubmitted();
-    const offered = this.browser?.browserChannel === "extension";
+    const offered = (this.browser?.profileChoice?.() ?? null) !== null;
     setIncognito(offered ? !answer.useProfile : undefined);
     this.remembered = answer.askAgain ? null : { engine: answer.engine, useProfile: answer.useProfile };
     return providers.find((x) => x.name === answer.engine) ?? proposed;
