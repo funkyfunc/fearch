@@ -4,7 +4,7 @@
  * with none it starts the MCP server on stdio, where stdout carries only JSON-RPC and everything else
  * goes to stderr.
  */
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createApp } from "./app.js";
 import { flagSpelling, settingsFromArgs, UsageError, type Settings } from "./config.js";
 import { buildServer } from "./server.js";
@@ -37,7 +37,6 @@ function quietForPeople(settings: Settings, overrides: Record<string, string>): 
 
 async function serve(settings: Settings, overrides: Record<string, string>): Promise<void> {
   const app = createApp(settings);
-  const server = buildServer(app);
   const log = (msg: string) => app.audit.log("info", msg);
 
   const flags = Object.entries(overrides)
@@ -51,9 +50,13 @@ async function serve(settings: Settings, overrides: Record<string, string>): Pro
   if (settings.allowDomains.length) log(`allow list: ${settings.allowDomains.join(", ")}`);
   if (settings.denyDomains.length) log(`deny list: ${settings.denyDomains.join(", ")}`);
 
-  await server.connect(new StdioServerTransport());
+  // The opening exchange picks the protocol era: a 2025-era `initialize` or a 2026-07-28
+  // `server/discover`. Either way one server instance from the factory serves the connection.
+  const handle = serveStdio(() => buildServer(app), {
+    onerror: (e) => app.audit.log("warn", `stdio: ${e.message}`),
+  });
   const shutdown = async () => {
-    await server.close().catch(() => {});
+    await handle.close().catch(() => {});
     await app.close();
     process.exit(0);
   };

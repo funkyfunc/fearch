@@ -1,6 +1,8 @@
 /** The MCP server: two tools, `search` and `fetch`, over the app. stdio framing lives in cli.ts. */
 
 import {
+  CLIENT_CAPABILITIES_META_KEY,
+  CLIENT_INFO_META_KEY,
   createRequestStateCodec,
   inputRequired,
   inputResponse,
@@ -156,12 +158,19 @@ type RoundState =
 
 const stateCodec = createRequestStateCodec<RoundState>({ key: randomBytes(32), ttlSeconds: 900 });
 
-/** The client of this call can show a prompt: declared at the 2025 handshake, or in the 2026 per-request envelope. */
-function canAsk(server: McpServer, ctx: ServerContext): boolean {
-  const legacy = server.server.getClientCapabilities()?.elicitation;
-  const modern = (ctx.mcpReq.envelope as { clientCapabilities?: { elicitation?: unknown } } | undefined)
-    ?.clientCapabilities?.elicitation;
-  return !!(legacy ?? modern);
+/**
+ * Who is calling and whether they can show a prompt: declared once at the 2025 handshake, or in
+ * every request's `_meta` envelope under the 2026-07-28 revision.
+ */
+function clientOf(server: McpServer, ctx: ServerContext): { name: string; version: string; canAsk: boolean } {
+  const env = ctx.mcpReq.envelope as Record<string, unknown> | undefined;
+  const caps =
+    (env?.[CLIENT_CAPABILITIES_META_KEY] as { elicitation?: unknown } | undefined) ??
+    server.server.getClientCapabilities();
+  const info =
+    (env?.[CLIENT_INFO_META_KEY] as { name?: string; version?: string } | undefined) ??
+    server.server.getClientVersion();
+  return { name: info?.name ?? "unknown", version: info?.version ?? "", canAsk: !!caps?.elicitation };
 }
 
 /**
@@ -171,18 +180,19 @@ function canAsk(server: McpServer, ctx: ServerContext): boolean {
  * next call resumes it. Clients that cannot show a prompt get the pre-prompt behaviour (the tab or
  * window is surfaced straight away; the search box is handed over for Google).
  */
-function wireGate(app: App, server: McpServer): void {
+function wireGate(app: App, server: McpServer): (ctx: ServerContext) => void {
+  let seen: string | undefined;
+  const begin = (ctx: ServerContext) => {
+    const c = clientOf(server, ctx);
+    app.gate.askable = c.canAsk;
+    const line = `client: ${c.name} ${c.version} — can show prompts: ${c.canAsk ? "yes" : "no"}`;
+    if (line !== seen) app.audit.log("info", line);
+    seen = line;
+  };
   // Burn outgoing request id 0 on a ping: the SDK's cancellation handler treats `requestId: 0` as
   // missing (a falsy check), so a cancellation for the server's first request is silently dropped —
   // on a 2025-era connection the shim's first elicitation would otherwise be exactly that request.
-  server.server.oninitialized = () => {
-    const c = server.server.getClientVersion();
-    app.audit.log(
-      "info",
-      `client: ${c?.name ?? "unknown"} ${c?.version ?? ""} — can show prompts: ${server.server.getClientCapabilities()?.elicitation ? "yes" : "no"}`,
-    );
-    void server.server.ping().catch(() => {});
-  };
+  server.server.oninitialized = () => void server.server.ping().catch(() => {});
   app.gate.ask = async (_info, cont) => {
     if (!app.gate.askable || !cont) return "unavailable";
     return { deferred: app.pending.register(_info, cont) };
@@ -191,6 +201,7 @@ function wireGate(app: App, server: McpServer): void {
     if (!app.gate.askable) return "unavailable";
     throw new QueryFormRequired(ask);
   });
+  return begin;
 }
 
 /**
@@ -319,7 +330,7 @@ export function buildServer(app: App): McpServer {
       inputRequired: { roundTimeoutMs: app.settings.handoffTimeoutMs, maxRounds: 8 },
     },
   );
-  wireGate(app, server);
+  const begin = wireGate(app, server);
 
   server.registerTool(
     "search",
@@ -330,7 +341,7 @@ export function buildServer(app: App): McpServer {
       annotations: READ_ONLY,
     },
     async (args, ctx): Promise<CallToolResult | InputRequiredResult> => {
-      app.gate.askable = canAsk(server, ctx);
+      begin(ctx);
       const query = args.query.trim();
       const progress = progressReporter(ctx, 1 + args.fetch_top);
       // Re-entered with the person's answer to the form the previous round returned.
@@ -377,7 +388,7 @@ export function buildServer(app: App): McpServer {
       annotations: READ_ONLY,
     },
     async (args, ctx): Promise<CallToolResult | InputRequiredResult> => {
-      app.gate.askable = canAsk(server, ctx);
+      begin(ctx);
       const targets = [...(args.url ? [args.url] : []), ...(args.urls ?? [])].map((u) => u.trim()).filter(Boolean);
       if (!targets.length) return failure("Provide `url` or `urls`.");
       if (targets.length > MAX_URLS_PER_CALL) return failure(`At most ${MAX_URLS_PER_CALL} URLs per call.`);
