@@ -357,8 +357,10 @@ export class ExtensionRenderer implements BrowserTier {
     return true;
   }
 
+  /** Honest about who rendered last: the bridge when connected, else the fallback tier's own UA. */
   get browserUserAgent(): string {
-    return "your Chrome (fearch bridge extension)";
+    if (this.bridge.connected()) return "your Chrome (fearch bridge extension)";
+    return this.fallback?.browserUserAgent ?? "your Chrome (fearch bridge extension, not connected)";
   }
 
   /**
