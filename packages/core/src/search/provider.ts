@@ -48,8 +48,8 @@ export interface SearchResponse {
 /**
  * The form shown to the person before a query runs on an engine that needs their say-so (Google
  * always; every engine with `--human-search`): the query, editable; the engine, with the one about
- * to be used preselected; whether to use their signed-in browser profile (offered only when their own
- * Chrome is the tier); and whether to ask again next time.
+ * to be used preselected; incognito or not (the alternative being their signed-in Chrome, or fearch's
+ * own Chrome profile in a window); and whether to ask again next time.
  */
 export interface QueryAsk {
   query: string;
@@ -68,7 +68,8 @@ export interface QueryAsk {
 export interface QueryChoice {
   query: string;
   engine: string;
-  useProfile: boolean;
+  /** Open the engine page in an incognito window/context (no logins, nothing kept). */
+  incognito: boolean;
   askAgain: boolean;
 }
 

@@ -239,7 +239,7 @@ describe("query confirmation (--human-search)", () => {
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
     c.setRequestHandler(ElicitRequestSchema, async (req) => {
       asked.push({ message: req.params.message, schema: req.params.requestedSchema });
-      return { action: "accept" as const, content: { query: "edited query", engine: "google", ask_again: true } };
+      return { action: "accept" as const, content: { query: "edited query", google: true, ask_again: true } };
     });
     await c.connect(ct);
     const r = await c.callTool({ name: "search", arguments: { query: "original query" } });
@@ -247,9 +247,10 @@ describe("query confirmation (--human-search)", () => {
     expect(asked[0].message).toContain("Run this search as you?");
     const schema = JSON.stringify(asked[0].schema);
     expect(schema).toContain('"default":"original query"');
-    expect(schema).toContain('"enum":["google"]');
+    expect(schema).not.toContain('"enum"'); // one engine: nothing to pick
     expect(schema).toContain('"ask_again"');
-    expect(schema).toContain("Use fearch's Chrome profile"); // headed here: the tool profile is the choice
+    expect(schema).toContain('"title":"Incognito"'); // headed here: the alternative is fearch's own profile
+    expect(schema).toContain("fearch's own Chrome profile");
     expect(ran).toEqual([{ query: "edited query", submitted: true }]);
     expect(text(r)).toContain("https://x.test/1");
     await c.close();

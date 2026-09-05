@@ -171,40 +171,45 @@ function wireQueryForm(app: App, server: McpServer): void {
   app.search.onConfirmQuery(async (ask) => {
     if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
     const names = ask.engines.map((e) => e.name);
+    const other = ask.engines.find((e) => e.name !== "google");
     const properties: Record<string, unknown> = {
       query: { type: "string", title: "Query", default: ask.query },
-      engine: {
+    };
+    // Two engines, one of them Google: a checkbox says it all. More than two (none today): a picker.
+    if (names.includes("google") && other && names.length === 2)
+      properties.google = {
+        type: "boolean",
+        title: `Search on Google (off: ${other.label})`,
+        description: "Google's result pages are your own browsing: the query is submitted as you.",
+        default: ask.engine === "google",
+      };
+    else if (names.length > 1)
+      properties.engine = {
         type: "string",
         title: "Engine",
         enum: names,
         enumNames: ask.engines.map((e) => e.label),
         default: names.includes(ask.engine) ? ask.engine : names[0],
-      },
-    };
+      };
     if (ask.offerProfile) {
-      const noIncognito = ask.incognitoAllowed === false;
-      properties.use_profile =
-        ask.profileKind === "tool-profile"
-          ? {
-              type: "boolean",
-              title: "Use fearch's Chrome profile",
-              description:
-                "On: the tool-owned profile of your installed Chrome — it keeps bot checks you passed and anything you logged into in its windows. Off: a fresh incognito context with nothing in it.",
-              default: !app.settings.incognito,
-            }
-          : {
-              type: "boolean",
-              title: "Use my signed-in Chrome profile",
-              description: noIncognito
-                ? 'On (Chrome does not let the extension open incognito windows — enable "Allow in Incognito" at chrome://extensions to get the choice). Your logins and history ride along; Google ties the query to your account.'
-                : "Off: an incognito window. On: your logins and history ride along (Google ties the query to your account).",
-              default: noIncognito, // incognito unless Chrome cannot open one
-            };
+      const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
+      const alternative =
+        ask.profileKind === "own-chrome"
+          ? "your signed-in Chrome (logins and history ride along; Google ties the query to your account)"
+          : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows)";
+      properties.incognito = {
+        type: "boolean",
+        title: "Incognito",
+        description: noIncognito
+          ? `Not available: Chrome does not let the fearch extension open incognito windows (enable "Allow in Incognito" at chrome://extensions). The page opens in ${alternative}.`
+          : `On: a private window with no logins, nothing kept. Off: ${alternative}.`,
+        default: noIncognito ? false : app.settings.incognito,
+      };
     }
     properties.ask_again = {
       type: "boolean",
       title: "Ask me again next time",
-      description: "Off: keep this engine and profile choice for the rest of the session without asking.",
+      description: "Off: keep this engine and incognito choice for the rest of the session without asking.",
       default: true,
     };
     let r;
@@ -214,7 +219,7 @@ function wireQueryForm(app: App, server: McpServer): void {
           method: "elicitation/create",
           params: {
             message: `${ask.reason ? `${ask.reason} ` : ""}Run this search as you? Edit the query or pick the engine; it runs under your browser session.`,
-            requestedSchema: { type: "object", properties, required: ["query", "engine"] },
+            requestedSchema: { type: "object", properties, required: ["query"] },
           },
         },
         ElicitResultSchema,
@@ -228,8 +233,16 @@ function wireQueryForm(app: App, server: McpServer): void {
     if (r.action !== "accept") return "declined";
     const c = (r.content ?? {}) as Record<string, unknown>;
     const query = typeof c.query === "string" && c.query.trim() ? c.query.trim() : ask.query;
-    const engine = typeof c.engine === "string" && names.includes(c.engine) ? c.engine : ask.engine;
-    return { query, engine, useProfile: c.use_profile === true, askAgain: c.ask_again !== false };
+    const engine =
+      typeof c.google === "boolean"
+        ? c.google
+          ? "google"
+          : (other?.name ?? ask.engine)
+        : typeof c.engine === "string" && names.includes(c.engine)
+          ? c.engine
+          : ask.engine;
+    const noIncognito = ask.profileKind === "own-chrome" && ask.incognitoAllowed === false;
+    return { query, engine, incognito: !noIncognito && c.incognito === true, askAgain: c.ask_again !== false };
   });
 }
 

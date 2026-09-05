@@ -602,7 +602,7 @@ describe("google AI overview", () => {
     const cache = new Cache(null);
     const reg = new SearchRegistry(s, cache, new Audit(s), engines);
     // a client that approves each Google query as asked
-    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, useProfile: false, askAgain: true }));
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
     const out = await reg.search({ query: "what is a rest api", maxResults: 3 });
     expect(out.summary?.provider).toBe("google");
     expect(out.summary?.text).toMatch(/^A REST API/);

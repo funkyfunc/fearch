@@ -52,8 +52,8 @@ export class SearchRegistry {
   readonly web: SearchProvider[] = [];
   private readonly cooldown = new Map<string, { until: number; why: string }>();
   private confirm: ConfirmQuery | undefined;
-  /** "Don't ask me again": the engine and profile the person settled on for this session. */
-  private remembered: { engine: string; useProfile: boolean } | null = null;
+  /** "Don't ask me again": the engine and incognito choice the person settled on for this session. */
+  private remembered: { engine: string; incognito: boolean } | null = null;
 
   constructor(
     private readonly settings: Settings,
@@ -226,8 +226,8 @@ export class SearchRegistry {
         const chosen = await ask(p);
         if (!chosen) break;
         p = chosen;
-      } else if (this.remembered?.engine === p.name && offerProfile) {
-        incognito = !this.remembered.useProfile;
+      } else if (this.remembered?.engine === p.name) {
+        if (offerProfile) incognito = this.remembered.incognito;
         submittedByPerson = true;
       }
       const got = await runOne(p);
@@ -248,7 +248,7 @@ export class SearchRegistry {
     return { query, results, providers: used, fromCache: false, notes, summary };
   }
 
-  /** Apply the person's form answer: the query they settled on, the engine, the profile, and whether to remember. */
+  /** Apply the person's form answer: the query they settled on, the engine, incognito or not, and whether to remember. */
   private apply(
     answer: QueryChoice,
     proposed: SearchProvider,
@@ -260,8 +260,8 @@ export class SearchRegistry {
     setQuery(answer.query.trim() || proposed.name);
     markSubmitted();
     const offered = (this.browser?.profileChoice?.() ?? null) !== null;
-    setIncognito(offered ? !answer.useProfile : undefined);
-    this.remembered = answer.askAgain ? null : { engine: answer.engine, useProfile: answer.useProfile };
+    setIncognito(offered ? answer.incognito : undefined);
+    this.remembered = answer.askAgain ? null : { engine: answer.engine, incognito: answer.incognito };
     return providers.find((x) => x.name === answer.engine) ?? proposed;
   }
 }

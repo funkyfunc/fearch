@@ -12,8 +12,8 @@ Two tools:
 
 - **`search`** — real search engines, honestly: DuckDuckGo lite by default (the one engine whose
   robots.txt permits its result pages), silently; Google when you list it, and then every Google
-  query is shown to you in your MCP client first — the query to edit, the engine to pick, your
-  profile or incognito — and runs only when you accept it (`--human-search` shows you every query,
+  query is shown to you in your MCP client first — the query to edit, a Google/DuckDuckGo choice,
+  incognito or not — and runs only when you accept it (`--human-search` shows you every query,
   DuckDuckGo included). `fetch_top=N` inlines excerpts of the top results so one call replaces
   search-then-fetch. Every result names its provider. Searches through Google include the page's AI Overview when present — labelled as
   Google's unverified summary, with its sources. When no engine answers, the failure says exactly
@@ -122,9 +122,11 @@ window management at all, just a tab that appears when you say yes.
 Search is DuckDuckGo lite with zero flags, in every mode, and it runs without asking. Google (with
 its AI Overview) is a choice you make with `--engines google,duckduckgo`, and every Google query is
 yours to approve: Google's robots.txt disallows result pages for crawlers, so before a query reaches
-Google you see a form in your MCP client — the query (edit it), the engine (DuckDuckGo or Google),
-your signed-in Chrome profile or incognito (incognito by default, when your own Chrome is the tier),
-and "ask me again next time" (untick it and your choice holds for the session). What you accept runs
+Google you see a form in your MCP client — the query (edit it), "Search on Google" (off means
+DuckDuckGo), "Incognito" (off means your signed-in Chrome through the extension, or fearch's own
+Chrome profile in the window; `--incognito` sets the default), and "ask me again next time" (untick it
+and your choice holds for the session). If the engine you chose fails, the next one runs and the note
+says why; if DuckDuckGo fails and Google is listed, the form comes back with the reason. What you accept runs
 as your own browsing, in your own Chrome through the extension or in a visible window, never
 headless. From the CLI, or in a client that cannot show a form, Google opens with the query in the
 box and **you press Enter**. `--human-search` shows you the same form for every query, DuckDuckGo

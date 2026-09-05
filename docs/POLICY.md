@@ -51,9 +51,9 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   the query is typed and the result read back for them, and every gate a site raises is decided by
   them personally; they are opened without consulting robots.txt, exactly as their own Chrome would.
   Every such query is the person's act: before it reaches Google it is shown to them in their MCP
-  client (the query, editable; the engine, with the one about to run preselected; their signed-in
-  profile or incognito, incognito by default; "ask me again next time") and runs only on their
-  accept; where the client cannot show a form, the query is filled into the engine's search box and
+  client (the query, editable; "Search on Google" with the engine about to run preselected;
+  "Incognito", default from `FEARCH_INCOGNITO`, the alternative being their signed-in Chrome or the
+  tool-owned profile; "ask me again next time") and runs only on their accept; where the client cannot show a form, the query is filled into the engine's search box and
   the person submits it. `FEARCH_HUMAN_SEARCH=1` shows the form for every query, DuckDuckGo lite
   included. Ordinary page fetches — the tool acting alone — stay under
   the robots policy above in every mode, and where no person can be reached (no display, handoff

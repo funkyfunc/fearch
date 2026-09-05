@@ -140,7 +140,7 @@ describe("registry", () => {
       const reg = registry([ddg, google], { DISPLAY: ":0" });
       reg.onConfirmQuery(async (a) => {
         asked.push(a);
-        return { query: `${a.query} edited`, engine: a.engine, useProfile: false, askAgain: true };
+        return { query: `${a.query} edited`, engine: a.engine, incognito: true, askAgain: true };
       });
       // DuckDuckGo answers first: nobody is asked
       await reg.search({ query: "q", maxResults: 1 });
@@ -150,7 +150,7 @@ describe("registry", () => {
       const reg2 = registry([google, ddg], { DISPLAY: ":0" });
       reg2.onConfirmQuery(async (a) => {
         asked.push(a);
-        return { query: `${a.query} edited`, engine: a.engine, useProfile: false, askAgain: true };
+        return { query: `${a.query} edited`, engine: a.engine, incognito: true, askAgain: true };
       });
       const out = await reg2.search({ query: "q2", maxResults: 1 });
       expect(asked.length).toBe(1);
@@ -183,7 +183,7 @@ describe("registry", () => {
       const asked: Array<{ offerProfile: boolean }> = [];
       reg.onConfirmQuery(async (a) => {
         asked.push({ offerProfile: a.offerProfile });
-        return { query: a.query, engine: a.engine, useProfile: false, askAgain: true };
+        return { query: a.query, engine: a.engine, incognito: true, askAgain: true };
       });
       await reg.search({ query: "q", maxResults: 1 });
       expect(asked).toEqual([{ offerProfile: true }]);
@@ -200,12 +200,12 @@ describe("registry", () => {
       const kinds: unknown[] = [];
       reg2.onConfirmQuery(async (a) => {
         kinds.push(a.profileKind);
-        return { query: a.query, engine: a.engine, useProfile: true, askAgain: true };
+        return { query: a.query, engine: a.engine, incognito: false, askAgain: true };
       });
       await reg2.search({ query: "q", maxResults: 1 });
       expect(kinds).toEqual(["tool-profile"]);
       expect(google.seen[1]).toMatchObject({ incognito: false });
-      expect(google.seen[0]).toMatchObject({ incognito: true }); // profile left unticked → incognito
+      expect(google.seen[0]).toMatchObject({ incognito: true }); // incognito ticked
     });
 
     it("lets the person switch the engine in the form, and remembers the choice when they say so", async () => {
@@ -215,7 +215,7 @@ describe("registry", () => {
       let asks = 0;
       reg.onConfirmQuery(async (a) => {
         asks++;
-        return { query: a.query, engine: "duckduckgo", useProfile: false, askAgain: false };
+        return { query: a.query, engine: "duckduckgo", incognito: true, askAgain: false };
       });
       const first = await reg.search({ query: "q1", maxResults: 1 });
       expect(first.providers.map((p) => p.name)).toEqual(["duckduckgo"]);
@@ -237,7 +237,7 @@ describe("registry", () => {
       const asked: Array<{ engine: string; reason?: string }> = [];
       reg.onConfirmQuery(async (a) => {
         asked.push({ engine: a.engine, reason: a.reason });
-        return { query: a.query, engine: "google", useProfile: false, askAgain: false };
+        return { query: a.query, engine: "google", incognito: true, askAgain: false };
       });
       const out = await reg.search({ query: "q", maxResults: 1 });
       expect(asked).toEqual([{ engine: "google", reason: "duckduckgo: DuckDuckGo lite showed its bot-check page." }]);
@@ -269,7 +269,7 @@ describe("registry", () => {
       let asks = 0;
       reg.onConfirmQuery(async (a) => {
         asks++;
-        return { query: a.query, engine: a.engine, useProfile: false, askAgain: true };
+        return { query: a.query, engine: a.engine, incognito: true, askAgain: true };
       });
       await reg.search({ query: "q", maxResults: 1 });
       expect(asks).toBe(1);
@@ -279,7 +279,7 @@ describe("registry", () => {
       let quietAsks = 0;
       quiet.onConfirmQuery(async (a) => {
         quietAsks++;
-        return { query: a.query, engine: a.engine, useProfile: false, askAgain: false };
+        return { query: a.query, engine: a.engine, incognito: true, askAgain: false };
       });
       await quiet.search({ query: "q1", maxResults: 1 });
       await quiet.search({ query: "q2", maxResults: 1 });
