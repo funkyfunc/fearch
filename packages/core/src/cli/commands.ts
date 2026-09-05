@@ -4,21 +4,21 @@
  */
 
 import { createApp } from "../app.js";
-import type { Settings } from "../config.js";
+import { UsageError, type Settings } from "../config.js";
 import { describeError, isExpected } from "../errors.js";
 import { DiagnosedError } from "../fetch/pipeline.js";
-import { readDocument, type ReadMode } from "../fetch/read.js";
+import { READ_MODES, readDocument, type ReadMode } from "../fetch/read.js";
 import { attachExcerpts } from "../search/excerpt.js";
 import type { Recency } from "../search/provider.js";
 import { renderResults } from "../search/render.js";
 import { num, parseArgs, str, type Flags } from "./args.js";
 import { doctor } from "./doctor.js";
 import { extensionCommand } from "./extension.js";
-import { usage } from "./usage.js";
 
 const EXIT_OK = 0;
 const EXIT_REFUSED = 1;
 const EXIT_FAILED = 2;
+const RECENCIES = ["d", "w", "m", "y"] as const;
 
 export async function runCommand(argv: string[], settings: Settings): Promise<number> {
   const [command, ...rest] = argv;
@@ -27,32 +27,36 @@ export async function runCommand(argv: string[], settings: Settings): Promise<nu
   try {
     switch (command) {
       case "fetch":
-        return positional[0] ? await fetchCommand(app, positional[0], flags) : usageExit();
+        if (!positional[0]) throw new UsageError("fetch needs a URL: fearch fetch <url>");
+        return await fetchCommand(app, positional[0], flags);
       case "search":
-        return positional.length ? await searchCommand(app, positional.join(" "), flags) : usageExit();
+        if (!positional.length) throw new UsageError("search needs a query: fearch search <query>");
+        return await searchCommand(app, positional.join(" "), flags);
       case "doctor":
-        return await doctor(app);
+        return await doctor(app, { json: flags.json === true });
       case "extension":
         return await extensionCommand(app, positional[0] ?? "status", flags);
       default:
-        return usageExit();
+        throw new UsageError(`unknown command "${command}" (fetch, search, doctor, extension)`);
     }
   } finally {
     await app.close();
   }
 }
 
-function usageExit(): number {
-  process.stdout.write(usage());
-  return EXIT_REFUSED;
-}
-
 const emit = (flags: Flags, human: string, json: unknown): void => {
   process.stdout.write(flags.json === true ? JSON.stringify(json, null, 2) + "\n" : human);
 };
 
+function oneOf<T extends string>(name: string, v: string | undefined, allowed: readonly T[]): T | undefined {
+  if (v === undefined) return undefined;
+  if (!(allowed as readonly string[]).includes(v))
+    throw new UsageError(`--${name} must be one of ${allowed.join("|")}`);
+  return v as T;
+}
+
 async function fetchCommand(app: ReturnType<typeof createApp>, url: string, flags: Flags): Promise<number> {
-  const mode = (str(flags.mode) ?? (flags.raw === true ? "raw" : "read")) as ReadMode;
+  const mode: ReadMode = oneOf("mode", str(flags.mode), READ_MODES) ?? (flags.raw === true ? "raw" : "read");
   try {
     const doc = await app.fetcher.fetch(url, {
       raw: mode === "raw",
@@ -87,7 +91,7 @@ async function searchCommand(app: ReturnType<typeof createApp>, query: string, f
       query,
       maxResults: num(flags.n, 8),
       site: str(flags.site),
-      recency: str(flags.recency) as Recency | undefined,
+      recency: oneOf<Recency>("recency", str(flags.recency), RECENCIES),
     });
     await attachExcerpts(app, outcome.results, query, num(flags["fetch-top"], 0));
     const { providers, ...rest } = outcome;

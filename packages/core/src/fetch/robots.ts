@@ -10,7 +10,6 @@ import robotsParserImport from "robots-parser";
 import type { Cache } from "../cache.js";
 
 interface Robot {
-  isAllowed(url: string, ua?: string): boolean | undefined;
   isDisallowed(url: string, ua?: string): boolean | undefined;
   getCrawlDelay(ua?: string): number | undefined;
 }
@@ -55,7 +54,12 @@ export function robotsContentSignalNoAiInput(body: string): string | null {
 }
 
 export interface RobotsFetcher {
-  (url: string): Promise<{ status: number; body: string }>;
+  (url: string, opts: { httpFallback: boolean }): Promise<{ status: number; body: string }>;
+}
+
+export interface RobotsCheckOptions {
+  /** The page URL was upgraded to https optimistically; the robots probe may fall back to http too. */
+  httpFallback?: boolean;
 }
 
 export class RobotsChecker {
@@ -65,7 +69,7 @@ export class RobotsChecker {
     private readonly policy: RobotsPolicy = "default",
   ) {}
 
-  async check(url: string): Promise<RobotsDecision> {
+  async check(url: string, opts: RobotsCheckOptions = {}): Promise<RobotsDecision> {
     const u = new URL(url);
     const host = u.host.toLowerCase();
     if (isApiUrl(url)) return { allowed: true, status: "api" };
@@ -75,7 +79,7 @@ export class RobotsChecker {
       let status = 0;
       let body = "";
       try {
-        const r = await this.fetchRobots(`${u.protocol}//${u.host}/robots.txt`);
+        const r = await this.fetchRobots(`${u.protocol}//${u.host}/robots.txt`, { httpFallback: !!opts.httpFallback });
         status = r.status;
         body = r.body;
       } catch (e) {
@@ -85,17 +89,20 @@ export class RobotsChecker {
         body =
           e instanceof FetchError ? e.message.replace(/^Connection failed for \S+: /, "") : describeNetworkError(e);
       }
-      this.cache.setRobots(host, status, body);
+      // A network failure is not the host's answer: remember only what the host actually said.
+      if (status !== 0) this.cache.setRobots(host, status, body);
       entry = { host, status, body, fetchedAt: Date.now() };
     }
 
     if (entry.status === 404 || entry.status === 410)
       return { allowed: true, status: "allowed", reason: "no robots.txt" };
     if (entry.status === 401 || entry.status === 403) {
+      // RFC 9309 §2.3.1.3 lets a crawler treat a 4xx as "no robots.txt". fearch chooses the
+      // conservative reading: a host that refuses to say its rules is not asked for anything else.
       return {
         allowed: false,
         status: "disallowed",
-        reason: `robots.txt returned HTTP ${entry.status} (treated as disallow, RFC 9309 §2.3.1.3)`,
+        reason: `robots.txt returned HTTP ${entry.status}; fearch fails closed on 4xx (RFC 9309 §2.3.1.3 would permit access)`,
       };
     }
     if (entry.status === 0 || entry.status >= 500) {
@@ -103,21 +110,13 @@ export class RobotsChecker {
       return {
         allowed: false,
         status: "unavailable",
-        reason: `robots.txt unavailable (${why}); treated as disallow per RFC 9309`,
+        reason: `robots.txt unreachable (${why}); disallowed per RFC 9309 §2.3.1.4`,
       };
     }
     if (entry.status !== 200) return { allowed: true, status: "allowed", reason: `robots.txt HTTP ${entry.status}` };
 
-    let robots: Robot;
-    try {
-      robots = robotsParser(`${u.protocol}//${u.host}/robots.txt`, entry.body);
-    } catch (e) {
-      return {
-        allowed: false,
-        status: "disallowed",
-        reason: `robots.txt could not be parsed (${(e as Error).message})`,
-      };
-    }
+    // robots-parser never throws: unparseable lines are skipped (RFC 9309 §2.3.1.5).
+    const robots: Robot = robotsParser(`${u.protocol}//${u.host}/robots.txt`, entry.body);
 
     for (const token of tokensFor(this.policy)) {
       if (robots.isDisallowed(url, token)) {

@@ -18,8 +18,10 @@ import { acceptLanguage } from "../config.js";
 import { assertPublicUrl, BlockedURL, guardedLookup, type LookupFn } from "./guard.js";
 import type { ContentKind, Fetched } from "./types.js";
 
+// Markdown first; then HTML over plain text — a negotiating server should hand back its richer
+// representation, and plain text loses headings, links and tables.
 export const ACCEPT_HEADER =
-  "text/markdown, text/x-markdown;q=0.95, text/plain;q=0.9, text/html;q=0.8, application/xhtml+xml;q=0.7, application/pdf;q=0.5, */*;q=0.1";
+  "text/markdown, text/x-markdown;q=0.95, text/html;q=0.9, application/xhtml+xml;q=0.85, text/plain;q=0.8, application/pdf;q=0.5, */*;q=0.1";
 
 const TLS_ERROR_RE = /CERT|certificate|self.signed|unable to verify|LEAF_SIGNATURE|SELF_SIGNED|DEPTH_ZERO|ERR_TLS/i;
 
@@ -91,16 +93,30 @@ export interface HttpResponse extends Fetched {
   redirects: string[];
 }
 
+/** Control bytes (other than tab, LF, VT, FF, CR) in the first bytes: not text of any kind. */
+function looksBinary(body: Uint8Array): boolean {
+  const n = Math.min(body.length, 512);
+  for (let i = 0; i < n; i++) {
+    const b = body[i];
+    if (b < 0x09 || (b > 0x0d && b < 0x20)) return true;
+  }
+  return false;
+}
+
 export function classify(contentType: string, body: Uint8Array, url: string): ContentKind {
   const ct = (contentType || "").split(";")[0].trim().toLowerCase();
   const head = new TextDecoder().decode(body.slice(0, 4000));
   if (ct === "text/markdown" || ct === "text/x-markdown") return "markdown";
   if (ct === "application/pdf" || (!ct && url.toLowerCase().endsWith(".pdf")) || head.startsWith("%PDF-")) return "pdf";
-  if (ct === "application/json") return "json";
+  if (ct === "application/json" || ct.endsWith("+json")) return "json";
   if (ct.startsWith("text/plain")) return /^#{1,6} |^```|^\* |^- /m.test(head) ? "markdown" : "text";
-  if (ct === "text/html" || ct === "application/xhtml+xml" || /<html|<!doctype/i.test(head.slice(0, 2000)))
-    return "html";
+  if (ct === "text/html" || ct === "application/xhtml+xml") return "html";
   if (ct.startsWith("text/")) return "text";
+  // A declared non-document type is one whatever its bytes look like.
+  if (ct.startsWith("image/") || ct.startsWith("audio/") || ct.startsWith("video/") || ct.startsWith("font/"))
+    return "binary";
+  if (looksBinary(body)) return "binary";
+  // An unknown but textual body (XML, an unlabelled page): read it as HTML, which degrades to text.
   return "html";
 }
 

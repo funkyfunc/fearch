@@ -1,4 +1,5 @@
-export type ContentKind = "html" | "markdown" | "text" | "pdf" | "json";
+/** `binary`: a response that is not a document at all (an image, an archive, an executable). */
+export type ContentKind = "html" | "markdown" | "text" | "pdf" | "json" | "binary";
 
 export interface Fetched {
   url: string;

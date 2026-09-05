@@ -3,14 +3,20 @@
 import type { App } from "../app.js";
 import { ExtensionRenderer } from "../fetch/extension.js";
 
-export async function doctor(app: App): Promise<number> {
-  const s = app.settings;
-  const lines: string[] = [`fearch ${s.version} doctor`, ""];
-  const ok = (label: string, detail: string) => lines.push(`  [ok]   ${label}: ${detail}`);
-  const warn = (label: string, detail: string) => lines.push(`  [warn] ${label}: ${detail}`);
-  const fail = (label: string, detail: string) => lines.push(`  [FAIL] ${label}: ${detail}`);
+const NODE_MIN = [22, 5] as const;
 
-  ok("node", `${process.version} (needs ≥22.5 for node:sqlite)`);
+type Check = { status: "ok" | "warn" | "FAIL"; label: string; detail: string };
+
+export async function doctor(app: App, opts: { json?: boolean } = {}): Promise<number> {
+  const s = app.settings;
+  const checks: Check[] = [];
+  const ok = (label: string, detail: string) => checks.push({ status: "ok", label, detail });
+  const warn = (label: string, detail: string) => checks.push({ status: "warn", label, detail });
+  const fail = (label: string, detail: string) => checks.push({ status: "FAIL", label, detail });
+
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const nodeOk = major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1]);
+  (nodeOk ? ok : fail)("node", `${process.version} (needs ≥${NODE_MIN.join(".")} for node:sqlite)`);
   ok("user-agent", s.userAgent);
   ok("robots.txt", `honoured, policy=${s.robotsPolicy} (Crawl-delay honoured)`);
   ok("cache", s.noCache ? "disabled (--no-cache)" : `${s.cacheDir}/cache-v2.sqlite`);
@@ -19,7 +25,8 @@ export async function doctor(app: App): Promise<number> {
   ok("proxy", proxy || "none (set HTTPS_PROXY for a corporate egress proxy)");
   if (s.allowDomains.length) ok("allow list", s.allowDomains.join(", "));
   if (s.denyDomains.length) ok("deny list", s.denyDomains.join(", "));
-  ok("search providers", app.search.describe());
+  const providers = app.search.describe();
+  (s.searchMode !== "off" && /\(none\)/.test(providers) ? warn : ok)("search providers", providers);
 
   // The network, and that the honest UA reaches the other end.
   try {
@@ -31,13 +38,16 @@ export async function doctor(app: App): Promise<number> {
     fail("network", `could not reach httpbin.org: ${(e as Error).message}`);
   }
 
-  // One keyless search.
-  try {
-    const o = await app.search.search({ query: "fearch doctor check", maxResults: 2 });
-    ok("search", `${o.results.length} result(s) via ${o.providers.map((p) => p.name).join("+") || "cache"}`);
-  } catch (e) {
-    warn("search", (e as Error).message);
-    if (s.logLevel === "debug") process.stderr.write(`${(e as Error).stack}\n`);
+  // One real search, never from the cache: doctor checks the engines, not yesterday's answer.
+  if (s.searchMode === "off") ok("search", "disabled (--search off); the fetch tool still works");
+  else {
+    try {
+      const o = await app.search.search({ query: "fearch doctor check", maxResults: 2 }, { noCache: true });
+      ok("search", `${o.results.length} result(s) via ${o.providers.map((p) => p.name).join("+")}`);
+    } catch (e) {
+      warn("search", (e as Error).message);
+      if (s.logLevel === "debug") process.stderr.write(`${(e as Error).stack}\n`);
+    }
   }
 
   // The extension bridge (used by auto and extension modes).
@@ -50,8 +60,8 @@ export async function doctor(app: App): Promise<number> {
         const incognito = info?.incognitoAllowed
           ? "allowed"
           : s.incognito
-            ? "not allowed — --incognito will fail until “Allow in Incognito” is enabled"
-            : "not allowed";
+            ? 'not allowed in Chrome — --incognito will fail until "Allow in Incognito" is enabled at chrome://extensions'
+            : 'not allowed in Chrome ("Allow in Incognito" at chrome://extensions enables --incognito)';
         ok("extension", `fearch bridge ${info?.version} connected on port ${port}; incognito ${incognito}`);
       } else if (s.browser === "extension")
         warn("extension", `not connected on port ${port} — run \`fearch extension install\`; falling back meanwhile`);
@@ -84,13 +94,21 @@ export async function doctor(app: App): Promise<number> {
         s.browser === "headed" ? `; handoff=${s.handoff ? "on" : "off"}; profile: ${s.browserStatePath}` : "";
       ok(
         "browser",
-        `${s.browser} ${app.browser.browserChannel} rendered example.com (${r.html.length} chars); identity=${identity}; UA: ${app.browser.browserUserAgent.slice(0, 60)}…${headed}`,
+        `${s.browser} ${app.browser.browserChannel} rendered example.com (${r.html.length} chars); identity=${identity}; UA: ${app.browser.browserUserAgent}${headed}`,
       );
     } catch (e) {
       fail("browser", (e as Error).message);
     }
   }
 
-  process.stdout.write(lines.join("\n") + "\n");
-  return lines.some((l) => l.includes("[FAIL]")) ? 1 : 0;
+  const failed = checks.some((c) => c.status === "FAIL");
+  if (opts.json) {
+    process.stdout.write(JSON.stringify({ ok: !failed, version: s.version, checks }, null, 2) + "\n");
+  } else {
+    const lines = [`fearch ${s.version} doctor`, ""];
+    for (const c of checks)
+      lines.push(`  [${c.status}]${" ".repeat(Math.max(1, 5 - c.status.length))}${c.label}: ${c.detail}`);
+    process.stdout.write(lines.join("\n") + "\n");
+  }
+  return failed ? 1 : 0;
 }

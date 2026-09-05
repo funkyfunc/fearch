@@ -9,7 +9,6 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Freshness } from "./fetch/freshness.js";
 
-export const PAGE_TTL_MS = 24 * 3600_000;
 export const SEARCH_TTL_MS = 15 * 60_000;
 export const ROBOTS_TTL_MS = 3600_000;
 
@@ -55,7 +54,7 @@ export class Cache {
     if (version !== SCHEMA_VERSION) {
       // Any older layout (including the v1 Python server's) is simply dropped — it's a cache.
       this.db.exec(
-        "DROP TABLE IF EXISTS pages; DROP TABLE IF EXISTS searches; DROP TABLE IF EXISTS robots; DROP TABLE IF EXISTS hosts; DROP TABLE IF EXISTS engine_state;",
+        "DROP TABLE IF EXISTS pages; DROP TABLE IF EXISTS searches; DROP TABLE IF EXISTS robots; DROP TABLE IF EXISTS hosts;",
       );
       this.db.exec(SCHEMA);
       this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -64,7 +63,8 @@ export class Cache {
     }
   }
 
-  getPage(url: string, allowStale = false): CachedPage | null {
+  /** The cached page whatever its age: the pipeline decides whether to serve or revalidate it. */
+  getPage(url: string): CachedPage | null {
     const row = this.db
       .prepare(
         "SELECT url, final_url, title, source, markdown, etag, last_modified, licence, updated, fetched_at FROM pages WHERE url = ?",
@@ -72,7 +72,6 @@ export class Cache {
       .get(url) as Record<string, string | number | null> | undefined;
     if (!row) return null;
     const fetchedAt = Number(row.fetched_at);
-    if (!allowStale && Date.now() - fetchedAt > PAGE_TTL_MS) return null;
     let updated: Freshness | null = null;
     if (row.updated) {
       try {
@@ -120,7 +119,11 @@ export class Cache {
     const row = this.db.prepare("SELECT results, fetched_at FROM searches WHERE key = ?").get(key) as
       { results: string; fetched_at: number } | undefined;
     if (!row || Date.now() - Number(row.fetched_at) > SEARCH_TTL_MS) return null;
-    return JSON.parse(row.results) as T;
+    try {
+      return JSON.parse(row.results) as T;
+    } catch {
+      return null; // a corrupt row is a cache miss, not a crash
+    }
   }
 
   setSearch(key: string, results: unknown): void {

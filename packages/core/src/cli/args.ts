@@ -1,4 +1,4 @@
-/** Tiny `--flag value` / `--flag` parser for the subcommands (server flags are parsed in config.ts). */
+/** Tiny `--flag value` / `--flag=value` / `--flag` parser for the subcommands (server flags are parsed in config.ts). */
 
 export type Flags = Record<string, string | true>;
 
@@ -9,6 +9,11 @@ export function parseArgs(argv: string[]): { positional: string[]; flags: Flags 
     const a = argv[i];
     if (!a.startsWith("--")) {
       positional.push(a);
+      continue;
+    }
+    const eq = a.indexOf("=");
+    if (eq > 2) {
+      flags[a.slice(2, eq)] = a.slice(eq + 1);
       continue;
     }
     const next = argv[i + 1];

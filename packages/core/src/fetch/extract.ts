@@ -4,7 +4,7 @@
  * Strategy: locate the main-content container and convert it with a *pure* converter (turndown +
  * GFM), which never drops code blocks; fall back to Readability only when no container is found;
  * guard every candidate by counting <pre> blocks in vs. fenced blocks out. Heuristic extractors
- * score badly on code (MainWebBench code EditSim: readability 0.06, trafilatura 0.13).
+ * (Readability, trafilatura) score their text by density and routinely drop or hollow out code.
  */
 
 import { Readability } from "@mozilla/readability";
@@ -445,6 +445,14 @@ export async function pdfToMarkdown(data: Uint8Array, maxPages = 200): Promise<E
   }
   const { text, totalPages } = await extractText(pdf, { mergePages: false });
   const pages = (text as string[]).slice(0, maxPages);
+  // Most PDFs carry no Title in their metadata; the first line of page 1 is the honest fallback.
+  if (!title.trim()) {
+    const first = (pages[0] ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length >= 8 && /[a-z]/i.test(l) && !/@|https?:\/\/|^arxiv:/i.test(l));
+    if (first) title = first.slice(0, 120);
+  }
   const parts = pages
     .map((t, i) => {
       const s = t.replace(/[ \t]+\n/g, "\n").trim();

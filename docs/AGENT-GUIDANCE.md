@@ -22,10 +22,14 @@ You have `search` and `fetch`.
   retry the same URL with different settings; use another source, an official API, or ask the user.
   One exception: a `captcha_or_challenge` marked `retryable: true` means the check is open in the
   user's browser waiting for them — tell them, and call fetch again on the same URL once they say
-  they have passed it. Likewise, a search note saying the query is "waiting in Google … press
-  Enter there" means the user submits searches themselves on this server: tell them, then search
-  again. A prompt asking the user to approve a query is normal on servers run with `--human-search`;
-  a declined query is the user's answer, not an error to work around.
+  they have passed it. Likewise, a search note saying a Google query "was not submitted" or "nobody
+  answered" means the user approves or submits searches themselves on this server: tell them, and
+  search again once they are at the screen (the tab that timed out was closed; the next search opens
+  a fresh one). A prompt asking the user to approve a query is normal on servers run with
+  `--human-search`; a declined query is the user's answer, not an error to work around.
+- A `Diagnosis` of kind `empty` means the page was reached but held nothing readable (a binary file,
+  a page that only exists after JavaScript and could not be rendered): try `mode="raw"` to see what
+  came back, or another URL on the site.
 - GitHub, PyPI, npm and StackOverflow URLs are read through their APIs — prefer those URLs over
   mirrors. Documentation sites often serve markdown directly; you will see `source: direct (markdown)`.
 - Results and pages show a date when the site declares one. Prefer recent sources for anything

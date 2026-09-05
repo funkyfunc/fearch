@@ -2,7 +2,8 @@
 
 import { footer, type FooterOptions, type Window } from "./budget.js";
 
-const LINK_RE = /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+// The URL may carry escaped parentheses (Wikipedia: `Relevance_\(information_retrieval\)`).
+const LINK_RE = /\[([^\]]*)\]\(((?:\\.|[^)\s])+)(?:\s+"[^"]*")?\)/g;
 const IMAGE_RE = /!\[([^\]]*)\]\([^)]*\)/g;
 const LINKED_IMAGE_RE = /\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)/g;
 

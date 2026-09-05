@@ -69,21 +69,30 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   agents that identify themselves, and neither company reads search results by driving a user's
   browser. RFC 9309 scopes itself to "automatic clients known as crawlers". See
   `RESEARCH-RECONCILIATION.md`, Report C.
-- If `robots.txt` returns 401/403 or cannot be parsed, the host is treated as disallowed (fail closed).
+- If `robots.txt` returns 401/403, the host is treated as disallowed. This is a choice, not the RFC's
+  rule: RFC 9309 §2.3.1.3 lets a crawler treat a 4xx as "no robots.txt" and read; §2.3.1.4 mandates
+  disallow only for 5xx/network failures, which fearch also honours. A network failure while
+  fetching robots.txt is not cached (the next call asks again); an answer from the host is cached for
+  an hour. When the page URL was upgraded from `http://` optimistically, the robots.txt probe may fall
+  back to plain http exactly as the page fetch may.
 - `X-Robots-Tag`, `<meta name="robots">`, `noai`/`noimageai`, RSL and AIPREF headers are recorded and
   shown in the tool output so downstream use can respect them.
 - Requests to documented public APIs (`api.github.com`, `raw.githubusercontent.com`, `pypi.org`,
   `registry.npmjs.org`, `api.stackexchange.com`, `crates.io`, MDN's and Wikipedia's search endpoints)
   are made under those services' API terms; robots.txt governs page crawling, not API clients. The
   exact list is `API_ENDPOINTS` in `packages/core/src/fetch/resolver.ts`, and such requests are marked
-  `Robots: api terms` in the output.
+  `robots: not consulted (documented API, its terms apply)` in the output. The operator's
+  `FEARCH_ALLOW_DOMAINS` / `FEARCH_DENY_DOMAINS` lists apply to these hosts like any other.
 
 ## The browser tier
 
-- When the plain HTTP client receives an empty client-rendered shell, or is refused (403 / WAF /
-  challenge page), the page is opened **once** in a real Chromium (Playwright). This is the same thing
-  a person does when a page needs a browser, and it is ordinary corporate automation
-  (`docs/SPECTRUM.md` rung 7).
+- When the plain HTTP client receives an empty client-rendered shell — by shape (an empty mount
+  point, a "turn on JavaScript" stub) *or* by result (the extractor finds no readable content, or a
+  negotiated markdown/text body is a stub of under 100 characters) — or is refused (403 / WAF /
+  challenge page), the page is opened **once** in a real Chromium (Playwright). The browser is read
+  until the DOM stops being a shell (bounded), so a client-rendered app is not captured before it
+  hydrates. This is the same thing a person does when a page needs a browser, and it is ordinary
+  corporate automation (`docs/SPECTRUM.md` rung 7).
 - **Five modes** (`FEARCH_BROWSER`: `auto` | `headless` | `headed` | `extension` | `off`). `auto`
   (default): renders happen in the bundled headless Chromium; when a page comes back as a challenge
   and a display exists, that one page is opened in a visible window (the installed Chrome) and handed
@@ -212,10 +221,12 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 
 ## Safety limits
 
-- Private, loopback, link-local, multicast and cloud-metadata targets are refused. DNS is resolved
-  before connecting *and* the address the socket actually connects to is checked again at connection
-  time (`guardedLookup` in `fetch/guard.ts`, wired into the HTTP client's connector), so a name that
-  rebinds between the two lookups is still refused; every redirect hop is re-validated. An explicit
+- Private, loopback, link-local, multicast and cloud-metadata targets are refused, in IPv4, IPv6 and
+  the IPv4-mapped / IPv4-compatible IPv6 spellings (`[::ffff:127.0.0.1]`, which the URL parser
+  canonicalises to `[::ffff:7f00:1]`). DNS is resolved before connecting *and* the address the socket
+  actually connects to is checked again at connection time (`guardedLookup` in `fetch/guard.ts`,
+  wired into the HTTP client's connector), so a name that rebinds between the two lookups is still
+  refused; every redirect hop is re-validated. An explicit
   `https://` URL is never retried over plain http; only a bare host or an `http://` URL that was
   upgraded optimistically may fall back.
 - 10 MB response cap, 30 s request timeout, 6 redirect hops, ≤5 URLs per call.

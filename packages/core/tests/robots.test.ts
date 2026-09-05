@@ -46,15 +46,37 @@ describe("robots", () => {
     expect((await c.check("https://example.com/")).crawlDelayMs).toBe(5000);
   });
 
-  it("fails closed on 401/403/5xx/network and open on 404", async () => {
-    expect((await checker(403).check("https://a.test/")).allowed).toBe(false);
+  it("fails closed on 401/403 (a choice), on 5xx/network (RFC 9309 §2.3.1.4), and open on 404", async () => {
+    const forbidden = await checker(403).check("https://a.test/");
+    expect(forbidden.allowed).toBe(false);
+    // The RFC would permit access on a 4xx; the message must say the closed door is our choice.
+    expect(forbidden.reason).toMatch(/fails closed on 4xx.*§2\.3\.1\.3 would permit/);
     expect((await checker(401).check("https://a.test/")).allowed).toBe(false);
-    expect((await checker(503).check("https://a.test/")).status).toBe("unavailable");
+    const down = await checker(503).check("https://a.test/");
+    expect(down.status).toBe("unavailable");
+    expect(down.reason).toContain("§2.3.1.4");
     expect((await checker(404).check("https://a.test/")).allowed).toBe(true);
     const failing = new RobotsChecker(new Cache(null), async () => {
       throw new Error("ECONNRESET");
     });
     expect((await failing.check("https://a.test/")).allowed).toBe(false);
+  });
+
+  it("passes the page's http fallback to the probe and does not cache a network failure", async () => {
+    const seen: Array<{ url: string; httpFallback: boolean }> = [];
+    let attempts = 0;
+    const c = new RobotsChecker(new Cache(null), async (url, opts) => {
+      seen.push({ url, httpFallback: opts.httpFallback });
+      if (++attempts === 1) throw new Error("ECONNREFUSED");
+      return { status: 200, body: "User-agent: *\nAllow: /\n" };
+    });
+    expect((await c.check("https://plain.test/page", { httpFallback: true })).allowed).toBe(false);
+    // The failure was not remembered for an hour: the next check asks again and gets the real answer.
+    expect((await c.check("https://plain.test/page", { httpFallback: true })).allowed).toBe(true);
+    expect(seen).toEqual([
+      { url: "https://plain.test/robots.txt", httpFallback: true },
+      { url: "https://plain.test/robots.txt", httpFallback: true },
+    ]);
   });
 
   it("exempts documented API hosts", async () => {

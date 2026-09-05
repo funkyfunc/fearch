@@ -47,10 +47,14 @@ export interface SearchResponse {
 
 /**
  * `--human-search`: ask the person before an engine query is submitted on their behalf. Resolves to
- * `{ query }` to run (they may have edited it), `"declined"`, or `"unavailable"` when nobody can be
- * asked this way — then the engine hands the search box over in the browser instead.
+ * `{ query }` to run (they may have edited it), `"declined"`, `"unanswered"` when the client could
+ * ask but nobody answered in time, or `"unavailable"` when nobody can be asked this way — then the
+ * engine hands the search box over in the browser instead.
  */
-export type ConfirmQuery = (engine: string, query: string) => Promise<{ query: string } | "declined" | "unavailable">;
+export type ConfirmQuery = (
+  engine: string,
+  query: string,
+) => Promise<{ query: string } | "declined" | "unanswered" | "unavailable">;
 
 export interface SearchProvider {
   /** Short id shown in output, e.g. "google", "duckduckgo". */
@@ -109,7 +113,7 @@ export function dedupe(results: SearchResult[]): SearchResult[] {
 function hostMatches(host: string, domain: string): boolean {
   const h = host.toLowerCase();
   const d = domain.toLowerCase().replace(/^www\./, "");
-  return h === d || h.endsWith("." + d) || h === "www." + d;
+  return h === d || h.endsWith("." + d);
 }
 
 /** Apply site / allowed / blocked domain filters client-side (providers may not support them). */

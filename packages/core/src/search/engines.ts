@@ -301,7 +301,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     label: "Google",
     host: "www.google.com",
     robotsPermitted: false,
-    privacy: "queries are logged by Google, tied to any Google session in the tool profile",
+    privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
     url: (q, r, loc = "en-US") => {
       const { lang, region } = localeParts(loc);
       return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}&num=10${r ? `&tbs=qdr:${r}` : ""}`;
@@ -390,6 +390,10 @@ export class EngineProvider implements SearchProvider {
     if (human && this.confirmQuery) {
       const answer = await this.confirmQuery(this.spec.label, query);
       if (answer === "declined") throw new SearchError(`${this.name}: you declined to run this query`);
+      if (answer === "unanswered")
+        throw new SearchError(
+          `${this.name}: needs your approval in your MCP client and nobody answered within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — search again when you are there (--human-search is on)`,
+        );
       if (answer !== "unavailable") {
         query = answer.query;
         submittedByPerson = true;
@@ -445,8 +449,9 @@ export class EngineProvider implements SearchProvider {
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
     if (human && !rendered.handedOff) {
+      // The tab/window was closed when the render returned: there is nothing left to press Enter in.
       throw new SearchError(
-        `${this.name}: the query is waiting in ${this.spec.label} in ${rendered.handoffWhere ?? "your browser"} but was not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s — press Enter there, then search again (--human-search is on)`,
+        `${this.name}: the query was opened in ${rendered.handoffWhere ?? "your browser"} but not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s, so that tab was closed — search again when you are at the screen and press Enter there (--human-search is on)`,
       );
     }
     if (submittedByPerson) rendered = { ...rendered, handedOff: true, handoffWhere: "your MCP client" };

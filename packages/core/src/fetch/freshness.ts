@@ -19,16 +19,23 @@ function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function parse(s: string | undefined | null): Date | null {
+function parseDate(s: string | undefined | null, now: number): Date | null {
   if (!s) return null;
   const t = Date.parse(s.trim());
   if (!Number.isFinite(t)) return null;
   const d = new Date(t);
-  if (d.getFullYear() < 1995 || d.getTime() > Date.now() + 86_400_000) return null;
+  if (d.getFullYear() < 1995 || d.getTime() > now + 86_400_000) return null;
   return d;
 }
 
+/** Whole UTC calendar days between two instants — the same calendar the printed date uses. */
+function utcDaysBetween(from: number, to: number): number {
+  const day = (t: number) => Math.floor(t / 86_400_000);
+  return Math.max(0, day(to) - day(from));
+}
+
 export function freshness(headers: Record<string, string>, html?: string, now = Date.now()): Freshness {
+  const parse = (s: string | undefined | null) => parseDate(s, now);
   const candidates: Array<[string, Date | null]> = [];
   if (html) {
     try {
@@ -60,7 +67,7 @@ export function freshness(headers: Record<string, string>, html?: string, now = 
   candidates.push(["Last-Modified", parse(headers["last-modified"])]);
   const pick = candidates.find(([, d]) => d);
   if (!pick || !pick[1]) return { stale: false };
-  const ageDays = Math.max(0, Math.floor((now - pick[1].getTime()) / 86_400_000));
+  const ageDays = utcDaysBetween(pick[1].getTime(), now);
   return { date: iso(pick[1]), source: pick[0], ageDays, stale: ageDays > STALE_AFTER_DAYS };
 }
 
@@ -68,6 +75,12 @@ export function describeAge(f: Freshness): string {
   if (!f.date) return "";
   const d = f.ageDays ?? 0;
   const rel =
-    d < 1 ? "today" : d < 30 ? `${d}d ago` : d < 365 ? `${Math.round(d / 30)}mo ago` : `${(d / 365).toFixed(1)}y ago`;
+    d < 1
+      ? "today, UTC"
+      : d < 30
+        ? `${d}d ago`
+        : d < 365
+          ? `${Math.round(d / 30)}mo ago`
+          : `${(d / 365).toFixed(1)}y ago`;
   return `updated ${f.date} (${rel})${f.stale ? " ⚠ may be stale" : ""}`;
 }

@@ -68,16 +68,20 @@ export class SearchRegistry {
     });
   }
 
-  async search(q: SearchQuery): Promise<SearchOutcome> {
+  async search(q: SearchQuery, opts: { noCache?: boolean } = {}): Promise<SearchOutcome> {
     if (this.settings.searchMode === "off") {
       throw new SearchError(
         "Search is disabled on this server (--search off). Ask the user for a URL, or fetch a site's /llms.txt to discover its pages.",
       );
     }
+    // Keyed on the engine list too: a cached answer from one configuration must not be served as
+    // the answer of another (`--engines` changed, or doctor probing a server with no engines).
     const key = createHash("sha1")
-      .update(JSON.stringify({ ...q, v: 2 }))
+      .update(JSON.stringify({ ...q, engines: this.web.map((p) => p.name), v: 3 }))
       .digest("hex");
-    const cached = this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
+    const cached = opts.noCache
+      ? null
+      : this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
       const providers = this.web.filter((p) => cached.providers.includes(p.name));

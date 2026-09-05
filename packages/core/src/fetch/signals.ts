@@ -60,8 +60,6 @@ export function licenceSignals(headers: Record<string, string>, html?: string): 
         const content = $(el).attr("content");
         if (name && content) out.push(`meta ${name}: ${content}`);
       });
-      const noai = $('meta[name="robots"][content*="noai"], meta[name="robots"][content*="noimageai"]').length;
-      if (noai && !out.some((s) => s.includes("noai"))) out.push("meta robots: noai");
       const rsl = $('link[rel="license"][type*="rsl"], link[rel="license"][href*="rsl"]').attr("href");
       if (rsl) out.push(`RSL licence: ${rsl}`);
     } catch {

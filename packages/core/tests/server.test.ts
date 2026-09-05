@@ -293,14 +293,61 @@ describe("handoff elicitation", () => {
   it("stays silent for clients without the elicitation capability", async () => {
     const state = fakeState();
     const server = buildServer(state);
+    // Count outgoing server→client requests: none may be sent to a client that cannot show a prompt.
+    const inner = server.server as unknown as { request: (...a: unknown[]) => Promise<unknown> };
+    const original = inner.request.bind(server.server);
+    let sent = 0;
+    inner.request = (...a: unknown[]) => {
+      if ((a[0] as { method?: string })?.method === "elicitation/create") sent++;
+      return original(...a);
+    };
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" });
     await c.connect(ct);
-    // No handler registered: if the server sent elicitation/create anyway, the client would error.
     state.events.emit("handoff", { url: "https://x.test/", where: "a window" });
     await new Promise((r) => setTimeout(r, 50));
     state.events.emit("handoff-end", { url: "https://x.test/", passed: false });
+    expect(sent).toBe(0);
+    await c.close();
+  });
+});
+
+describe("query confirmation — nobody answers", () => {
+  it("gives up after the handoff timeout and says so in plain words, then falls through", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_HUMAN_SEARCH: "1",
+        FEARCH_ENGINES: "google",
+        FEARCH_BROWSER: "headed",
+        FEARCH_HANDOFF_TIMEOUT_MS: "150",
+      } as NodeJS.ProcessEnv),
+    );
+    const engine = (
+      state.search as unknown as { engines: Array<{ confirmQuery?: unknown; search: unknown; name: string }> }
+    ).engines.find((e) => e.name === "google")!;
+    (state.search as unknown as { web: unknown[] }).web = [engine];
+    const answers: unknown[] = [];
+    engine.search = async (q: { query: string }) => {
+      const answer = await (engine.confirmQuery as (e: string, q: string) => Promise<unknown>)("Google", q.query);
+      answers.push(answer);
+      throw new Error(`google: ${String(answer)}`);
+    };
+    const server = buildServer(state);
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
+    c.setRequestHandler(ElicitRequestSchema, () => new Promise(() => {})); // the person is away
+    await c.connect(ct);
+    const started = Date.now();
+    const r = await c.callTool({ name: "search", arguments: { query: "quiet query" } });
+    expect(Date.now() - started).toBeLessThan(5000); // the SDK's own 60 s timeout is not what bounds this
+    expect(answers, text(r)).toEqual(["unanswered"]);
+    expect(text(r)).toContain("unanswered");
+    expect(text(r)).not.toContain("-32001");
     await c.close();
   });
 });

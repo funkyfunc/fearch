@@ -1,7 +1,7 @@
 /** The MCP server: two tools, `search` and `fetch`, over the app. stdio framing lives in cli.ts. */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ElicitResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ElicitResultSchema, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { App } from "./app.js";
 import { personPresent, type Settings } from "./config.js";
@@ -172,20 +172,28 @@ function wireQueryConfirmation(app: App, server: McpServer): void {
   if (!app.settings.humanSearch) return;
   app.search.onConfirmQuery(async (engine, query) => {
     if (!server.server.getClientCapabilities()?.elicitation) return "unavailable";
-    const r = await server.server.request(
-      {
-        method: "elicitation/create",
-        params: {
-          message: `Run this search on ${engine} as you? Edit the query if you like; it is submitted under your browser session.`,
-          requestedSchema: {
-            type: "object",
-            properties: { query: { type: "string", title: "Query", default: query } },
-            required: ["query"],
+    let r;
+    try {
+      r = await server.server.request(
+        {
+          method: "elicitation/create",
+          params: {
+            message: `Run this search on ${engine} as you? Edit the query if you like; it is submitted under your browser session.`,
+            requestedSchema: {
+              type: "object",
+              properties: { query: { type: "string", title: "Query", default: query } },
+              required: ["query"],
+            },
           },
         },
-      },
-      ElicitResultSchema,
-    );
+        ElicitResultSchema,
+        // The same patience as a handed-off bot check: an unattended agent gets an answer, not a hang.
+        { timeout: app.settings.handoffTimeoutMs },
+      );
+    } catch (e) {
+      if (e instanceof McpError && e.code === ErrorCode.RequestTimeout) return "unanswered";
+      throw e;
+    }
     if (r.action !== "accept") return "declined";
     const q = typeof r.content?.query === "string" ? r.content.query.trim() : "";
     return { query: q || query };

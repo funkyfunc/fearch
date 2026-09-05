@@ -16,7 +16,7 @@ import {
   parseLite,
   redactAccount,
 } from "../src/search/engines.js";
-import { RateLimited } from "../src/search/provider.js";
+import { RateLimited, SearchError } from "../src/search/provider.js";
 import { renderResults } from "../src/search/render.js";
 import { SearchRegistry } from "../src/search/registry.js";
 import { Audit } from "../src/audit.js";
@@ -332,10 +332,14 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
       handedOff: false,
       handoffWhere: "a tab in your Chrome",
     }));
+    // The tab is closed when the render returns, so the note must not send the person to it.
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(
-      /waiting in Google in a tab in your Chrome .* press Enter there, then search again/,
+      /opened in a tab in your Chrome but not submitted within \d+ s, so that tab was closed — search again/,
     );
-    await expect(p.search({ query: "x", maxResults: 5 })).rejects.not.toBeInstanceOf(RateLimited);
+    // An unsubmitted query is not the engine's "no": no cooldown.
+    await expect(p.search({ query: "x", maxResults: 5 })).rejects.toSatisfy(
+      (e: unknown) => e instanceof SearchError && !(e instanceof RateLimited),
+    );
   });
 
   it("with a client that can ask: the person approves or edits the query, and it runs as their submission", async () => {

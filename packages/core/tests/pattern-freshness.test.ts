@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { footer } from "../src/fetch/budget.js";
+import { BadRequest } from "../src/fetch/errors.js";
 import { describeAge, freshness } from "../src/fetch/freshness.js";
 import { findPattern, renderPattern } from "../src/fetch/pattern.js";
 
@@ -16,9 +17,18 @@ describe("pattern", () => {
     expect(text).toContain("3 matches");
     expect(text).toMatch(/\[Position: \d+-\d+\]/);
   });
-  it("reports no matches and rejects bad regexes", () => {
+  it("reports no matches and rejects bad regexes as the caller's error", () => {
     expect(renderPattern("zzz", findPattern(MD, "zzz"), MD.length)).toContain("no matches");
+    expect(() => findPattern(MD, "(")).toThrow(BadRequest);
     expect(() => findPattern(MD, "(")).toThrow(/Invalid pattern/);
+    expect(() => findPattern(MD, "x".repeat(600))).toThrow(/under 500/);
+  });
+
+  it("stops a catastrophically backtracking pattern instead of hanging the call", () => {
+    const md = "a".repeat(40) + "!";
+    const started = Date.now();
+    expect(() => findPattern(md, "^(a+)+$")).toThrow(/took more than/);
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 });
 
@@ -35,6 +45,17 @@ describe("freshness", () => {
     const old = freshness({ "last-modified": "Mon, 01 Jan 2018 00:00:00 GMT" }, undefined, now);
     expect(old.stale).toBe(true);
     expect(describeAge(old)).toContain("may be stale");
+  });
+  it("counts age in the UTC calendar the printed date uses", () => {
+    // 2026-08-27T22:00Z is 2 hours before `now`, but a different UTC day: "1d ago", never "today".
+    const f = freshness({ "last-modified": "Thu, 27 Aug 2026 22:00:00 GMT" }, undefined, now);
+    expect(f.date).toBe("2026-08-27");
+    expect(describeAge(f)).toBe("updated 2026-08-27 (1d ago)");
+    const same = freshness({ "last-modified": "Fri, 28 Aug 2026 00:00:00 GMT" }, undefined, now + 3600_000);
+    expect(describeAge(same)).toBe("updated 2026-08-28 (today, UTC)");
+    // a date "in the future" relative to the injected clock is ignored, not relative to the real one
+    const future = freshness({ "last-modified": "Sun, 30 Aug 2026 00:00:00 GMT" }, undefined, now);
+    expect(future.date).toBeUndefined();
   });
   it("reads JSON-LD and ignores garbage", () => {
     const html = '<script type="application/ld+json">{"@type":"Article","dateModified":"2026-08-01"}</script>';

@@ -49,8 +49,22 @@ const V4_PRIVATE: Array<[string, number]> = [
 ];
 
 function inV4(ip: string, base: string, bits: number): boolean {
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  const mask = (~0 << (32 - bits)) >>> 0;
   return (v4ToInt(ip) & mask) >>> 0 === (v4ToInt(base) & mask) >>> 0;
+}
+
+/**
+ * The IPv4 address inside an IPv4-mapped (`::ffff:a.b.c.d`, `::ffff:7f00:1`) or the deprecated
+ * IPv4-compatible (`::a.b.c.d`, `::7f00:1`) IPv6 literal. The WHATWG URL parser canonicalises the
+ * dotted form to hex, so both spellings must be understood.
+ */
+export function embeddedV4(v6: string): string | null {
+  const dotted = /^(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
+  if (dotted) return dotted[1];
+  const hex = /^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
+  if (!hex) return null;
+  const n = ((parseInt(hex[1], 16) << 16) | parseInt(hex[2], 16)) >>> 0;
+  return `${n >>> 24}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
 }
 
 export function isPrivateAddress(ip: string): boolean {
@@ -58,8 +72,8 @@ export function isPrivateAddress(ip: string): boolean {
   if (kind === 4) return V4_PRIVATE.some(([base, bits]) => inV4(ip, base, bits));
   if (kind === 6) {
     const lower = ip.toLowerCase().replace(/^\[|\]$/g, "");
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    if (mapped) return isPrivateAddress(mapped[1]);
+    const v4 = embeddedV4(lower);
+    if (v4) return isPrivateAddress(v4);
     if (lower === "::1" || lower === "::") return true;
     if (/^f[cd]/.test(lower)) return true; // fc00::/7 unique local
     if (/^fe[89ab]/.test(lower)) return true; // fe80::/10 link-local

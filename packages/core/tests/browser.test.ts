@@ -20,6 +20,13 @@ const JS_PAGE = `<html><head><title>SPA Docs</title></head><body><div id="app"><
 </body></html>`;
 const CHALLENGE = `<html><head><title>Just a moment...</title></head><body><div id="challenge-platform">Checking your browser before accessing the site.</div></body></html>`;
 const REAL = `<html><head><title>Plain</title></head><body><main><h1>Plain page</h1><p>${"Served to browsers only. ".repeat(20)}</p><pre><code>ok</code></pre></main></body></html>`;
+// caniuse.com-shaped: plenty of static chrome text (so the shape heuristic sees no shell), and a
+// body that only JavaScript fills. The extractor comes up empty; that emptiness is the signal.
+const CHROME_ONLY = `<html><head><title>Support tables</title></head><body>
+<header><nav>${Array.from({ length: 30 }, (_, i) => `<a href="/f${i}">Feature ${i} overview</a>`).join(" ")}</nav></header>
+<main id="main-content"></main>
+<footer><nav>${Array.from({ length: 20 }, (_, i) => `<a href="/l${i}">Footer link ${i}</a>`).join(" ")}</nav></footer>
+<script src="/app.js"></script></body></html>`;
 
 function makeFetcher(opts: {
   renderer?:
@@ -59,6 +66,13 @@ describe("browser ladder (fake renderer)", () => {
         return res.writeHead(403, { "content-type": "text/html" }).end("<html><body>Forbidden</body></html>");
       }
       if (req.url === "/challenge") return res.writeHead(403, { "content-type": "text/html" }).end(CHALLENGE);
+      if (req.url === "/chrome-only") return res.writeHead(200, { "content-type": "text/html" }).end(CHROME_ONLY);
+      if (req.url === "/stub")
+        return res.writeHead(200, { "content-type": "text/markdown" }).end("# react\n\n@18.3.1\n");
+      if (req.url === "/blob")
+        return res
+          .writeHead(200, { "content-type": "application/octet-stream" })
+          .end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48]));
       if (req.url === "/robots.txt") return res.writeHead(404).end();
       res.writeHead(404).end("nope");
     });
@@ -108,17 +122,62 @@ describe("browser ladder (fake renderer)", () => {
     const { fetcher: fresh } = makeFetcher({ renderer: fake });
     await expect(fresh.fetch(`${base}/challenge`)).rejects.toThrow(DiagnosedError);
     const { fetcher: fresh2 } = makeFetcher({ renderer: fake });
-    try {
-      await fresh2.fetch(`${base}/challenge`);
-    } catch (e) {
-      const d = (e as DiagnosedError).diagnosis;
-      expect(d.kind).toBe("captcha_or_challenge");
-      expect(d.retryable).toBe(false);
-      expect(d.attempts).toEqual(["direct: captcha_or_challenge", "browser: captcha_or_challenge"]);
-      expect(d.message).toContain("browser was also tried");
-    }
+    const d = await fresh2.fetch(`${base}/challenge`).then(
+      () => expect.unreachable("a challenge from the browser too must be a refusal"),
+      (e: DiagnosedError) => e.diagnosis,
+    );
+    expect(d.kind).toBe("captcha_or_challenge");
+    expect(d.retryable).toBe(false);
+    expect(d.attempts).toEqual(["direct: captcha_or_challenge", "browser: captcha_or_challenge"]);
+    expect(d.message).toContain("browser was also tried");
     // renderer called once per fetch of /challenge, never a second time within a fetch
     expect(calls.filter((c) => c.endsWith("/challenge")).length).toBe(2);
+  });
+
+  it("escalates when the extractor finds nothing, even though the page is not shell-shaped", async () => {
+    const calls: string[] = [];
+    const fake = {
+      enabled: () => true,
+      async render(u: string) {
+        calls.push(u);
+        return { html: REAL, finalUrl: u, status: 200, salvaged: false };
+      },
+    };
+    const { fetcher } = makeFetcher({ renderer: fake });
+    const doc = await fetcher.fetch(`${base}/chrome-only`);
+    expect(doc.source).toBe("browser");
+    expect(doc.markdown).toContain("Plain page");
+    expect(calls.map((c) => new URL(c).pathname)).toEqual(["/chrome-only"]);
+  });
+
+  it("treats a negotiated markdown stub as a shell and renders the page instead", async () => {
+    const fake = {
+      enabled: () => true,
+      async render(u: string) {
+        return { html: REAL, finalUrl: u, status: 200, salvaged: false };
+      },
+    };
+    const { fetcher } = makeFetcher({ renderer: fake });
+    const doc = await fetcher.fetch(`${base}/stub`);
+    expect(doc.source).toBe("browser");
+    // and without a browser the stub is an honest, structured "empty", not a bare error
+    const { fetcher: blind } = makeFetcher({ renderer: { enabled: () => false, render: fake.render } });
+    const stub = await blind.fetch(`${base}/stub`);
+    expect(stub.source).toBe("direct (markdown)"); // no browser: the stub is all there is, and it is served
+    expect(stub.markdown).toContain("react");
+  });
+
+  it("refuses binary bodies with a diagnosis instead of rendering them as HTML", async () => {
+    const { fetcher } = makeFetcher({
+      renderer: { enabled: () => false, render: async () => ({ html: "", finalUrl: "", status: 0, salvaged: false }) },
+    });
+    const d = await fetcher.fetch(`${base}/blob`).then(
+      () => expect.unreachable("binary must not be read as a page"),
+      (e: DiagnosedError) => e.diagnosis,
+    );
+    expect(d.kind).toBe("empty");
+    expect(d.message).toContain("application/octet-stream");
+    await expect(fetcher.fetch(`${base}/blob`, { raw: true })).rejects.toThrow(DiagnosedError);
   });
 
   it("raw mode returns the rendered DOM when the page needs a browser, and the plain body when it doesn't", async () => {
@@ -139,9 +198,9 @@ describe("browser ladder (fake renderer)", () => {
     const shell = await fetcher.fetch(`${base}/shell`, { raw: true });
     expect(shell.source).toContain("raw (browser DOM)");
     expect(shell.markdown).toContain("DOM after JavaScript ran");
-    // a page that renders fine over plain HTTP costs no browser and returns its bytes as-is
+    // a 403 to the plain client earns the one browser attempt in raw mode too: the DOM comes back
     const plain = await fetcher.fetch(`${base}/browsers-only`, { raw: true });
-    expect(plain.source).toContain("raw (browser DOM)"); // 403 to the plain client → browser DOM
+    expect(plain.source).toContain("raw (browser DOM)");
     const { fetcher: f2 } = makeFetcher({ renderer: fake });
     const target = await f2.fetch(`${base}/robots.txt`, { raw: true });
     expect(target.source).toContain("raw (");
@@ -202,7 +261,7 @@ describe("browser ladder (fake renderer)", () => {
     };
     const { fetcher } = makeFetcher({ renderer: fake });
     const doc = await fetcher.fetch(`${base}/challenge`);
-    expect(doc.source).toContain("challenge passed by you");
+    expect(doc.source).toContain("bot check cleared in your browser");
     expect(doc.markdown).toContain("Success!");
   });
 
@@ -216,13 +275,12 @@ describe("browser ladder (fake renderer)", () => {
       },
     };
     const { fetcher } = makeFetcher({ renderer: fake });
-    try {
-      await fetcher.fetch(`${base}/browsers-only`);
-    } catch (e) {
-      const d = (e as DiagnosedError).diagnosis;
-      expect(d.kind).toBe("blocked_or_waf");
-      expect(d.attempts?.[1]).toContain("browser: unavailable");
-    }
+    const d = await fetcher.fetch(`${base}/browsers-only`).then(
+      () => expect.unreachable("no browser and a 403 must be a refusal"),
+      (e: DiagnosedError) => e.diagnosis,
+    );
+    expect(d.kind).toBe("blocked_or_waf");
+    expect(d.attempts?.[1]).toContain("browser: unavailable");
 
     const settings = settingsFromEnv({
       FEARCH_NO_CACHE: "1",

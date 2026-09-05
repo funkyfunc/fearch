@@ -145,8 +145,6 @@ describe("extension tier — the handoff", () => {
           : job.op === "read"
             ? { ok: true, tabId: 7, html: page(), url: "https://x.test/" }
             : { ok: true };
-      if (job.op === "fill")
-        log.push(`fill:${(job as { selector?: string }).selector}=${(job as { text?: string }).text}`);
       await fetch(`http://127.0.0.1:${port}/fearch/result`, {
         method: "POST",
         headers: ORIGIN,
@@ -248,7 +246,6 @@ describe("extension tier — the handoff", () => {
       handToPerson: {
         message: "press Enter",
         ready: (h) => /<h3>/.test(h),
-        fill: { selector: "input[name=q]", text: "x" },
       },
     });
     expect(out.handedOff).toBe(true);

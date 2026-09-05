@@ -7,7 +7,7 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createApp } from "./app.js";
-import { flagSpelling, settingsFromArgs, type Settings } from "./config.js";
+import { flagSpelling, settingsFromArgs, UsageError, type Settings } from "./config.js";
 import { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -23,10 +23,7 @@ async function main(): Promise<void> {
     const { runCommand } = await import("./cli/commands.js");
     process.exit(await runCommand(rest, quietForPeople(settings, overrides)));
   }
-  if (rest.length) {
-    process.stderr.write(`fearch: unknown argument ${rest[0]}\n`);
-    process.exit(2);
-  }
+  if (rest.length) throw new UsageError(`unknown argument ${rest[0]}`);
   await serve(settings, overrides);
 }
 
@@ -83,6 +80,10 @@ function describeBrowser(s: Settings): string {
 }
 
 main().catch((e) => {
+  if (e instanceof UsageError) {
+    process.stderr.write(`fearch: ${e.message} (see fearch --help)\n`);
+    process.exit(2);
+  }
   process.stderr.write(`FATAL fearch: ${(e as Error).stack ?? e}\n`);
   process.exit(1);
 });

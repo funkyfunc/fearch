@@ -25,17 +25,26 @@ export function makeCursor(offset: number, view: string): string {
   return `${offset}@${view}`;
 }
 
-export function parseCursor(raw: string | number | undefined): ParsedCursor {
+export function parseCursor(raw: string | number | undefined): ParsedCursor | null {
   if (raw === undefined || raw === null || raw === "") return { offset: 0, view: null };
   if (typeof raw === "number") return { offset: Math.max(0, Math.floor(raw)), view: null };
   const m = /^\s*(\d+)\s*(?:@\s*([\w:-]+))?\s*$/.exec(raw);
-  if (!m) return { offset: 0, view: null };
+  if (!m) return null;
   return { offset: Number(m[1]), view: m[2] ?? null };
 }
 
-/** Resolve the offset to use for `view`; returns a note when the cursor belonged to another view. */
+/**
+ * Resolve the offset to use for `view`. A cursor that is not a cursor, or one that belonged to
+ * another view, starts from the beginning — with a note, never silently.
+ */
 export function resolveCursor(raw: string | number | undefined, view: string): { offset: number; note?: string } {
   const c = parseCursor(raw);
+  if (!c) {
+    return {
+      offset: 0,
+      note: `Cursor "${raw}" is not a cursor (expected "<offset>@<view>" from a footer); starting from the beginning.`,
+    };
+  }
   if (c.view && c.view !== view) {
     return {
       offset: 0,

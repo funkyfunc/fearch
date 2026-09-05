@@ -18,6 +18,7 @@ import {
   diagnose,
   diagnoseBudget,
   diagnoseContentSignal,
+  diagnoseEmpty,
   diagnoseRobots,
   diagnoseUnpassedChallenge,
   finalizeAfterBrowser,
@@ -34,7 +35,7 @@ import {
 } from "./extract.js";
 import { freshness, type Freshness } from "./freshness.js";
 import { assertPublicUrl, BlockedURL } from "./guard.js";
-import { isApiUrl, llmsTxt, resolveFastPath, rewriteUrl } from "./resolver.js";
+import { llmsTxt, resolveFastPath, rewriteUrl } from "./resolver.js";
 import type { RobotsChecker, RobotsDecision } from "./robots.js";
 import { knownLicence, licenceSignals, parseContentSignal } from "./signals.js";
 import { FetchError, type Transport } from "./transport.js";
@@ -73,6 +74,10 @@ export interface FetchOptions {
 
 const PAGE_FRESH_MS = 24 * 3600_000;
 const LLMS_TXT_LINK_RE = /<([^>]+)>;[^,]*rel="?llms-txt"?/i;
+/** A negotiated markdown/text body shorter than this is a stub, not the page (bundlephobia: 17 chars). */
+const STUB_TEXT_CHARS = 100;
+/** A rendered DOM is "settled" once this much readable text has appeared (bounded by settleUntilMs). */
+const MIN_RENDERED_CHARS = 200;
 
 /** A page as the pipeline holds it between obtaining it and finishing the document. */
 interface Page {
@@ -129,18 +134,18 @@ export class Fetcher {
     if (opts.via === "archive") return this.fromArchive(url);
     if (opts.raw) return this.fetchRaw(url, httpFallback);
 
-    const cached = this.cache.getPage(url, true);
+    const cached = this.cache.getPage(url);
     if (cached && this.isFresh(cached)) {
       this.audit.record({ url, cache: "hit" });
-      return this.fromCache(url, cached, "cache", "cached");
+      return this.fromCache(url, cached, "cache", "as of cache time");
     }
 
     // Fast paths talk only to documented public APIs, under those APIs' terms; the HTML page's
     // robots.txt rules do not apply to them.
     const fast = await resolveFastPath(url, this.http("api"));
-    if (fast) return this.finish(url, { fetched: fast, robots: "api terms", signals: [] });
+    if (fast) return this.finish(url, { fetched: fast, robots: ROBOTS_API_LABEL, signals: [] });
 
-    const decision = await this.checkRobots(url);
+    const decision = await this.checkRobots(url, httpFallback);
     this.charge(url);
     const page = await this.obtain(url, cached, decision, httpFallback);
     if (page === "not-modified") {
@@ -152,12 +157,13 @@ export class Fetcher {
 
   // ---- steps -----------------------------------------------------------------------------------
 
+  /** The operator's allow/deny lists apply to every host, documented API hosts included. */
   private checkLists(url: string): void {
     const host = new URL(url).hostname;
     if (this.settings.denyDomains.length && domainMatches(host, this.settings.denyDomains)) {
       throw new BlockedURL(`'${host}' is on the deny list (--deny-domains).`);
     }
-    if (this.settings.allowDomains.length && !domainMatches(host, this.settings.allowDomains) && !isApiUrl(url)) {
+    if (this.settings.allowDomains.length && !domainMatches(host, this.settings.allowDomains)) {
       throw new BlockedURL(`'${host}' is not on the allow list (--allow-domains).`);
     }
   }
@@ -167,8 +173,8 @@ export class Fetcher {
     return Date.now() - cached.fetchedAt < PAGE_FRESH_MS && !cached.etag && !cached.lastModified;
   }
 
-  private async checkRobots(url: string): Promise<RobotsDecision> {
-    const decision = await this.robots.check(url);
+  private async checkRobots(url: string, httpFallback = false): Promise<RobotsDecision> {
+    const decision = await this.robots.check(url, { httpFallback });
     if (decision.allowed) return decision;
     this.audit.record({
       url,
@@ -236,12 +242,23 @@ export class Fetcher {
     if (r.notModified && cached) return "not-modified";
 
     let fetched: Fetched = r;
-    const dx = diagnose(r, { isShell: r.kind === "html" && detectShell(fetchedText(r)) });
+    const dx = diagnose(r, { isShell: r.kind === "html" && isShellByResult(fetchedText(r)) });
     if (dx) {
       if (dx.kind === "not_found") this.gone.add(url);
       if (!BROWSER_RETRY_KINDS.has(dx.kind) || !browserOn) throw new DiagnosedError(url, dx);
       fetched = await this.renderWithBrowser(url, host, dx, decision.crawlDelayMs, httpFallback);
       // Remember, so the next read of this host starts with the right client (same identity, same rules).
+      this.cache.setNeedsBrowser(host);
+    } else if (isStubText(r) && browserOn) {
+      // The server negotiated markdown/text and sent a stub (bundlephobia: "# react\n\n@18.3.1"):
+      // the page proper only exists after JavaScript runs.
+      const stub: Diagnosis = {
+        kind: "js_required",
+        retryable: false,
+        message: `the server sent a ${fetchedText(r).trim().length}-char ${r.kind} stub`,
+        nextAction: "",
+      };
+      fetched = await this.renderWithBrowser(url, host, stub, decision.crawlDelayMs, httpFallback);
       this.cache.setNeedsBrowser(host);
     }
 
@@ -270,15 +287,22 @@ export class Fetcher {
     if (updated.date) doc.updated = updated;
 
     const notes: string[] = [];
-    // The header shows the final URL; when the host changed under us, say where we came from.
-    if (new URL(fetched.finalUrl).host !== new URL(url).host) notes.push(`Note: redirected from ${url}.`);
+    // The header shows the final URL; when it is not the one asked for, say so — a same-host redirect
+    // can swap the page as completely as a cross-host one (EUR-Lex → "Today's OJ").
+    const redirected = redirectNote(url, fetched.finalUrl);
+    if (redirected) notes.push(redirected);
     const llmsLink = LLMS_TXT_LINK_RE.exec(fetched.headers["link"] ?? "")?.[1] ?? fetched.headers["x-llms-txt"];
     if (llmsLink) notes.push(`Note: this site advertises an agent index at ${new URL(llmsLink, fetched.finalUrl)}.`);
     doc.note = notes.join(" ");
     doc = await this.preferLlmsTxt(url, fetched.finalUrl, doc);
 
     if (!doc.markdown.trim())
-      throw new FetchError(`Fetched ${url} but extracted no readable content (source: ${doc.source}).`);
+      throw new DiagnosedError(
+        url,
+        diagnoseEmpty(
+          `Fetched ${fetched.finalUrl}${redirected ? ` (${redirected.replace(/^Note: |\.$/g, "")})` : ""} but found no readable content (source: ${doc.source}).`,
+        ),
+      );
     this.cache.setPage({
       url,
       finalUrl: doc.finalUrl,
@@ -324,7 +348,7 @@ export class Fetcher {
     // Raw follows the same ladder as read: a JS shell or a refusal earns the one browser attempt,
     // and the agent gets the rendered DOM — the HTML they asked for, not an empty scaffold. A page
     // that renders fine over plain HTTP costs no browser. An unpassed bot check is a refusal here too.
-    const dx = diagnose(r, { isShell: r.kind === "html" && detectShell(fetchedText(r)) });
+    const dx = diagnose(r, { isShell: r.kind === "html" && isShellByResult(fetchedText(r)) });
     if (dx && BROWSER_RETRY_KINDS.has(dx.kind) && (this.browser?.enabled() ?? false)) {
       const fetched = await this.renderWithBrowser(url, host, dx, decision.crawlDelayMs, httpFallback);
       return this.document(url, fetched.finalUrl, {
@@ -336,14 +360,17 @@ export class Fetcher {
         markdown: fetchedText(fetched),
         robots: robotsLabel(decision),
         licence: [],
+        note: redirectNote(url, fetched.finalUrl) ?? "",
       });
     }
+    if (r.kind === "binary") throw new DiagnosedError(url, diagnose(r)!);
     return this.document(url, r.finalUrl, {
       title: r.kind === "html" ? htmlTitle(fetchedText(r)) : "",
       source: `raw (${r.kind}, HTTP ${r.status})`,
       markdown: fetchedText(r),
       robots: robotsLabel(decision),
       licence: licenceSignals(r.headers),
+      note: redirectNote(url, r.finalUrl) ?? "",
     });
   }
 
@@ -382,6 +409,7 @@ export class Fetcher {
       const ex = htmlToMarkdown(fetchedText(f));
       return doc(ex.title, f.source === "direct" ? `direct (html/${ex.method})` : f.source, ex.markdown);
     }
+    if (f.kind === "binary") throw new DiagnosedError(url, diagnose(f)!);
     // markdown, text, json
     const { meta, body } = splitFrontmatter(fetchedText(f));
     const text = f.kind === "markdown" ? cleanMarkdownSource(body) : body;
@@ -414,7 +442,16 @@ export class Fetcher {
     try {
       rendered = await this.politeness.run(
         host,
-        () => this.browser!.render(url, { handoff: true, httpFallback }),
+        () =>
+          this.browser!.render(url, {
+            handoff: true,
+            httpFallback,
+            // Keep reading until the DOM holds a page's worth of readable text: a client-rendered app
+            // can take longer to hydrate than the browser's "content container or network idle" wait
+            // (bsky.app), and static chrome around an empty body is not content (caniuse.com).
+            settleUntil: (html) => htmlToMarkdown(html).markdown.trim().length >= MIN_RENDERED_CHARS,
+            settleUntilMs: Math.min(8000, Math.floor(this.settings.browserTimeoutMs / 2)),
+          }),
         crawlDelayMs,
       );
     } catch (e) {
@@ -426,10 +463,12 @@ export class Fetcher {
           : `error (${(e as Error).message.split("\n")[0]})`;
       throw new DiagnosedError(url, { ...plain, attempts: [...attempts, `browser: ${why}`] });
     }
+    // "cleared", not "passed by you": a managed challenge can clear itself in a real Chrome with
+    // nobody at the keyboard, and the tool cannot tell the two apart.
     const provenance = [
       rendered.salvaged ? "browser (partial render)" : "browser",
       rendered.label,
-      rendered.handedOff && "challenge passed by you",
+      rendered.handedOff && "bot check cleared in your browser",
     ];
     const fetched: Fetched = {
       url,
@@ -453,7 +492,7 @@ export class Fetcher {
         diagnoseUnpassedChallenge([...attempts, "browser: captcha_or_challenge"], rendered.handoffWhere),
       );
     }
-    const dx = diagnose(fetched, { isShell: detectShell(rendered.html) });
+    const dx = diagnose(fetched, { isShell: isShellByResult(rendered.html) });
     if (dx) throw new DiagnosedError(url, finalizeAfterBrowser(dx, [...attempts, `browser: ${dx.kind}`]));
     return fetched;
   }
@@ -492,8 +531,32 @@ export class Fetcher {
   }
 }
 
+/** Header label when a documented API answered: robots.txt governs crawling, the API's terms govern this. */
+const ROBOTS_API_LABEL = "not consulted (documented API, its terms apply)";
+
 function robotsLabel(d: RobotsDecision): string {
-  return d.status === "api" ? "api terms" : "allowed";
+  return d.status === "api" ? ROBOTS_API_LABEL : "allowed";
+}
+
+/**
+ * A page is a shell when its shape says so (mount points, "enable JavaScript") *or* when the
+ * extractor finds nothing in it: a site with a static header, footer and nav around a client-rendered
+ * body (caniuse.com) passes the shape test and still holds no content.
+ */
+function isShellByResult(html: string): boolean {
+  return detectShell(html) || !htmlToMarkdown(html).markdown.trim();
+}
+
+/** A negotiated markdown/text body that is too short to be the page, once frontmatter is set aside. */
+function isStubText(f: Fetched): boolean {
+  if (f.kind !== "markdown" && f.kind !== "text") return false;
+  const { body } = splitFrontmatter(fetchedText(f));
+  return cleanMarkdownSource(body).trim().length < STUB_TEXT_CHARS;
+}
+
+/** "Note: redirected from …" whenever the page served is not the URL asked for, same host or not. */
+function redirectNote(url: string, finalUrl: string): string | null {
+  return finalUrl !== url ? `Note: redirected from ${url}.` : null;
 }
 
 function firstHeading(text: string): string {

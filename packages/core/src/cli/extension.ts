@@ -63,7 +63,7 @@ async function install(
   writeFileSync(join(dir, "token.json"), JSON.stringify({ token }) + "\n", { mode: 0o600 });
   // Tell auto mode an extension is worth waiting for on a fresh server's first render.
   writeFileSync(extensionInstalledMarker(cacheDir), new Date().toISOString() + "\n");
-  const copied = copyToClipboard(dir);
+  const copied = await copyToClipboard(dir);
   const port = await bridge.start();
   out(`fearch bridge extension folder:\n  ${dir}${copied ? "   (path copied to your clipboard)" : ""}\n`);
   out("In Chrome (opening chrome://extensions for you):");
@@ -107,20 +107,24 @@ async function status(bridge: ExtensionBridge, dir: string, flags: Flags, out: (
   return 1;
 }
 
-function copyToClipboard(text: string): boolean {
-  try {
-    const [cmd, args] =
-      platform() === "darwin"
-        ? ["pbcopy", []]
-        : platform() === "win32"
-          ? ["clip", []]
-          : ["xclip", ["-selection", "clipboard"]];
-    const p = execFile(cmd, args, () => {});
+/** True only when the clipboard tool actually ran and exited cleanly (a missing `xclip` reports false). */
+function copyToClipboard(text: string): Promise<boolean> {
+  const [cmd, args] =
+    platform() === "darwin"
+      ? ["pbcopy", []]
+      : platform() === "win32"
+        ? ["clip", []]
+        : ["xclip", ["-selection", "clipboard"]];
+  return new Promise((resolve) => {
+    let p;
+    try {
+      p = execFile(cmd, args, (err) => resolve(!err));
+    } catch {
+      return resolve(false);
+    }
+    p.on("error", () => resolve(false));
     p.stdin?.end(text);
-    return true;
-  } catch {
-    return false;
-  }
+  });
 }
 
 function openExtensionsPage(): void {

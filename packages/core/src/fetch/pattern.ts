@@ -1,8 +1,15 @@
 /**
  * `pattern=` read mode: regex matches with surrounding context and absolute positions, so the model
- * can answer "does this page mention X, and where" for almost no tokens, then seek with start_index.
- * (Idea from scrapling-fetch-mcp's s_fetch_pattern.)
+ * can answer "does this page mention X, and where" for almost no tokens, then read around a match
+ * with `cursor`. (Idea from scrapling-fetch-mcp's s_fetch_pattern.)
  */
+
+import { runInNewContext } from "node:vm";
+import { BadRequest } from "./errors.js";
+
+const MAX_PATTERN_CHARS = 500;
+/** A model-written regex can backtrack catastrophically; the match runs under a hard time limit. */
+const MATCH_TIMEOUT_MS = 2000;
 
 export interface PatternMatch {
   start: number;
@@ -17,6 +24,8 @@ export function findPattern(
   contextChars = 200,
   maxWindows = 20,
 ): { windows: PatternMatch[]; total: number } {
+  if (pattern.length > MAX_PATTERN_CHARS)
+    throw new BadRequest(`Pattern is ${pattern.length} chars; keep it under ${MAX_PATTERN_CHARS}.`);
   let re: RegExp;
   try {
     // gim: case-insensitive by default, and ^/$ anchor to lines — the way people write grep patterns.
@@ -25,13 +34,21 @@ export function findPattern(
     const hint = /\(\?[a-z]+\)/.test(pattern)
       ? " (inline flags like (?i) are not supported; matching is already case-insensitive and multiline)"
       : "";
-    throw new Error(`Invalid pattern ${JSON.stringify(pattern)}: ${(e as Error).message}${hint}`);
+    throw new BadRequest(`Invalid pattern ${JSON.stringify(pattern)}: ${(e as Error).message}${hint}`);
   }
-  const hits: Array<[number, number]> = [];
-  for (const m of md.matchAll(re)) {
-    if (m[0].length === 0) continue;
-    hits.push([m.index, m.index + m[0].length]);
-    if (hits.length >= 500) break;
+  let hits: Array<[number, number]>;
+  try {
+    hits = runInNewContext(
+      "const out = []; for (const m of md.matchAll(re)) { if (!m[0].length) continue; out.push([m.index, m.index + m[0].length]); if (out.length >= 500) break; } out",
+      { md, re },
+      { timeout: MATCH_TIMEOUT_MS },
+    ) as Array<[number, number]>;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ERR_SCRIPT_EXECUTION_TIMEOUT")
+      throw new BadRequest(
+        `Pattern ${JSON.stringify(pattern)} took more than ${MATCH_TIMEOUT_MS / 1000} s on this page; simplify it (nested quantifiers backtrack).`,
+      );
+    throw e;
   }
   if (!hits.length) return { windows: [], total: 0 };
   // Expand to context windows, snapping to line boundaries, and merge overlaps.

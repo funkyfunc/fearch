@@ -14,7 +14,8 @@ export async function excerptFor(app: App, url: string, query: string): Promise<
   try {
     const doc = await app.fetcher.fetch(url);
     const relevant = focusSections(splitSections(doc.markdown), query, budget);
-    const { body } = applyLinkMode(joinSections(relevant), false);
+    if (!relevant.matched) return undefined; // an excerpt that is not about the query is noise
+    const { body } = applyLinkMode(joinSections(relevant.sections), false);
     const window = applyBudget(body, 0, budget);
     const text = window.text.trim();
     if (!text) return undefined;

@@ -65,9 +65,10 @@ is not a goal to get through them.
   to me when I can't, graceful when nothing can be shown").** Routine renders headless with the tool
   profile; a challenge opens that one page in a visible window for the person (EscalatingRenderer);
   an unanswered window backs off 10 min; no display → challenges final, as before; the paired
-  extension is preferred whenever connected (short opportunistic check, quiet note). Engine defaults
-  now derive from `canSurface` + handoff, so `npx fearch` on a desktop gets Google + DuckDuckGo with
-  zero flags. Explicit `headless|headed|extension|off` remain as pins.
+  extension is preferred whenever connected (short opportunistic check, quiet note). Engine
+  *eligibility* derives from `canSurface` + handoff; the default engine list is DuckDuckGo alone, and
+  Google is a `--engines` choice (changed 2026-09-01). Explicit `headless|headed|extension|off`
+  remain as pins.
 - **Pre-publication pass (2026-08-31).** Person-present rule: with a visible browser whose challenges
   are handed to the person (headed or extension, handoff now on by default there), engine result pages
   are the person's own browsing and Google joins DuckDuckGo without `--robots off`. Flag surface cut to
@@ -109,7 +110,7 @@ is not a goal to get through them.
 | # | Item | Why | Done when |
 |---|---|---|---|
 | 7 | **Volatility-aware cache TTLs** | Flat 24 h is wrong for both news and API docs. webfetch classifies `realtime / recent / stable`. | TTL chosen from host class + freshness signals; `[cache: hit, 3h old]` provenance shown; `fresh=true` escape hatch on `fetch`. |
-| 8 | **MCP registry + plugin packaging** | webfetch's `server.json` + a code-free plugin pinned to `@latest` never goes stale. | `server.json` published; `npx fearch` works from a clean machine; a Claude Code plugin dir; a packaging test guards version agreement. |
+| 8 | **MCP registry + plugin packaging** | webfetch's `server.json` + a code-free plugin pinned to `@latest` never goes stale. | `server.json` published; `npx -y fearch-mcp` works from a clean machine (the bare `npx fearch` cannot: the npm name is `fearch-mcp`); a Claude Code plugin dir; a packaging test guards version agreement. |
 | 9 | **Routing guidance shipped with the server** | CC-Web writes a CLAUDE.md snippet and a hook so the model knows when to use it. | A `docs/AGENT-GUIDANCE.md` snippet users paste into their harness's system prompt; optional skill file. |
 | 11 | **Team/shared mode** | Corporate users share an egress; a shared cache halves traffic. | Streamable-HTTP transport behind auth; cache in a shared sqlite/redis; audit log to a file per user. |
 

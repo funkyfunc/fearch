@@ -26,8 +26,14 @@ export function applyBudget(text: string, startIndex = 0, maxChars = 12_000): Wi
   const total = text.length;
   const start = Math.max(0, Math.min(startIndex, total));
   if (start >= total && total > 0) return { text: "", start, end: total, total, truncated: false };
+  // A window that begins inside a fenced block (the block was longer than one budget) re-opens
+  // that fence, so every page is valid markdown on its own.
+  const before = text.slice(0, start);
+  const openBefore = (before.match(/```/g) ?? []).length % 2 === 1;
+  const prefix = openBefore ? before.slice(before.lastIndexOf("```")).split("\n")[0] + "\n" : "";
   const hardEnd = Math.min(total, start + maxChars);
-  if (hardEnd >= total) return { text: text.slice(start), start, end: total, total, truncated: false };
+  if (hardEnd >= total)
+    return { text: prefix + text.slice(start).replace(/^\n/, ""), start, end: total, total, truncated: false };
 
   const floor = start + Math.floor(maxChars * 0.75);
   let cut = text.lastIndexOf("\n\n", hardEnd);
@@ -35,13 +41,18 @@ export function applyBudget(text: string, startIndex = 0, maxChars = 12_000): Wi
   if (cut < floor || cut <= start) cut = hardEnd;
 
   let chunk = text.slice(start, cut);
-  const fences = (chunk.match(/```/g) ?? []).length;
+  if (prefix) chunk = chunk.replace(/^\n/, ""); // the cut sat on a newline; don't open the block with a blank line
+  const fences = (chunk.match(/```/g) ?? []).length + (openBefore ? 1 : 0);
   if (fences % 2 === 1) {
     const lastFence = chunk.lastIndexOf("```");
-    if (lastFence > 0) {
+    if (!openBefore && lastFence > 0) {
+      // The block that does not fit starts the next page.
       cut = start + lastFence;
       chunk = text.slice(start, cut);
+    } else {
+      // Mid-block: close the fence here; the next page re-opens it (see `prefix`).
+      chunk = chunk.replace(/\n+$/, "") + "\n```";
     }
   }
-  return { text: chunk.replace(/\n+$/, "") + "\n", start, end: cut, total, truncated: cut < total };
+  return { text: (prefix + chunk).replace(/\n+$/, "") + "\n", start, end: cut, total, truncated: cut < total };
 }

@@ -147,6 +147,17 @@ export function diagnoseContentSignal(where: string, raw: string): Diagnosis {
   };
 }
 
+/** The response was a document with nothing readable in it, or not a document at all. */
+export function diagnoseEmpty(message: string): Diagnosis {
+  return {
+    kind: "empty",
+    retryable: false,
+    message,
+    nextAction:
+      "Try mode=raw to see what the server sent, another URL on the site (its docs, its llms.txt), or ask the user.",
+  };
+}
+
 export function diagnoseBudget(message: string): Diagnosis {
   return {
     kind: "rate_limited",
@@ -246,6 +257,9 @@ export function diagnose(f: Fetched, opts: { isShell?: boolean } = {}): Diagnosi
       message: `HTTP ${status}.`,
       nextAction: "Use a different source.",
     };
+  }
+  if (f.kind === "binary") {
+    return diagnoseEmpty(`The response is ${f.contentType.split(";")[0] || "binary data"}, not a readable document.`);
   }
   if (f.kind === "html") {
     if (CHALLENGE_RE.test(text) && opts.isShell) {

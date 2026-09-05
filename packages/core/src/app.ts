@@ -45,14 +45,16 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
 
   const robots = new RobotsChecker(
     cache,
-    async (url) => {
+    async (url, { httpFallback }) => {
       // robots.txt has its own queue key: it is fetched once per host per hour and must not consume
-      // the Crawl-delay gap that belongs between *page* requests.
+      // the Crawl-delay gap that belongs between *page* requests. It may fall back to plain http
+      // exactly when the page may (a bare host or http:// that was upgraded optimistically).
       const r = await politeness.run(`robots:${new URL(url).host}`, () =>
         transport.get(url, {
           source: "robots.txt",
           headers: { accept: "text/plain, */*;q=0.5" },
           maxBytes: 512 * 1024,
+          httpFallback,
         }),
       );
       return { status: r.status, body: fetchedText(r) };

@@ -232,12 +232,17 @@ export class BM25 {
 }
 
 /**
- * Rank sections by BM25 relevance to `query`; return the best ones (in document order)
- * whose combined length fits `budget`. Always returns at least one section.
+ * Rank sections by BM25 relevance to `query`; return the best ones (in document order) whose
+ * combined length fits `budget`. Always returns at least one section; `matched` is false when no
+ * section scored at all, so the caller can say so instead of presenting the start as relevant.
  */
-export function focusSections(sections: Section[], query: string, budget: number): Section[] {
+export function focusSections(
+  sections: Section[],
+  query: string,
+  budget: number,
+): { sections: Section[]; matched: boolean } {
   const q = queryTokens(query);
-  if (!q.length || sections.length === 1) return sections.slice(0, 1);
+  if (!q.length || sections.length === 1) return { sections: sections.slice(0, 1), matched: sections.length === 1 };
   const corpus = sections.map((s) => tokenize([s.title, s.title, s.title, s.path.join(" "), s.text].join(" ")));
   const scores = new BM25(corpus).scores(q);
   const ranked = sections.map((s, i) => {
@@ -277,7 +282,7 @@ export function focusSections(sections: Section[], query: string, budget: number
     if (used >= budget) break;
   }
   chosen.sort((a, b) => a.index - b.index);
-  return chosen;
+  return { sections: chosen, matched: top > 0 };
 }
 
 export function renderOutline(sections: Section[], shown: Set<number>, limit = 40): string {

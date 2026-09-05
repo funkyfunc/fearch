@@ -11,6 +11,7 @@
 
 import { applyBudget } from "./budget.js";
 import { makeCursor, resolveCursor, viewId } from "./cursor.js";
+import { BadRequest, SectionNotFound } from "./errors.js";
 import { describeAge } from "./freshness.js";
 import { findPattern, renderPattern } from "./pattern.js";
 import type { PageDoc } from "./pipeline.js";
@@ -30,18 +31,7 @@ export interface ReadOptions {
   contextChars?: number;
 }
 
-export class SectionNotFound extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SectionNotFound";
-  }
-}
-export class BadRequest extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BadRequest";
-  }
-}
+export { BadRequest, SectionNotFound };
 
 export function readDocument(doc: PageDoc, o: ReadOptions): string {
   const view = viewId(o.mode, o.query);
@@ -73,8 +63,13 @@ export function readDocument(doc: PageDoc, o: ReadOptions): string {
     selected = found;
     notes.push(`Section: '${o.query}'.`);
   } else if (o.mode === "focus") {
-    selected = focusSections(sections, requireQuery(o, "what you are looking for"), o.maxChars);
-    notes.push(`Focus: '${o.query}'.`);
+    const focus = focusSections(sections, requireQuery(o, "what you are looking for"), o.maxChars);
+    selected = focus.sections;
+    notes.push(
+      focus.matched
+        ? `Focus: '${o.query}'.`
+        : `Focus: '${o.query}' — nothing on this page matches it; showing the start of the page instead.`,
+    );
   }
 
   const { body, footer } = applyLinkMode(o.mode === "read" ? doc.markdown : joinSections(selected), o.includeLinks);

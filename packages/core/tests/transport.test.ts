@@ -3,7 +3,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Audit } from "../src/audit.js";
 import { settingsFromEnv } from "../src/config.js";
 import { BlockedURL } from "../src/fetch/guard.js";
-import { describeNetworkError, FetchError, isTlsError, parseRetryAfter, Transport } from "../src/fetch/transport.js";
+import {
+  classify,
+  describeNetworkError,
+  FetchError,
+  isTlsError,
+  parseRetryAfter,
+  Transport,
+} from "../src/fetch/transport.js";
 
 describe("transport", () => {
   let server: Server;
@@ -111,6 +118,21 @@ describe("transport", () => {
     expect(inTen).toBeGreaterThanOrEqual(9);
     expect(inTen).toBeLessThanOrEqual(11);
     expect(parseRetryAfter(new Date(Date.now() - 5_000).toUTCString())).toBe(0);
+  });
+});
+
+describe("content classification", () => {
+  const bytes = (s: string) => new TextEncoder().encode(s);
+  it("never reads binary as HTML, and prefers the declared type over sniffing", () => {
+    expect(
+      classify("application/octet-stream", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0x0d]), "https://x/a"),
+    ).toBe("binary");
+    expect(classify("image/png", bytes("<html>"), "https://x/a.png")).toBe("binary");
+    expect(classify("", bytes("%PDF-1.7 …"), "https://x/a")).toBe("pdf");
+    expect(classify("application/xml", bytes("<?xml version='1.0'?><rss/>"), "https://x/feed")).toBe("html");
+    expect(classify("text/plain", bytes("# Title\n\nbody"), "https://x/a")).toBe("markdown");
+    expect(classify("application/ld+json", bytes("{}"), "https://x/a")).toBe("json");
+    expect(classify("", bytes("<!doctype html><p>hi"), "https://x/a")).toBe("html");
   });
 });
 

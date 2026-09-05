@@ -480,6 +480,34 @@ export const FLAGS: readonly FlagSpec[] = [
 
 const BY_FLAG = new Map(FLAGS.map((f) => [f.flag, f]));
 
+/** A flag or value the person got wrong: one line and the exit code, never a stack trace. */
+export class UsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UsageError";
+  }
+}
+
+const BOOL_WORDS = /^(1|0|true|false|yes|no|on|off)$/i;
+
+/** Validate one flag's value against its spec; the parsed value is what settingsFromEnv reads. */
+function checkValue(spec: FlagSpec, flag: string, v: string): void {
+  const value = v.trim().toLowerCase();
+  if (spec.kind === "enum" && spec.values && !spec.values.includes(value))
+    throw new UsageError(`--${flag} must be one of ${spec.values.join("|")}, not "${v}"`);
+  if (spec.kind === "list" && spec.values) {
+    const known = spec.values as readonly string[];
+    const bad = value
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s && !known.includes(s));
+    if (bad.length) throw new UsageError(`--${flag}: unknown ${bad.join(", ")} (known: ${known.join(", ")})`);
+  }
+  if (spec.kind === "int" && !/^\d+$/.test(value)) throw new UsageError(`--${flag} needs a whole number, not "${v}"`);
+  if (spec.kind === "bool" && !BOOL_WORDS.test(value))
+    throw new UsageError(`--${flag} takes true or false, not "${v}"`);
+}
+
 /**
  * Parse server flags out of argv (anything else — subcommands and their own flags — is returned as
  * `rest`), apply them over the environment, and build the settings. `overrides` are the env-spelled
@@ -512,14 +540,14 @@ export function settingsFromArgs(
     }
     if (spec.kind === "bool") {
       const explicit = m[3];
+      if (explicit !== undefined) checkValue(spec, m[2], explicit);
       overrides[spec.env] = negated ? "0" : explicit === undefined ? "1" : explicit;
       continue;
     }
-    if (negated) throw new Error(`--no-${m[2]} is not a boolean flag`);
+    if (negated) throw new UsageError(`--no-${m[2]} is not a boolean flag`);
     const v = m[3] ?? argv[++i];
-    if (v === undefined) throw new Error(`--${m[2]} needs a value`);
-    if (spec.kind === "enum" && spec.values && !spec.values.includes(v.trim().toLowerCase()))
-      throw new Error(`--${m[2]} must be one of ${spec.values.join("|")}`);
+    if (v === undefined) throw new UsageError(`--${m[2]} needs a value`);
+    checkValue(spec, m[2], v);
     overrides[spec.env] = v;
   }
   return { settings: settingsFromEnv({ ...env, ...overrides }, platform), rest, overrides };

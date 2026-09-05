@@ -24,11 +24,27 @@ describe("guard", () => {
       "fe80::1",
       "fd00::1",
       "::ffff:10.0.0.1",
+      // The WHATWG URL parser canonicalises `[::ffff:127.0.0.1]` to the hex form.
+      "::ffff:7f00:1",
+      "::ffff:a9fe:a9fe",
+      "::7f00:1",
+      "::127.0.0.1",
     ]) {
       expect(isPrivateAddress(ip), ip).toBe(true);
     }
-    for (const ip of ["8.8.8.8", "1.1.1.1", "2606:4700::1111", "172.32.0.1"])
+    for (const ip of ["8.8.8.8", "1.1.1.1", "2606:4700::1111", "172.32.0.1", "::ffff:808:808", "::ffff:8.8.8.8"])
       expect(isPrivateAddress(ip), ip).toBe(false);
+  });
+
+  it("refuses IPv6-mapped loopback in every spelling the URL parser produces", async () => {
+    for (const url of [
+      "http://[::ffff:127.0.0.1]:8080/",
+      "http://[::ffff:7f00:1]/",
+      "http://[::ffff:169.254.169.254]/",
+    ]) {
+      expect(new URL(url).hostname).toMatch(/^\[::ffff:[0-9a-f]+:[0-9a-f]+\]$/); // canonicalised to hex
+      await expect(assertPublicUrl(url), url).rejects.toThrow(BlockedURL);
+    }
   });
 
   it("blocks internal hostnames", () => {

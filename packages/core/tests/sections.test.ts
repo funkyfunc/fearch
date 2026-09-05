@@ -67,7 +67,9 @@ describe("sections", () => {
 
   it("focus ranks relevant sections in document order, ignores stop-words, keeps the lead", () => {
     const secs = splitSections(DOC);
-    const chosen = focusSections(secs, "how do I set retries", 200);
+    const focus = focusSections(secs, "how do I set retries", 200);
+    expect(focus.matched).toBe(true);
+    const chosen = focus.sections;
     const titles = chosen.map((s) => s.title);
     expect(titles).toContain("Retries");
     expect(titles).not.toContain("Deployment");
@@ -76,7 +78,7 @@ describe("sections", () => {
     const lead =
       "Lead paragraph explaining what the Widget protocol is: an open standard, written by Acme, that lets tools talk to each other. This sentence exists to make the lead long enough to count as substantive text for the lead-section rule to apply here.\n\n# Widget\n\n## References\n\nWidget protocol Widget protocol Widget protocol Widget protocol Widget protocol.\n\n## Usage\n\nCall widget().\n";
     const s2 = splitSections(lead);
-    const picked = focusSections(s2, "What is the Widget protocol?", 2000).map((s) => s.title);
+    const picked = focusSections(s2, "What is the Widget protocol?", 2000).sections.map((s) => s.title);
     expect(picked[0]).toBe("(intro)");
     expect(picked).not.toContain("References");
 
@@ -84,7 +86,14 @@ describe("sections", () => {
     const dotted =
       "# API\n\n## Timeouts\n\nUse asyncio.timeout(10) to bound a wait.\n\n## Sleeping\n\nasyncio.sleep(1) pauses.\n";
     const s3 = splitSections(dotted);
-    expect(focusSections(s3, "set a timeout", 120).map((s) => s.title)).toEqual(["Timeouts"]);
+    expect(focusSections(s3, "set a timeout", 120).sections.map((s) => s.title)).toEqual(["Timeouts"]);
+  });
+
+  it("says when nothing matched instead of presenting the first section as relevant", () => {
+    const secs = splitSections(DOC);
+    const none = focusSections(secs, "kubernetes ingress controller", 400);
+    expect(none.matched).toBe(false);
+    expect(none.sections.length).toBeGreaterThan(0); // still returns something to show
   });
 
   it("renders outline and joins", () => {
