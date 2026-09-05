@@ -22,6 +22,7 @@
     "mcpb": "node scripts/build-mcpb.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",

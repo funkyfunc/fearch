@@ -1,6 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { describe, expect, it } from "vitest";
@@ -237,7 +235,7 @@ describe("query confirmation (--human-search)", () => {
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
-    c.setRequestHandler(ElicitRequestSchema, async (req) => {
+    c.setRequestHandler("elicitation/create", async (req) => {
       asked.push({ message: req.params.message, schema: req.params.requestedSchema });
       return { action: "accept" as const, content: { query: "edited query", google: true, ask_again: true } };
     });
@@ -273,7 +271,7 @@ describe("the challenge prompt (handoff gate)", () => {
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
     const seen: string[] = [];
     let reply: "accept" | "decline" | "never" = "accept";
-    c.setRequestHandler(ElicitRequestSchema, async (req) => {
+    c.setRequestHandler("elicitation/create", async (req) => {
       seen.push(req.params.message);
       if (reply === "never") return new Promise(() => {});
       return { action: reply };
@@ -340,7 +338,7 @@ describe("query confirmation — nobody answers", () => {
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
-    c.setRequestHandler(ElicitRequestSchema, () => new Promise(() => {})); // the person is away
+    c.setRequestHandler("elicitation/create", () => new Promise(() => {})); // the person is away
     await c.connect(ct);
     const started = Date.now();
     const r = await c.callTool({ name: "search", arguments: { query: "quiet query" } });

@@ -4,8 +4,7 @@
  * with none it starts the MCP server on stdio, where stdout carries only JSON-RPC and everything else
  * goes to stderr.
  */
-
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createApp } from "./app.js";
 import { flagSpelling, settingsFromArgs, UsageError, type Settings } from "./config.js";
 import { buildServer } from "./server.js";

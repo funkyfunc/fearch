@@ -1,6 +1,5 @@
 /** Opt-in live network tests: FEARCH_LIVE=1 npm run test:live */
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { settingsFromEnv } from "../../src/config.js";
 import { createApp, type App } from "../../src/app.js";

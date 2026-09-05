@@ -1,7 +1,6 @@
 /** The MCP server: two tools, `search` and `fetch`, over the app. stdio framing lives in cli.ts. */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ElicitResultSchema, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { McpServer, SdkError, SdkErrorCode, type ServerContext } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { App } from "./app.js";
 import { personPresent, type Settings } from "./config.js";
@@ -135,29 +134,26 @@ function wireHandoffGate(app: App, server: McpServer): void {
             requestedSchema: { type: "object", properties: {} },
           },
         },
-        ElicitResultSchema,
         { timeout: app.settings.handoffTimeoutMs },
       );
       return r.action === "accept" ? "accept" : "declined";
     } catch (e) {
-      if (e instanceof McpError && e.code === ErrorCode.RequestTimeout) return "unanswered";
+      if (e instanceof SdkError && e.code === SdkErrorCode.RequestTimeout) return "unanswered";
       return "unavailable";
     }
   };
 }
 
 /** MCP progress notifications, when the client asked for them (`_meta.progressToken`). Never throws. */
-type ToolExtra = { _meta?: { progressToken?: string | number }; sendNotification?: (n: never) => Promise<void> };
-function progressReporter(extra: ToolExtra, total: number): (progress: number, message: string) => Promise<void> {
-  const token = extra._meta?.progressToken;
-  const send = extra.sendNotification;
-  if (token === undefined || !send) return async () => {};
+function progressReporter(ctx: ServerContext, total: number): (progress: number, message: string) => Promise<void> {
+  const token = ctx.mcpReq._meta?.progressToken;
+  if (token === undefined) return async () => {};
   return async (progress, message) => {
     try {
-      await send({
+      await ctx.mcpReq.notify({
         method: "notifications/progress",
         params: { progressToken: token, progress, total, message },
-      } as never);
+      });
     } catch {
       // progress is best-effort
     }
@@ -227,12 +223,11 @@ function wireQueryForm(app: App, server: McpServer): void {
             requestedSchema: { type: "object", properties, required: ["query"] },
           },
         },
-        ElicitResultSchema,
         // The same patience as a handed-off bot check: an unattended agent gets an answer, not a hang.
         { timeout: app.settings.handoffTimeoutMs },
       );
     } catch (e) {
-      if (e instanceof McpError && e.code === ErrorCode.RequestTimeout) return "unanswered";
+      if (e instanceof SdkError && e.code === SdkErrorCode.RequestTimeout) return "unanswered";
       throw e;
     }
     if (r.action !== "accept") return "declined";
@@ -288,12 +283,12 @@ export function buildServer(app: App): McpServer {
     {
       title: "Web search",
       description: searchDescription(app.settings),
-      inputSchema: SEARCH_INPUT,
+      inputSchema: z.object(SEARCH_INPUT),
       annotations: READ_ONLY,
     },
-    async (args, extra) => {
+    async (args, ctx) => {
       const query = args.query.trim();
-      const progress = progressReporter(extra, 1 + args.fetch_top);
+      const progress = progressReporter(ctx, 1 + args.fetch_top);
       try {
         const outcome = await app.search.search({
           query,
@@ -319,10 +314,10 @@ export function buildServer(app: App): McpServer {
     {
       title: "Fetch page",
       description: fetchDescription(app.settings),
-      inputSchema: FETCH_INPUT,
+      inputSchema: z.object(FETCH_INPUT),
       annotations: READ_ONLY,
     },
-    async (args, extra) => {
+    async (args, ctx) => {
       const targets = [...(args.url ? [args.url] : []), ...(args.urls ?? [])].map((u) => u.trim()).filter(Boolean);
       if (!targets.length) return failure("Provide `url` or `urls`.");
       if (targets.length > MAX_URLS_PER_CALL) return failure(`At most ${MAX_URLS_PER_CALL} URLs per call.`);
@@ -348,7 +343,7 @@ export function buildServer(app: App): McpServer {
         });
         return readDocument(doc, options);
       };
-      const progress = progressReporter(extra, targets.length);
+      const progress = progressReporter(ctx, targets.length);
 
       if (targets.length === 1) {
         try {
