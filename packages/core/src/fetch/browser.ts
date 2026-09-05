@@ -22,7 +22,7 @@ import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isIP } from "node:net";
 import { dirname } from "node:path";
-import type { Browser, BrowserContext, Page, Route } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Page, Route } from "playwright";
 import type { Audit } from "../audit.js";
 import type { AppEvents } from "../app.js";
 import { acceptLanguage, type Settings } from "../config.js";
@@ -191,6 +191,10 @@ export async function waitForHuman(
 
 export class BrowserRenderer implements BrowserTier {
   private browser: Browser | null = null;
+  /** A browser-level CDP session (Chromium only), for creating windows already minimised. */
+  private browserCdp: CDPSession | null = null;
+  /** Playwright contexts → their CDP browserContextId, learned by diffing `Target.getBrowserContexts`. */
+  private readonly contextIds = new WeakMap<BrowserContext, string>();
   private plain: BrowserContext | null = null;
   private profile: BrowserContext | null = null;
   private launching: Promise<Browser> | null = null;
@@ -334,7 +338,7 @@ export class BrowserRenderer implements BrowserTier {
     if (kind === "profile" && this.profileAllowed) {
       if (this.profile) return this.profile;
       const path = this.settings.browserStatePath;
-      const ctx = await browser.newContext({
+      const ctx = await this.trackedContext(browser, {
         ...this.contextOptions(),
         ...(existsSync(path) ? { storageState: path } : {}),
       });
@@ -349,7 +353,7 @@ export class BrowserRenderer implements BrowserTier {
       return ctx;
     }
     if (this.plain) return this.plain;
-    const ctx = await browser.newContext(this.contextOptions());
+    const ctx = await this.trackedContext(browser, this.contextOptions());
     ctx.setDefaultTimeout(this.settings.browserTimeoutMs);
     await ctx.route("**/*", (route) => this.gate(route));
     this.plain = ctx;
@@ -395,6 +399,67 @@ export class BrowserRenderer implements BrowserTier {
     return route.continue();
   }
 
+  /**
+   * `browser.newContext()` plus the CDP id Chromium gave it, found by diffing the context list around
+   * the call (Playwright does not expose the id). Best effort: without it a background page is
+   * created visible and minimised a moment later.
+   */
+  private async trackedContext(
+    browser: Browser,
+    options: Parameters<Browser["newContext"]>[0],
+  ): Promise<BrowserContext> {
+    const before = await this.browserContextIds();
+    const ctx = await browser.newContext(options);
+    if (before) {
+      const after = await this.browserContextIds();
+      const fresh = after?.filter((id) => !before.includes(id)) ?? [];
+      if (fresh.length === 1) this.contextIds.set(ctx, fresh[0]);
+    }
+    return ctx;
+  }
+
+  private async browserContextIds(): Promise<string[] | null> {
+    try {
+      this.browserCdp ??= await (
+        this.browser as Browser & { newBrowserCDPSession(): Promise<CDPSession> }
+      ).newBrowserCDPSession();
+      const r = (await this.browserCdp.send("Target.getBrowserContexts")) as { browserContextIds: string[] };
+      return r.browserContextIds;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A page whose window is born minimised: `Target.createTarget` with `windowState: "minimized"`
+   * (experimental in CDP), so nothing flashes on screen. Falls back to a visible page minimised right
+   * after creation when the browser does not take the parameter.
+   */
+  private async newBackgroundPage(ctx: BrowserContext): Promise<Page> {
+    const id = this.contextIds.get(ctx);
+    if (id && this.browserCdp) {
+      try {
+        const opened = ctx.waitForEvent("page", { timeout: 10_000 });
+        await this.browserCdp.send("Target.createTarget", {
+          url: "about:blank",
+          browserContextId: id,
+          newWindow: true,
+          background: true,
+          windowState: "minimized",
+        });
+        return await opened;
+      } catch (e) {
+        this.audit.log(
+          "debug",
+          `minimised window creation unavailable (${(e as Error).message.split("\n")[0]}); minimising after`,
+        );
+      }
+    }
+    const page = await ctx.newPage();
+    await this.setWindowState(page, "minimized");
+    return page;
+  }
+
   /** Minimise or restore the window a page lives in (CDP; best effort — a headless page has no window). */
   private async setWindowState(page: Page, state: "minimized" | "normal"): Promise<void> {
     if (!this.headed) return;
@@ -426,8 +491,7 @@ export class BrowserRenderer implements BrowserTier {
     const started = Date.now();
     let page: Page | null = null;
     try {
-      page = await ctx.newPage();
-      if (opts.background && this.headed) await this.setWindowState(page, "minimized");
+      page = opts.background && this.headed ? await this.newBackgroundPage(ctx) : await ctx.newPage();
       let status = 0;
       let salvaged = false;
       const goto = async (u: string) => {
@@ -585,7 +649,7 @@ export class BrowserRenderer implements BrowserTier {
   /** A one-off context with nothing in it, for an engine page the person wants incognito. */
   private async freshContext(): Promise<BrowserContext> {
     const browser = await this.launch();
-    const ctx = await browser.newContext(this.contextOptions());
+    const ctx = await this.trackedContext(browser, this.contextOptions());
     ctx.setDefaultTimeout(this.settings.browserTimeoutMs);
     await ctx.route("**/*", (route) => this.gate(route));
     return ctx;
@@ -595,6 +659,8 @@ export class BrowserRenderer implements BrowserTier {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     await this.saveProfile();
+    await this.browserCdp?.detach().catch(() => {});
+    this.browserCdp = null;
     await this.plain?.close().catch(() => {});
     await this.profile?.close().catch(() => {});
     await this.browser?.close().catch(() => {});

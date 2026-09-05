@@ -196,7 +196,7 @@ function wireQueryForm(app: App, server: McpServer): void {
       const alternative =
         ask.profileKind === "own-chrome"
           ? "your signed-in Chrome (logins and history ride along; Google ties the query to your account)"
-          : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows)";
+          : "fearch's own Chrome profile (it keeps bot checks you passed and anything you logged into in its windows) — enable the fearch bridge extension to use your own Chrome instead";
       properties.incognito = {
         type: "boolean",
         title: "Incognito",
