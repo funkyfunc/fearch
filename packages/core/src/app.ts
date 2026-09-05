@@ -105,10 +105,13 @@ function createBrowser(settings: Settings, audit: Audit, events: AppEvents, gate
   }
 }
 
-/** Headless-first with challenge escalation where a window can be shown; plain headless where not. */
+/**
+ * Headless-first page reads with a real window where one can be shown (a challenge escalates to it;
+ * engine pages open in it, minimised); plain headless where nothing can be shown.
+ */
 function adaptive(settings: Settings, audit: Audit, events: AppEvents, gate: HandoffGate): BrowserTier {
   const auto: Settings = { ...settings, browser: "auto" };
-  return settings.canSurface && settings.handoff
+  return settings.canSurface
     ? new EscalatingRenderer(auto, audit, new BrowserRenderer(auto, audit, events, gate), undefined, events, gate)
     : new BrowserRenderer({ ...settings, browser: "headless" }, audit, events, gate);
 }

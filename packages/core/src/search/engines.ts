@@ -8,9 +8,11 @@
  * crawlers, not a browser someone oversees). Robots-permitted engines are still verified live before
  * every request.
  *
- * One page per search call, ≥3 s between requests to an engine. A challenge page is the engine's "no":
- * in headless mode the provider stops and cools down; with a person present the tab is handed to
- * them, who may pass it themselves — the tool never does.
+ * Engine pages are never opened headless: the person's own Chrome via the extension, or a minimised
+ * window of the installed Chrome with the tool profile. One page per search call, ≥3 s between
+ * requests to an engine. A challenge page is the engine's "no": the person is asked whether to see
+ * it and may pass it themselves — the tool never does; where nobody can be asked, the provider stops
+ * and cools down.
  */
 
 import * as cheerio from "cheerio";
@@ -351,10 +353,10 @@ export class EngineProvider implements SearchProvider {
           ? "your own Chrome, incognito"
           : "your own Chrome, your profile"
         : ch === "auto"
-          ? "a self-identified headless browser (checks open in a window for you)"
+          ? "a minimised window of your installed Chrome (tool profile; a check brings it forward for you)"
           : this.settings.browser === "headed"
             ? "the visible browser window"
-            : "a self-identified headless browser";
+            : "a browser window";
     const robots = this.spec.robotsPermitted ? "robots.txt permits" : "each query approved or submitted by you";
     return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
   }
@@ -373,14 +375,21 @@ export class EngineProvider implements SearchProvider {
     return this.browser.enabled() && this.settings.engines.includes(this.name) && this.eligible();
   }
 
+  /**
+   * An engine page is opened only in a browser a person could see — their own Chrome, or a window of
+   * the installed Chrome (minimised until a check needs them) — never headless. So a display (or the
+   * extension) is needed for any engine; Google additionally needs the person on call for its checks.
+   */
   eligible(): boolean {
-    return this.spec.robotsPermitted || personPresent(this.settings);
+    return this.settings.canSurface && (this.spec.robotsPermitted || personPresent(this.settings));
   }
 
   /** Why a listed engine is not used, for `doctor`. */
   ineligibleReason(): string | null {
     if (!this.settings.engines.includes(this.name)) return null;
     if (!this.browser.enabled()) return "browser tier is off";
+    if (!this.settings.canSurface)
+      return "engine result pages open in a real browser window, never headless, and no browser window can be shown here (headless mode, or no display)";
     if (!this.eligible())
       return `${this.spec.host} disallows result pages for crawlers; eligible when a person is on call to pass its checks (a display, handoff on)`;
     return null;

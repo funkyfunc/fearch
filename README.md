@@ -61,6 +61,8 @@ Every rule below is enforced in code and covered by tests.
 
 - **Identity** — `User-Agent: fearch/<version> (+https://github.com/funkyfunc/fearch#bot-info)`: a
   stable token operators can block and a URL explaining it. Never a browser string, not configurable to one.
+  The browser tiers send whatever the browser itself reports (`HeadlessChrome/…` when headless,
+  `Chrome/…` in a window) — never edited — plus `From:`/`X-Agent:` naming the tool.
 - **Consent** — robots.txt (RFC 9309) honoured for `*`, our token, and the user-initiated agent tokens
   (`Claude-User`, `ChatGPT-User`); Content Signals (`ai-input=no`) and `Crawl-delay` honoured;
   fail-closed; re-checked on cross-host redirects.
@@ -104,8 +106,11 @@ crawler, and it is the one this tool will not cross.
 
 ## Headless until it matters
 
-`fearch` just does the right thing out of the box. Pages render in an invisible headless browser — nothing pops
-up, nothing flickers. The moment a site shows a bot check, you are **asked** in your MCP client
+`fearch` just does the right thing out of the box. Pages that need JavaScript render in an invisible headless
+browser — nothing pops up, nothing flickers. Search engine result pages never do: they are your
+browsing, so they open in your own Chrome (through the bridge extension) or, without it, in a
+minimised window of your installed Chrome that only comes forward when a check needs you. No window
+possible (a server, CI, no display) means no engine search — reported honestly, never faked headless. The moment a site shows a bot check, you are **asked** in your MCP client
 ("A bot check appeared on example.com. Open it for you?"): say yes and that page comes to the front
 **once** — pass it the way you would in your own browsing, and everything continues; the clearance
 is remembered so it doesn't come back. Say no and that is the answer. If nobody answers, nothing is
@@ -125,13 +130,13 @@ headless. From the CLI, or in a client that cannot show a form, Google opens wit
 box and **you press Enter**. `--human-search` shows you the same form for every query, DuckDuckGo
 included; `--incognito` sets the profile default. `--browser` pins one behaviour when you want it fixed:
 
-| Mode                  | What it is                                                                       | Google if listed          |
-| --------------------- | -------------------------------------------------------------------------------- | ------------------------- |
-| `fearch` (auto)       | headless until a challenge, which opens in a window for you; extension preferred | yes (a check reaches you) |
-| `--browser headless`  | never a window; challenges are final — for servers and CI                        | no                        |
-| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                        | yes                       |
-| `--browser extension` | your own Chrome only (headless fallback while disconnected)                      | yes                       |
-| `--browser off`       | no browser tier at all                                                           | no                        |
+| Mode                  | What it is                                                                                     | Search                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `fearch` (auto)       | pages headless; checks and engine pages in your Chrome (extension) or a minimised window of it | DuckDuckGo; Google if listed (you approve) |
+| `--browser headless`  | never a window; challenges are final — for servers and CI                                      | none (engine pages are never headless)     |
+| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                                      | DuckDuckGo; Google if listed (you approve) |
+| `--browser extension` | your own Chrome only (a minimised window of the installed Chrome while disconnected)           | DuckDuckGo; Google if listed (you approve) |
+| `--browser off`       | no browser tier at all                                                                         | none                                       |
 
 Search tries the engines in order — and that's all: no hidden fallback ever substitutes a different
 source. A bot-check page is put to you to pass; if DuckDuckGo shows one and Google is listed, the
@@ -163,7 +168,7 @@ is no second, hidden layer of knobs. `fearch --help` prints the full table with 
 that matter:
 
 ```
---browser auto|headless|headed|extension|off   who renders pages (see the table above; default auto)
+--browser auto|headless|headed|extension|off   who renders pages (see the table above; default auto; headless = no search)
 --robots default|strict                        robots.txt for the tool's own fetching (default: default)
 --engines duckduckgo,google                    engine order (default: duckduckgo; google needs a person on call)
 --human-search                                 show every query to you before it runs (Google queries always are)

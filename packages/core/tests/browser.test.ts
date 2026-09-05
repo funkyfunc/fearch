@@ -368,8 +368,8 @@ describe("browser tier (real Chromium)", () => {
     expect(r.html).toContain("npm install rendered-guide");
     const ua = await renderer.render(`${base}/ua`, { httpFallback: true });
     // default identity=header: stock Chrome UA, tool named in From / X-Agent on every request
-    expect(renderer.browserUserAgent).toMatch(/Chrome\//);
-    expect(renderer.browserUserAgent).not.toContain("HeadlessChrome");
+    // The browser's own UA, unedited: the headless tier says it is headless. Identity is in From/X-Agent.
+    expect(renderer.browserUserAgent).toMatch(/HeadlessChrome\//);
     expect(renderer.browserUserAgent).not.toContain("fearch/");
     expect(ua.html).toMatch(/X-Agent: fearch\//);
     expect(ua.html).toMatch(/From: https?:\/\//);

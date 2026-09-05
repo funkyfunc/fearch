@@ -138,6 +138,28 @@ describe("EscalatingRenderer", () => {
     expect(asked).toEqual(Array(3).fill("a browser window on your screen"));
   });
 
+  it("opens engine pages (session) in the real window, minimised, never headless; refuses where none can be shown", async () => {
+    const routine = tier(async () => page("<main>never headless</main>"));
+    const seen: RenderOptions[] = [];
+    const escalation = tier(async (_u, o) => {
+      seen.push(o ?? {});
+      return page("<main>results</main>");
+    });
+    const r = new EscalatingRenderer(settings(), audit(), routine, () => escalation);
+    const out = await r.render("https://lite.duckduckgo.com/lite/?q=x", { session: true, isChallenge });
+    expect(out.html).toContain("results");
+    expect(routine.calls).toBe(0);
+    expect(seen[0]).toMatchObject({ session: true, background: true, handoff: true });
+    // handoff off: the window still opens (a real browser is the point), but no check is handed over
+    const quiet = new EscalatingRenderer(settings({ FEARCH_HANDOFF: "0" }), audit(), routine, () => escalation);
+    await quiet.render("https://x.test/", { session: true });
+    expect(seen[1]).toMatchObject({ background: true, handoff: false });
+    // nothing can be shown: an honest refusal, not a headless render
+    const none = new EscalatingRenderer(settings({ DISPLAY: "" }), audit(), routine, () => escalation);
+    await expect(none.render("https://x.test/", { session: true })).rejects.toThrow(/none can be shown/);
+    expect(routine.calls).toBe(0);
+  });
+
   it("never escalates when handoff is declined or nothing can be surfaced", async () => {
     const routine = tier(async () => page("<b>captcha</b>"));
     let built = 0;

@@ -103,6 +103,11 @@ export interface RenderOptions {
   /** The person already said yes to seeing this check (an outer tier asked); do not ask again. */
   handoffApproved?: boolean;
   /**
+   * Headed only: open the window minimized and bring it forward only when the person says yes to a
+   * check (or must press Enter). Engine result pages use this — a real browser, not a visible one.
+   */
+  background?: boolean;
+  /**
    * Open the page for the person straight away and wait until `ready` says they have done their part
    * (e.g. pressed Enter on a prefilled search box). Needs a visible browser; `message` is what they are
    * told. The result reports `handedOff` when `ready` was reached in time.
@@ -241,7 +246,8 @@ export class BrowserRenderer implements BrowserTier {
         throw new BrowserUnavailable(`Playwright is not installed (${(e as Error).message}).`);
       }
       const headless = !this.headed;
-      // Headless: bundled Chromium in new-headless mode (ordinary Chrome UA, no "HeadlessChrome").
+      // Headless: the bundled Chromium in new-headless mode, for page reads only; it reports itself
+      // as HeadlessChrome and that is what sites see — nothing about the browser is edited.
       // Headed: prefer the Chrome already installed (no download, receives the machine's enterprise
       // policy), else the bundled Chromium in a window. Playwright's default flags are kept —
       // including `--enable-automation`, which is how Chrome tells the person (infobar) and the site
@@ -269,11 +275,11 @@ export class BrowserRenderer implements BrowserTier {
           `Chromium could not be launched (${lastErr}). Run: npx playwright install chromium`,
         );
       }
+      // Read the UA the browser sends, for doctor and the log; it is never set or edited.
       const probe = await this.browser.newContext();
       const page = await probe.newPage();
-      const baseUa = (await page.evaluate(() => navigator.userAgent)).replace(/HeadlessChrome\//, "Chrome/");
+      this.userAgent = await page.evaluate(() => navigator.userAgent);
       await probe.close();
-      this.userAgent = baseUa;
       this.audit.log(
         "info",
         `browser tier ready (${this.channel} ${this.browser.version()}, ${headless ? "headless" : "headed"}); UA: ${this.userAgent}; From: ${this.settings.uaContact || this.settings.uaInfoUrl}; X-Agent: ${this.settings.userAgent}` +
@@ -295,7 +301,6 @@ export class BrowserRenderer implements BrowserTier {
       "X-Agent": this.settings.userAgent,
     };
     return {
-      userAgent: this.userAgent,
       locale: this.settings.locale,
       javaScriptEnabled: true,
       acceptDownloads: false,
@@ -376,6 +381,19 @@ export class BrowserRenderer implements BrowserTier {
     return route.continue();
   }
 
+  /** Minimise or restore the window a page lives in (CDP; best effort — a headless page has no window). */
+  private async setWindowState(page: Page, state: "minimized" | "normal"): Promise<void> {
+    if (!this.headed) return;
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      const { windowId } = (await cdp.send("Browser.getWindowForTarget")) as { windowId: number };
+      await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+      await cdp.detach();
+    } catch {
+      // not Chromium, or the window is gone: the page still renders
+    }
+  }
+
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
     if (!this.enabled()) throw new BrowserUnavailable("browser tier disabled (--browser off)");
     if (opts.handToPerson && !this.headed)
@@ -392,6 +410,7 @@ export class BrowserRenderer implements BrowserTier {
     let page: Page | null = null;
     try {
       page = await ctx.newPage();
+      if (opts.background && this.headed) await this.setWindowState(page, "minimized");
       let status = 0;
       let salvaged = false;
       const goto = async (u: string) => {
@@ -444,6 +463,7 @@ export class BrowserRenderer implements BrowserTier {
         handoffWhere = "a browser window on your screen";
         this.audit.log("warn", `${target}: handed to you (${opts.handToPerson.message})`);
         this.events?.emit("handoff", { url: target, where: handoffWhere, message: opts.handToPerson.message });
+        await this.setWindowState(page, "normal");
         await page.bringToFront().catch(() => {});
         const p = page;
         const ready = opts.handToPerson.ready;
@@ -487,6 +507,7 @@ export class BrowserRenderer implements BrowserTier {
             `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
           );
           this.events?.emit("handoff", { url: target, where: handoffWhere });
+          await this.setWindowState(page, "normal");
           await page.bringToFront().catch(() => {});
           const p = page;
           const r = await waitForHuman(
@@ -595,8 +616,13 @@ export class EscalatingRenderer implements BrowserTier {
     return this.routine.browserUserAgent;
   }
 
+  /** A real window could be opened here at all (a display exists; Chrome launched last time). */
+  private canShow(): boolean {
+    return this.settings.canSurface && !this.cannotEscalate;
+  }
+
   private canEscalate(): boolean {
-    return this.settings.canSurface && this.settings.handoff && !this.cannotEscalate && Date.now() >= this.awayUntil;
+    return this.canShow() && this.settings.handoff && Date.now() >= this.awayUntil;
   }
 
   async render(url: string, opts: RenderOptions = {}): Promise<Rendered> {
@@ -606,6 +632,24 @@ export class EscalatingRenderer implements BrowserTier {
         throw new BrowserUnavailable("no visible window can be shown here to hand the page to you");
       this.escalation ??= this.makeEscalation();
       return this.escalation.render(url, { ...opts, session: true, handoff: true });
+    }
+    // An engine result page is the person's browsing and never headless: it opens in the installed
+    // Chrome with the tool profile, minimised, and comes forward only when a check needs them.
+    if (opts.session) {
+      if (!this.canShow())
+        throw new BrowserUnavailable("engine result pages need a browser window and none can be shown here");
+      this.escalation ??= this.makeEscalation();
+      try {
+        return await this.escalation.render(url, {
+          ...opts,
+          session: true,
+          background: true,
+          handoff: opts.handoff !== false && this.settings.handoff,
+        });
+      } catch (e) {
+        if (/could not be launched|not installed/i.test((e as Error).message)) this.cannotEscalate = true;
+        throw e;
+      }
     }
     // Always with the tool profile: it holds only what the person did in escalation windows, and
     // carrying it is what keeps a passed check passed — the window must not reappear per page.

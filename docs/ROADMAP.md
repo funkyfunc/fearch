@@ -14,6 +14,16 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **The person decides (2026-09-04/05, from the second outside review).** Fixes first: an SSRF hole for
+  hex-form IPv6-mapped literals, browser escalation on empty extraction, honest handoff messages, flag
+  validation, a robots probe that can fall back to http. Then the design: a query form (query, engine,
+  profile, ask-again) before any Google query and, with `--human-search`, before every query; a
+  prompt before any bot check is surfaced (yes opens it, no is the answer, silence means away and the
+  next request asks again); the engine cooldown only where nobody can be asked (5 min). Then engine
+  result pages moved out of headless entirely — the person's Chrome, or a minimised window of the
+  installed Chrome — which retired the headless tier's `HeadlessChrome`→`Chrome` UA rewrite; `search`
+  is unavailable where no window can be shown and says so. The server now sends MCP `instructions`
+  built from the settings, so `docs/AGENT-GUIDANCE.md` reaches every client without pasting.
 - **Outside review, batch 1 and 2 (2026-09-01).** An independent fresh-eyes review (dogfood → code →
   docs) found a challenge interstitial returned as content, Twoslash code blocks hollowed out,
   Wikipedia infoboxes leaking HTML, shells missed, a DNS-rebinding gap, an https→http downgrade,

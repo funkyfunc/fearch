@@ -141,9 +141,15 @@ describe("engine eligibility — the dials play together", () => {
         new Politeness(1, { count: 1, windowMs: 1 }),
       );
     const names = (ps: EngineProvider[]) => ps.filter((p) => p.available()).map((p) => p.name);
-    // No display (CI, servers): nothing can be surfaced, so DuckDuckGo only.
-    expect(names(mk({}))).toEqual(["duckduckgo"]);
-    expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo" }))).toEqual(["duckduckgo"]);
+    // No display (CI, servers): engine pages need a real browser window and none can be shown, so no
+    // engine at all — the tool never opens a result page headless.
+    expect(names(mk({}))).toEqual([]);
+    expect(names(mk({ FEARCH_ENGINES: "google,duckduckgo" }))).toEqual([]);
+    expect(
+      mk({})
+        .find((p) => p.name === "duckduckgo")!
+        .ineligibleReason(),
+    ).toMatch(/no browser window can be shown/);
     // A display or a visible browser does not put Google in by itself: DuckDuckGo is the default everywhere.
     expect(names(mk({ DISPLAY: ":0" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["duckduckgo"]);
@@ -155,10 +161,12 @@ describe("engine eligibility — the dials play together", () => {
     // …but not with handoff explicitly off (nobody would ever see a check).
     expect(names(mk({ ...G, FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
-    // …and never in explicit headless, display or not.
-    expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual(["duckduckgo"]);
+    // …and never in explicit headless, display or not: no window, no engine page.
+    expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual([]);
     expect(names(mk({ FEARCH_ENGINES: "google,nonsense", DISPLAY: ":0" }))).toEqual(["google"]);
-    const listedButOff = mk({ FEARCH_ENGINES: "google" }).find((p) => p.name === "google")!;
+    const listedButOff = mk({ FEARCH_ENGINES: "google", DISPLAY: ":0", FEARCH_HANDOFF: "0" }).find(
+      (p) => p.name === "google",
+    )!;
     expect(listedButOff.ineligibleReason()).toMatch(/person is on call/);
   });
 
@@ -172,7 +180,7 @@ describe("engine eligibility — the dials play together", () => {
     );
     const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
     expect(reg.web.map((p) => p.name)).toEqual(["google", "duckduckgo"]);
-    const s2 = settings({ FEARCH_ENGINES: "google,duckduckgo" });
+    const s2 = settings({ FEARCH_ENGINES: "google,duckduckgo", DISPLAY: ":0", FEARCH_HANDOFF: "0" });
     const reg2 = new SearchRegistry(
       s2,
       new Cache(null),
@@ -189,7 +197,7 @@ describe("engine eligibility — the dials play together", () => {
   });
 
   it("tells the model inline when a listed engine was skipped by the robots dial", async () => {
-    const s = settings({ FEARCH_ENGINES: "google,duckduckgo" });
+    const s = settings({ FEARCH_ENGINES: "google,duckduckgo", DISPLAY: ":0", FEARCH_HANDOFF: "0" });
     const robots = new RobotsChecker(new Cache(null), async () => ({
       status: 200,
       body: "User-agent: *\nAllow: /lite/\nDisallow: /search\n",

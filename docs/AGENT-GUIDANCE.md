@@ -1,7 +1,9 @@
 # Agent guidance snippet
 
-Paste this into your harness's system prompt / `CLAUDE.md` / rules file so the model uses the tools
-well. It is short on purpose.
+The server sends this guidance itself, built from its settings, as MCP `instructions` in the
+`initialize` result — clients that honour it (Claude Code, Claude Desktop) put it in the model's
+context with nothing to paste. For a client that does not, paste the snippet below into your
+harness's system prompt / `CLAUDE.md` / rules file. It is short on purpose.
 
 ```
 ## Web tools (fearch)

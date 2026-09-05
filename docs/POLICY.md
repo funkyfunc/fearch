@@ -98,13 +98,17 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   hydrates. This is the same thing a person does when a page needs a browser, and it is ordinary
   corporate automation (`docs/SPECTRUM.md` rung 7).
 - **Five modes** (`FEARCH_BROWSER`: `auto` | `headless` | `headed` | `extension` | `off`). `auto`
-  (default): renders happen in the bundled headless Chromium; when a page comes back as a challenge
-  and a display exists, that one page is opened in a visible window (the installed Chrome) and handed
-  to the person — passed, its clearance persists in the tool-owned profile so the window need not
+  (default): page renders happen in the bundled headless Chromium; when a page comes back as a challenge
+  and a display exists, the person is asked and that one page is opened in a visible window (the
+  installed Chrome) and handed to them — passed, its clearance persists in the tool-owned profile so the window need not
   reappear; unanswered, no further windows are opened (and no further tabs activated in the person's
   Chrome) for 10 minutes; where no window can be shown,
-  the challenge is final. The person's own Chrome via the paired bridge extension is preferred over
-  all of this whenever it is connected. `headless`: never a window, no state survives the process
+  the challenge is final. **Engine result pages are never rendered headless**: with the extension
+  connected they open in the person's own Chrome; otherwise in a minimised window of the installed
+  Chrome with the tool profile, which comes forward only when a check needs the person (or they must
+  press Enter). Where no window can be shown, no engine is available and `search` says so. The
+  person's own Chrome via the paired bridge extension is preferred over all of this whenever it is
+  connected. `headless`: never a window, no engine search, no state survives the process
   (Chromium itself is downloaded lazily on first need, never in a postinstall). `headed`: every render
   in the Chrome already installed on the machine (so it receives the machine's enterprise policy —
   URL blocklists, proxy, certificates), visible, with the **tool-owned profile** persisted under the
@@ -152,9 +156,12 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 - **Identity.** Every request from the Playwright tiers carries `From:` (RFC 9110 §10.1.2 — the
   header defined for a robot to name who controls it; set to the bot-info URL or `FEARCH_UA_CONTACT`)
   and `X-Agent: fearch/<version> (+<info-url>)`. There is no setting that removes them (one existed
-  until 2026-09-02 and was removed). The User-Agent is Chrome's ordinary one, because it is Chrome
-  (appending the product token to it was measured, 2026-08-28, to trigger bot-checks that key on
-  unusual UA strings, and was dropped). For ordinary page reads, robots.txt is evaluated under our own
+  until 2026-09-02 and was removed). The User-Agent is whatever the browser itself reports and is
+  never set or edited: `HeadlessChrome/…` from the headless tier, `Chrome/…` from a window. (Until
+  2026-09-05 the headless tier rewrote `HeadlessChrome` to `Chrome` so that DuckDuckGo lite would
+  answer it; that edit hid an automation signal and was removed — engine pages now always open in a
+  real window instead. Appending the product token to the UA was measured, 2026-08-28, to trigger
+  bot-checks that key on unusual UA strings, and is not done.) For ordinary page reads, robots.txt is evaluated under our own
   token *before* the browser requests anything, so an operator's stated decision is honoured
   regardless of what their access log shows; engine result pages under the person-present rule are
   the one documented exception (see *Consent signals*).
@@ -207,15 +214,17 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   with the reasons. `FEARCH_SEARCH_MODE=off` disables the search tool entirely. (The fetch tool's
   documented API fast paths — GitHub, PyPI, npm, Stack Overflow, arXiv — are for reading URLs the
   model already has; search queries never reach them.)
-- The Playwright tiers (headless, headed) identify themselves as ordinary Chrome with `From:`/`X-Agent:`
-  naming this tool (see *The browser tier*). The bridge extension does **not**: it is the person's own
+- The Playwright tiers (headless, headed) send the browser's own User-Agent, unedited, with
+  `From:`/`X-Agent:` naming this tool (see *The browser tier*). The bridge extension does **not**: it is the person's own
   Chrome, sending exactly what their Chrome sends, and every result it produced says `your Chrome`
   (`doctor` reports the same). Cloudflare's
   Web Bot Auth (signed requests) is **not** used: a locally-run open-source tool cannot hold a private
   signing key without publishing it, which would be extracted and revoked.
-- **Search engines.** With no person present, the only engine result pages this server requests are
-  DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live before
-  every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
+- **Search engines.** Engine result pages are opened only in a browser a person could see (their own
+  Chrome, or a minimised window of the installed Chrome), never headless; with no display there is no
+  engine search. With no person on call for checks, the only engine result pages this server requests
+  are DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live
+  before every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
   Google disallows `/search` for crawlers and is used only when listed in `FEARCH_ENGINES` and
   eligible under the person-present rule (a person on call — any check the engine raises opens in a
   window, or their own Chrome, for them to decide); with `FEARCH_HUMAN_SEARCH=1` each query is shown
