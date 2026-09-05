@@ -137,7 +137,6 @@ included; `--incognito` sets the profile default. `--browser` pins one behaviour
 | --------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `fearch` (auto)       | pages headless; checks and engine pages in your Chrome (extension) or a background window of it | DuckDuckGo; Google if listed (you approve) |
 | `--browser headless`  | never a window; challenges are final — for servers and CI                                       | none (engine pages are never headless)     |
-| `--browser headed`    | your installed Chrome, always visible, tool-owned profile                                       | DuckDuckGo; Google if listed (you approve) |
 | `--browser extension` | your own Chrome only (a background window of the installed Chrome while disconnected)           | DuckDuckGo; Google if listed (you approve) |
 | `--browser off`       | no browser tier at all                                                                          | none                                       |
 
@@ -165,9 +164,9 @@ fearch extension install     # writes the pairing token, opens chrome://extensio
 ```
 
 Pages open with your real profile (your logins, your Google history) and results say so;
-`--incognito` keeps your profile out of it (in `auto` too, whenever the extension is the tier). Headed mode (`--browser headed`) is the middle
-ground: your installed Chrome with a tool-owned empty profile at `~/.cache/fearch/browser-state.json`
-— delete the file to forget it.
+`--incognito` keeps your profile out of it (in `auto` too, whenever the extension is the tier). Without
+the extension, engine pages and checks open in your installed Chrome with a tool-owned empty profile
+at `~/.cache/fearch/browser-state.json` — delete the file to forget it.
 
 ## Flags
 
@@ -177,7 +176,7 @@ is no second, hidden layer of knobs. `fearch --help` prints the full table with 
 that matter:
 
 ```
---browser auto|headless|headed|extension|off   who renders pages (see the table above; default auto; headless = no search)
+--browser auto|headless|extension|off          who renders pages (see the table above; default auto; headless = no search)
 --robots default|strict                        robots.txt for the tool's own fetching (default: default)
 --engines duckduckgo,google                    engine order (default: duckduckgo; google needs a person on call)
 --human-search                                 show every query to you before it runs (Google queries always are)

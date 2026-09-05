@@ -1,5 +1,8 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { describe, expect, it } from "vitest";
 import { settingsFromEnv } from "../src/config.js";
@@ -8,6 +11,13 @@ import type { HandoffContinuation, Rendered } from "../src/fetch/browser.js";
 import { RateLimited } from "../src/search/provider.js";
 import { createApp, type App } from "../src/app.js";
 import { buildServer } from "../src/server.js";
+
+/** A person on call with no bridge extension: engine pages and checks go to a window of the installed Chrome. */
+const NO_EXTENSION = {
+  FEARCH_BROWSER: "auto",
+  DISPLAY: ":0",
+  FEARCH_CACHE_DIR: mkdtempSync(join(tmpdir(), "fearch-test-")),
+};
 
 const LONG_DOC =
   "# Title\n\nIntro.\n\n" +
@@ -219,7 +229,7 @@ describe("query confirmation (--human-search)", () => {
         FEARCH_LOG_LEVEL: "error",
         FEARCH_HUMAN_SEARCH: "1",
         FEARCH_ENGINES: "google",
-        FEARCH_BROWSER: "headed",
+        ...NO_EXTENSION,
       } as NodeJS.ProcessEnv),
     );
     const asked: Array<{ message: string; schema: unknown }> = [];
@@ -249,7 +259,7 @@ describe("query confirmation (--human-search)", () => {
     expect(schema).toContain('"default":"original query"');
     expect(schema).not.toContain('"enum"'); // one engine: nothing to pick
     expect(schema).toContain('"ask_again"');
-    expect(schema).toContain('"title":"Incognito"'); // headed here: the alternative is fearch's own profile
+    expect(schema).toContain('"title":"Incognito"'); // no extension here: the alternative is fearch's own profile
     expect(schema).toContain("fearch's own Chrome profile");
     expect(ran).toEqual([{ query: "edited query", submitted: true }]);
     expect(text(r)).toContain("https://x.test/1");
@@ -261,8 +271,10 @@ describe("query confirmation (--human-search)", () => {
 function checkingFetcher(state: App) {
   const answers: string[] = [];
   let cancelled = 0;
+  let fetches = 0;
   const fake = {
     async fetch(url: string): Promise<PageDoc> {
+      fetches++;
       const cont: HandoffContinuation = {
         async resume(answer) {
           answers.push(answer);
@@ -316,7 +328,7 @@ function checkingFetcher(state: App) {
     },
   };
   (state as unknown as { fetcher: unknown }).fetcher = fake;
-  return { answers, cancelled: () => cancelled };
+  return { answers, cancelled: () => cancelled, fetches: () => fetches };
 }
 
 describe("the challenge prompt (handoff gate)", () => {
@@ -335,7 +347,7 @@ describe("the challenge prompt (handoff gate)", () => {
     await server.connect(st);
     const c = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
     const seen: string[] = [];
-    let reply: "accept" | "decline" | "never" = "accept";
+    let reply: "accept" | "decline" | "cancel" | "never" = "accept";
     c.setRequestHandler("elicitation/create", async (req) => {
       seen.push(req.params.message);
       if (reply === "never") return new Promise(() => {});
@@ -357,6 +369,22 @@ describe("the challenge prompt (handoff gate)", () => {
     expect(fetcher.answers).toEqual(["accept", "declined"]);
     expect(text(no)).toContain("Still the check page");
 
+    // Dismissed (the client's `cancel`): not a no. The page keeps waiting, and the next fetch of the
+    // same URL asks again about that waiting page instead of rendering it afresh.
+    reply = "cancel";
+    const dismissed = await c.callTool({ name: "fetch", arguments: { url } });
+    expect(dismissed.isError).toBe(true);
+    expect(text(dismissed)).toContain("dismissed without an answer");
+    expect(text(dismissed)).toContain("waits in the background");
+    expect(state.pending.size).toBe(1);
+    const fetchesBefore = fetcher.fetches();
+    reply = "accept";
+    const late = await c.callTool({ name: "fetch", arguments: { url } });
+    expect(fetcher.fetches()).toBe(fetchesBefore); // re-offered, not re-rendered
+    expect(fetcher.answers).toEqual(["accept", "declined", "accept"]);
+    expect(text(late)).toContain("You passed it.");
+    expect(state.pending.size).toBe(0);
+
     reply = "never";
     const started = Date.now();
     const silence = await c.callTool({ name: "fetch", arguments: { url } });
@@ -364,7 +392,7 @@ describe("the challenge prompt (handoff gate)", () => {
     expect(silence.isError).toBe(true);
     expect(text(silence)).toContain("nobody answered within");
     expect(text(silence)).toContain("call fetch again on this same URL");
-    expect(fetcher.answers).toHaveLength(2); // nothing resumed without an answer
+    expect(fetcher.answers).toHaveLength(3); // nothing resumed without an answer
     expect(state.pending.size).toBe(1); // the check waits for the person until it expires
     await c.close();
     await state.close(); // shutdown cancels what is still waiting
@@ -406,7 +434,7 @@ describe("query confirmation — nobody answers", () => {
         FEARCH_LOG_LEVEL: "error",
         FEARCH_HUMAN_SEARCH: "1",
         FEARCH_ENGINES: "google",
-        FEARCH_BROWSER: "headed",
+        ...NO_EXTENSION,
         FEARCH_HANDOFF_TIMEOUT_MS: "150",
       } as NodeJS.ProcessEnv),
     );
@@ -435,6 +463,34 @@ describe("query confirmation — nobody answers", () => {
     await c.close();
   });
 
+  it("a dismissed form (the client's cancel) is not a no: the search says so and nothing runs", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_ENGINES: "google",
+        ...NO_EXTENSION,
+      } as NodeJS.ProcessEnv),
+    );
+    const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(
+      (e) => e.name === "google",
+    )!;
+    (state.search as unknown as { web: unknown[] }).web = [engine];
+    let ran = 0;
+    engine.search = async () => {
+      ran++;
+      return { results: [] };
+    };
+    const c = await elicitingClient(state, async () => ({ action: "cancel" as const }));
+    const r = await c.callTool({ name: "search", arguments: { query: "dismissed query" } });
+    expect(ran).toBe(0);
+    expect(r.isError).toBe(true);
+    expect(text(r)).toContain("dismissed without an answer");
+    expect(text(r)).not.toMatch(/declined/);
+    await c.close();
+  });
+
   it("declining the form is an answer: the search stops with a note, nothing runs", async () => {
     const state = createApp(
       settingsFromEnv({
@@ -442,7 +498,7 @@ describe("query confirmation — nobody answers", () => {
         FEARCH_AUDIT_LOG: "off",
         FEARCH_LOG_LEVEL: "error",
         FEARCH_ENGINES: "google",
-        FEARCH_BROWSER: "headed",
+        ...NO_EXTENSION,
       } as NodeJS.ProcessEnv),
     );
     const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(
@@ -485,7 +541,7 @@ describe("query confirmation across engines", () => {
         FEARCH_AUDIT_LOG: "off",
         FEARCH_LOG_LEVEL: "error",
         FEARCH_ENGINES: "duckduckgo,google",
-        FEARCH_BROWSER: "headed",
+        ...NO_EXTENSION,
       } as NodeJS.ProcessEnv),
     );
     const engines = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines;

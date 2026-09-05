@@ -16,7 +16,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 - The User-Agent cannot be set to a browser string. There is no configuration option to do so.
 - No TLS fingerprint impersonation, no header randomization, no fake `Referer`/`Origin`. The plain
   HTTP client holds no cookies. The browser tier's cookies are exactly what a person's browsing
-  creates: the headed mode's tool-owned profile keeps what the person did in that window, and the
+  creates: the tool-owned profile keeps what the person did in windows the tool opened, and the
   extension mode is the person's own Chrome profile (their choice to pair it); reads that carry a
   person's session are labelled in the result header.
 
@@ -97,7 +97,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   until the DOM stops being a shell (bounded), so a client-rendered app is not captured before it
   hydrates. This is the same thing a person does when a page needs a browser, and it is ordinary
   corporate automation (`docs/SPECTRUM.md` rung 7).
-- **Five modes** (`FEARCH_BROWSER`: `auto` | `headless` | `headed` | `extension` | `off`). `auto`
+- **Four modes** (`FEARCH_BROWSER`: `auto` | `headless` | `extension` | `off`; a pinned `headed` mode existed until 2026-09-05 — `auto` covers it). `auto`
   (default): page renders happen in the bundled headless Chromium; when a page comes back as a challenge
   and a display exists, the person is asked and that one page is opened in a visible window (the
   installed Chrome) and handed to them — passed, its clearance persists in the tool-owned profile so the window need not
@@ -112,12 +112,11 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   shown, no engine is available and `search` says so. The
   person's own Chrome via the paired bridge extension is preferred over all of this whenever it is
   connected. `headless`: never a window, no engine search, no state survives the process
-  (Chromium itself is downloaded lazily on first need, never in a postinstall). `headed`: every render
-  in the Chrome already installed on the machine (so it receives the machine's enterprise policy —
-  URL blocklists, proxy, certificates), visible, with the **tool-owned profile** persisted under the
-  cache directory. Chrome refuses automation on a person's real profile; the tool profile starts
-  empty and only ever contains what the person did in windows the tool opened. `off`: no browser
-  tier at all.
+  (Chromium itself is downloaded lazily on first need, never in a postinstall). The window `auto` opens
+  is the Chrome already installed on the machine (so it receives the machine's enterprise policy —
+  URL blocklists, proxy, certificates), with the **tool-owned profile** persisted under the cache
+  directory. Chrome refuses automation on a person's real profile; the tool profile starts empty and
+  only ever contains what the person did in windows the tool opened. `off`: no browser tier at all.
 - **Extension mode** (`--browser extension`). Pages are opened in the person's own Chrome by the bundled
   "fearch bridge" extension (`packages/core/extension`, a few hundred lines, readable in full). No
   automation flags, no DevTools/CDP, no injected scripts beyond reading the page: it is the person's
@@ -134,13 +133,13 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   incognito window instead. If the extension is not connected, fearch falls back to the headless tier
   and says so in the log (including that the handoff is unavailable until it connects).
 - **Human handoff** (on by default whenever a window could reach the person — auto with a display,
-  headed, or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
+  or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
   the person is asked first, through their MCP client: "A bot check appeared on host. Open it for
   you?" On a 2025-era connection (Claude Code today) the server holds the call and asks through an
   elicitation request, on fearch's own clock. On a 2026-07-28 connection the question is the tool's
   result — an `input_required` round — and the client's next call brings the answer; the page that
   hit the check waits in the background, suspended, in between. On yes the check is surfaced — the auto tier brings that one page forward in a window;
-  headed brings the tab to the front; the extension activates the tab in the person's Chrome — and
+  the extension activates the tab in the person's Chrome — and
   the tool waits (default 45 s from the yes, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with
   it, then continues with what they were shown. On no, that is the answer. If nobody answers within
   that timeout on a 2025-era connection, fearch withdraws the prompt and says so in its own words
@@ -155,7 +154,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   nothing; it only watches for the page to stop being a challenge. The extension activates the tab
   and asks for attention (dock/taskbar) without taking focus. Without handoff, or where nothing can
   be shown, a challenge is final.
-- **Session.** The tool-owned profile (headed/auto) holds only what the person did in windows the
+- **Session.** The tool-owned profile (auto) holds only what the person did in windows the
   tool opened — passed checks, above all. It is sent to engine pages (that is where a passed check
   lives) and never to ordinary page reads; there is no setting that forwards it to ordinary pages
   (one existed until 2026-09-02 and was removed). Through the bridge extension, ordinary reads in
@@ -178,7 +177,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   make it false is the stealth flag `--disable-blink-features=AutomationControlled`, which this project
   does not offer), no fingerprint changes, no stealth plugins, no CAPTCHA solving, no credentials held
   by the tool. Downloads and service workers are disabled. In headless mode images, fonts and media are
-  not loaded (bandwidth courtesy); headed windows load them because a person is looking. Requests to
+  not loaded (bandwidth courtesy); visible windows load them because a person is looking. Requests to
   private/internal addresses are blocked at the request gate.
 - The browser attempt is subject to the same robots.txt decision, the same per-host queue, and costs two
   units of the session budget in total (the plain attempt paid the first). It is used only on the
@@ -222,7 +221,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   with the reasons. `FEARCH_SEARCH_MODE=off` disables the search tool entirely. (The fetch tool's
   documented API fast paths — GitHub, PyPI, npm, Stack Overflow, arXiv — are for reading URLs the
   model already has; search queries never reach them.)
-- The Playwright tiers (headless, headed) send the browser's own User-Agent, unedited, with
+- The Playwright tiers (headless, and the visible window) send the browser's own User-Agent, unedited, with
   `From:`/`X-Agent:` naming this tool (see *The browser tier*). The bridge extension does **not**: it is the person's own
   Chrome, sending exactly what their Chrome sends, and every result it produced says `your Chrome`
   (`doctor` reports the same). Cloudflare's

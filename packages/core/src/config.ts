@@ -76,7 +76,7 @@ export interface Settings {
    * robots.txt permits their result pages are eligible unless `robotsPolicy` is `off`.
    */
   engines: string[];
-  /** Where the headed profile's cookies/storage are persisted. */
+  /** Where the tool-owned Chrome profile (engine window, escalation window) is persisted. */
   browserStatePath: string;
   browserTimeoutMs: number;
   browserMaxConcurrent: number;
@@ -99,7 +99,7 @@ export interface Settings {
  * keeps governing what the tool fetches on its own.
  */
 export function personPresent(s: Settings): boolean {
-  return (s.browser === "auto" || s.browser === "headed" || s.browser === "extension") && s.handoff && s.canSurface;
+  return (s.browser === "auto" || s.browser === "extension") && s.handoff && s.canSurface;
 }
 
 type Env = Record<string, string | undefined>;
@@ -136,7 +136,7 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
 
 export const KNOWN_ENGINES = ["duckduckgo", "google"] as const;
 export const ROBOTS_POLICIES = ["default", "strict"] as const;
-export const BROWSER_MODES = ["auto", "headless", "headed", "extension", "off"] as const;
+export const BROWSER_MODES = ["auto", "headless", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "off"] as const;
 
 /** The machine's locale from the environment (FEARCH_LOCALE wins), normalised to lang or lang-REGION. */
@@ -167,18 +167,10 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
   const cacheDir = env.FEARCH_CACHE_DIR?.trim() || join(homedir(), ".cache", "fearch");
   const robotsPolicy = pick(env.FEARCH_ROBOTS_POLICY, ROBOTS_POLICIES, "default");
   const browser = pick(env.FEARCH_BROWSER, BROWSER_MODES, "auto");
-  const canSurface =
-    browser === "headed" || browser === "extension"
-      ? true
-      : browser === "auto"
-        ? displayAvailable(env, platform)
-        : false;
+  const canSurface = browser === "extension" ? true : browser === "auto" ? displayAvailable(env, platform) : false;
   // Handoff defaults on wherever a window (or the person's Chrome) could carry a challenge to them.
   // --no-handoff opts out — then nothing is ever surfaced and challenges are final.
-  const handoff =
-    browser === "auto" || browser === "headed" || browser === "extension"
-      ? envBool(env, "FEARCH_HANDOFF", true)
-      : false;
+  const handoff = browser === "auto" || browser === "extension" ? envBool(env, "FEARCH_HANDOFF", true) : false;
   const infoUrl = env.FEARCH_UA_INFO_URL?.trim() || pkg.homepage || "https://github.com/funkyfunc/fearch";
   const contact = env.FEARCH_UA_CONTACT?.trim() || "";
   return {
@@ -494,8 +486,13 @@ const BOOL_WORDS = /^(1|0|true|false|yes|no|on|off)$/i;
 /** Validate one flag's value against its spec; the parsed value is what settingsFromEnv reads. */
 function checkValue(spec: FlagSpec, flag: string, v: string): void {
   const value = v.trim().toLowerCase();
-  if (spec.kind === "enum" && spec.values && !spec.values.includes(value))
+  if (spec.kind === "enum" && spec.values && !spec.values.includes(value)) {
+    if (flag === "browser" && value === "headed")
+      throw new UsageError(
+        "--browser headed was removed: auto already reads pages headless and opens your installed Chrome (or your own, via the extension) for engine pages and bot checks",
+      );
     throw new UsageError(`--${flag} must be one of ${spec.values.join("|")}, not "${v}"`);
+  }
   if (spec.kind === "list" && spec.values) {
     const known = spec.values as readonly string[];
     const bad = value

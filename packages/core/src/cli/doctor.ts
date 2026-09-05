@@ -95,11 +95,9 @@ export async function doctor(app: App, opts: { json?: boolean } = {}): Promise<n
         app.browser.browserChannel === "extension"
           ? `none — your own Chrome, no identifying headers; ${s.incognito ? "incognito, your logins stay out" : "your logins ride along (--incognito to keep them out)"}`
           : "From/X-Agent headers name the tool";
-      const headed =
-        s.browser === "headed" ? `; handoff=${s.handoff ? "on" : "off"}; profile: ${s.browserStatePath}` : "";
       ok(
         "browser",
-        `${s.browser} ${app.browser.browserChannel} rendered example.com (${r.html.length} chars); identity=${identity}; UA: ${app.browser.browserUserAgent}${headed}`,
+        `${s.browser} ${app.browser.browserChannel} rendered example.com (${r.html.length} chars); identity=${identity}; UA: ${app.browser.browserUserAgent}`,
       );
     } catch (e) {
       fail("browser", (e as Error).message);

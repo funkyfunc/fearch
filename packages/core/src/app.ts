@@ -106,7 +106,6 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
 function createBrowser(settings: Settings, audit: Audit, events: AppEvents, gate: HandoffGate): BrowserTier {
   switch (settings.browser) {
     case "headless":
-    case "headed":
     case "off":
       return new BrowserRenderer(settings, audit, events, gate);
     default: {

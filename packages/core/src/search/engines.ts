@@ -354,9 +354,7 @@ export class EngineProvider implements SearchProvider {
           : "your own Chrome, your profile"
         : ch === "auto"
           ? `a background window of your installed Chrome (${incognito ? "fresh incognito context" : "tool profile"}; a check brings it forward for you)`
-          : this.settings.browser === "headed"
-            ? "the visible browser window"
-            : "a browser window";
+          : "a browser window";
     const robots = this.spec.robotsPermitted ? "robots.txt permits" : "each query approved or submitted by you";
     return `${this.spec.label} via ${how} — ${robots}; ${this.spec.privacy}`;
   }

@@ -4,8 +4,8 @@
  * browser modes (extension.ts covers `extension`; `off` disables the tier):
  *
  * - `headless` (default): the bundled Chromium in new-headless mode. No cookies survive the process.
- * - `headed`: the Chrome already installed on the machine (bundled Chromium if none), in a visible
- *   window. The person can see every tab the tool opens and (handoff, on by default) is handed a
+ * - visible (`auto`'s escalation and engine window; `visible` in the constructor): the Chrome already
+ *   installed on the machine (bundled Chromium if none), in a window. The person is handed a
  *   challenge page to deal with themselves — the tool waits, then continues with what they were
  *   shown. A tool-owned profile (cookies/storage) persists under the cache dir so a passed check or a
  *   login the person chose to do in that window is remembered. It is never the person's own Chrome
@@ -247,6 +247,8 @@ export class BrowserRenderer implements BrowserTier {
     private readonly audit: Audit,
     private readonly events?: AppEvents,
     private readonly handoffGate?: HandoffGate,
+    /** A window on the person's screen rather than headless: the escalation and engine tier of `auto`. */
+    private readonly visible = false,
   ) {}
 
   enabled(): boolean {
@@ -254,11 +256,11 @@ export class BrowserRenderer implements BrowserTier {
   }
 
   get headed(): boolean {
-    return this.settings.browser === "headed";
+    return this.visible;
   }
 
   /**
-   * Whether the persistent tool profile may be used. Headed always; `auto` too — its routine renders
+   * Whether the persistent tool profile may be used. The visible window always; `auto` too — its routine renders
    * are headless, but a check the person passed in an escalation window lives in that profile, and
    * carrying it means the window does not have to reappear. Explicit `headless` stays stateless.
    */
@@ -816,7 +818,7 @@ export class EscalatingRenderer implements BrowserTier {
     private readonly audit: Audit,
     private readonly routine: BrowserTier,
     private readonly makeEscalation: () => BrowserTier = () =>
-      new BrowserRenderer({ ...settings, browser: "headed" }, audit, events, handoffGate),
+      new BrowserRenderer(settings, audit, events, handoffGate, true),
     private readonly events?: AppEvents,
     private readonly handoffGate?: HandoffGate,
   ) {}

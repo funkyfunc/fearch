@@ -68,8 +68,6 @@ function describeBrowser(s: Settings): string {
   switch (s.browser) {
     case "off":
       return "off";
-    case "headed":
-      return `headed — your installed Chrome in a visible window; handoff=${s.handoff ? "on" : "off"}`;
     case "extension":
       return `extension — your own Chrome via the fearch bridge; incognito=${s.incognito ? "on" : "off"}; falls back to headless if not connected`;
     case "headless":

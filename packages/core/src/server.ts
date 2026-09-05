@@ -323,6 +323,28 @@ function searchRound(state: SearchState, answer: QueryChoice | "declined"): Sear
 
 const utcNow = () => new Date().toISOString().slice(11, 16) + " UTC";
 
+/** No answer to the form: nothing ran under the person's name. `how`: what became of the prompt. */
+function unansweredSearch(engine: string, how: string): CallToolResult {
+  return failure(
+    `${engine}: needs your approval in your MCP client and ${how} (asked at ${utcNow()}) — search again when you are at the screen. Nothing ran.`,
+  );
+}
+
+/** No answer to "open this bot check?": the page keeps waiting in the background; the next fetch asks again. */
+function unansweredCheck(target: string, attempts: string[], how: string): CallToolResult {
+  return failure(
+    `Fetch refused or failed for ${target}\n` +
+      renderDiagnosis({
+        kind: "captcha_or_challenge",
+        retryable: true,
+        attempts,
+        message: `The site showed a bot check; the user was asked (${utcNow()}) whether to open it and ${how}, so nothing was opened. The page waits in the background for ten minutes.`,
+        nextAction:
+          "Tell the user a bot check is waiting on this page. When they are at the screen, call fetch again on this same URL: they will be asked again about the same waiting page. The tool never solves checks itself.",
+      }),
+  );
+}
+
 /**
  * A 2025-era connection (an `initialize` handshake happened) still has the server→client request
  * channel, and the server holds the call while the person is asked: fearch asks through it on its
@@ -360,6 +382,8 @@ export function buildServer(app: App): McpServer {
   );
   const begin = wireGate(app, server);
   const timeoutMs = app.settings.handoffTimeoutMs;
+  /** Pages whose bot check is waiting for an answer, by the URL the caller used: the next fetch asks again, no re-render. */
+  const waitingByTarget = new Map<string, { id: string; attempts: string[] }>();
   const waited = `${Math.round(timeoutMs / 1000)} s`;
 
   server.registerTool(
@@ -402,10 +426,10 @@ export function buildServer(app: App): McpServer {
       let round: SearchRound = {};
       if (state?.kind === "search") {
         const v = inputResponse(ctx.mcpReq.inputResponses, "form");
-        round = searchRound(
-          state,
-          v.kind === "elicit" && v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined",
-        );
+        // `cancel` is the client's word for a prompt dismissed or timed out without a choice — not a no.
+        if (v.kind !== "elicit" || v.action === "cancel")
+          return unansweredSearch(state.ask.engine, "the prompt was dismissed or timed out without an answer");
+        round = searchRound(state, v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined");
       }
       for (let i = 0; i < 8; i++) {
         const out = await run(round);
@@ -417,10 +441,9 @@ export function buildServer(app: App): McpServer {
             requestState: await stateCodec.mint(next, ctx),
           });
         const r = await askLegacy(server, params, timeoutMs);
-        if (r === "unanswered")
-          return failure(
-            `${out.ask.engine}: needs your approval in your MCP client and nobody answered within ${waited} (asked at ${utcNow()}) — search again when you are at the screen. Nothing ran.`,
-          );
+        if (r === "unanswered") return unansweredSearch(out.ask.engine, `nobody answered within ${waited}`);
+        if (r.action === "cancel")
+          return unansweredSearch(out.ask.engine, "the prompt was dismissed without an answer");
         round = searchRound(next, r.action === "accept" ? choiceFrom(r.content ?? {}, next.ask) : "declined");
       }
       return failure(`search:${query}: asked ${8} times without a search running; giving up.`);
@@ -459,6 +482,7 @@ export function buildServer(app: App): McpServer {
 
       /** The person's answer to "open this bot check?" resumes that one page; the others are read normally. */
       const resume = (st: CheckState, answer: "accept" | "declined") => {
+        waitingByTarget.delete(st.target);
         const doc = app.pending.resume(st.id, answer).then((r) => app.fetcher.completePending(st.url, r, st.attempts));
         doc.catch(() => {}); // surfaced where it is read, not as an unhandled rejection
         return { target: st.target, doc };
@@ -467,13 +491,15 @@ export function buildServer(app: App): McpServer {
       const isWaiting = (o: CallToolResult | Waiting): o is Waiting => (o as Waiting).pending instanceof PendingCheck;
       const run = async (resumed: ReturnType<typeof resume> | null): Promise<CallToolResult | Waiting> => {
         const readOne = async (url: string) => {
-          const doc =
-            resumed && resumed.target === url
-              ? await resumed.doc
-              : await app.fetcher.fetch(url, {
-                  raw: options.mode === "raw",
-                  via: args.archive ? "archive" : undefined,
-                });
+          if (resumed && resumed.target === url) return readDocument(await resumed.doc, options);
+          const waiting = waitingByTarget.get(url);
+          const info = waiting && app.pending.info(waiting.id);
+          if (waiting && info) throw new PendingCheck(waiting.id, info.url, info.where, waiting.attempts);
+          if (waiting) waitingByTarget.delete(url); // expired: render afresh
+          const doc = await app.fetcher.fetch(url, {
+            raw: options.mode === "raw",
+            via: args.archive ? "archive" : undefined,
+          });
           return readDocument(doc, options);
         };
         if (targets.length === 1) {
@@ -514,12 +540,21 @@ export function buildServer(app: App): McpServer {
       let resumed: ReturnType<typeof resume> | null = null;
       if (state?.kind === "check") {
         const v = inputResponse(ctx.mcpReq.inputResponses, "open");
-        resumed = resume(state, v.kind === "elicit" && v.action === "accept" ? "accept" : "declined");
+        if (v.kind !== "elicit" || v.action === "cancel") {
+          waitingByTarget.set(state.target, { id: state.id, attempts: state.attempts });
+          return unansweredCheck(
+            state.target,
+            state.attempts,
+            "the prompt was dismissed or timed out without an answer",
+          );
+        }
+        resumed = resume(state, v.action === "accept" ? "accept" : "declined");
       }
       for (let i = 0; i < 8; i++) {
         const out = await run(resumed);
         if (!isWaiting(out)) return out;
         const { params, state: next } = openRequest(out.pending, out.target);
+        waitingByTarget.set(out.target, { id: out.pending.id, attempts: out.pending.attempts });
         if (!isLegacy(server))
           return inputRequired({
             inputRequests: { open: inputRequired.elicit(params) },
@@ -527,17 +562,9 @@ export function buildServer(app: App): McpServer {
           });
         const r = await askLegacy(server, params, timeoutMs);
         if (r === "unanswered")
-          return failure(
-            `Fetch refused or failed for ${out.target}\n` +
-              renderDiagnosis({
-                kind: "captcha_or_challenge",
-                retryable: true,
-                attempts: out.pending.attempts,
-                message: `The site showed a bot check; the user was asked (${utcNow()}) whether to open it and nobody answered within ${waited}, so nothing was opened. The page waits in the background for ten minutes.`,
-                nextAction:
-                  "Tell the user a bot check is waiting on this page. When they are at the screen, call fetch again on this same URL and they will be asked again. The tool never solves checks itself.",
-              }),
-          );
+          return unansweredCheck(out.target, out.pending.attempts, `nobody answered within ${waited}`);
+        if (r.action === "cancel")
+          return unansweredCheck(out.target, out.pending.attempts, "the prompt was dismissed without an answer");
         resumed = resume(next, r.action === "accept" ? "accept" : "declined");
       }
       return failure(`${targets[0]}: asked ${8} times without an answer that finished the read; giving up.`);

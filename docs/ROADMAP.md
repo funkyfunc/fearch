@@ -25,6 +25,11 @@ is not a goal to get through them.
   the SDK shim's "Request timed out"; on 2026-07-28 the client owns the wait. `fearch`
   serves both eras over stdio through `serveStdio`; a child-process test pins 2026-07-28. Retired
   with it: the in-process "unanswered" outcome (a prompt nobody answers never reaches a tier now).
+  A client's `cancel` (the elicitation answer for "dismissed or timed out without a choice") is
+  treated as no answer, not a no: the search says so and nothing runs; a bot-check page keeps
+  waiting and the next fetch of the same URL asks about that same waiting page. Same day:
+  `--browser headed` removed (`auto` already opens the installed Chrome for engine pages and checks,
+  and reads other pages headless; a visible tab per page read was the only thing headed added).
 
 - **The person decides (2026-09-04/05, from the second outside review).** Fixes first: an SSRF hole for
   hex-form IPv6-mapped literals, browser escalation on empty extraction, honest handoff messages, flag
@@ -47,7 +52,7 @@ is not a goal to get through them.
   editable-query elicitation through the MCP client (browser handoff as the fallback); ordinary page
   reads in `auto` go headless-first and reach the person's Chrome only for a check; Bing, `--robots
   off`, `--browser-identity` and `--browser-session` removed; every setting is a flag; `docs/CASES.md`
-  added. Headed stays as a mode for now.
+  added. Headed stayed as a pinned mode until 2026-09-05.
 
 - **Published + release pipeline (2026-09-01).** npm package `fearch-mcp` (bare `fearch` blocked as
   too similar to `fetch`; the command, UA token, and repo stay `fearch`); v2.0.1 released by the

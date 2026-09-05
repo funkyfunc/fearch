@@ -152,14 +152,11 @@ describe("engine eligibility — the dials play together", () => {
     ).toMatch(/no browser window can be shown/);
     // A display or a visible browser does not put Google in by itself: DuckDuckGo is the default everywhere.
     expect(names(mk({ DISPLAY: ":0" }))).toEqual(["duckduckgo"]);
-    expect(names(mk({ FEARCH_BROWSER: "headed" }))).toEqual(["duckduckgo"]);
     // Listed, with a person on call for any check, Google is their own browsing.
     const G = { FEARCH_ENGINES: "google,duckduckgo" };
     expect(names(mk({ ...G, DISPLAY: ":0" }))).toEqual(["google", "duckduckgo"]);
-    expect(names(mk({ ...G, FEARCH_BROWSER: "headed" }))).toEqual(["google", "duckduckgo"]);
     expect(names(mk({ ...G, FEARCH_BROWSER: "extension" }))).toEqual(["google", "duckduckgo"]);
     // …but not with handoff explicitly off (nobody would ever see a check).
-    expect(names(mk({ ...G, FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
     expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_HANDOFF: "0" }))).toEqual(["duckduckgo"]);
     // …and never in explicit headless, display or not: no window, no engine page.
     expect(names(mk({ ...G, DISPLAY: ":0", FEARCH_BROWSER: "headless" }))).toEqual([]);
@@ -235,7 +232,7 @@ describe("engine eligibility — the dials play together", () => {
     // Google with a person present is the person's own browsing: the query they approved is opened
     // without consulting robots.txt.
     const { results: g } = await provider("google", async () => ({ html: GOOGLE, status: 200 }), {
-      FEARCH_BROWSER: "headed",
+      DISPLAY: ":0",
     }).search({ query: "x", maxResults: 5 }, { submittedByPerson: true });
     expect(g[0].url).toContain("npmjs.com");
   });
@@ -287,7 +284,7 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
       opts: import("../src/fetch/browser.js").RenderOptions,
     ) => Promise<{ html: string; url?: string; handedOff?: boolean; handoffWhere?: string }>,
   ) {
-    const s = settings({ FEARCH_HUMAN_SEARCH: "1", FEARCH_ENGINES: "google,duckduckgo", FEARCH_BROWSER: "headed" });
+    const s = settings({ FEARCH_HUMAN_SEARCH: "1", FEARCH_ENGINES: "google,duckduckgo", DISPLAY: ":0" });
     const browser = {
       enabled: () => true,
       headed: true,
@@ -370,7 +367,7 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
   });
 
   it("Google always needs the person's act, --human-search or not: without a client that can ask, the search box is handed over", async () => {
-    const s = settings({ FEARCH_ENGINES: "google,duckduckgo", FEARCH_BROWSER: "headed" });
+    const s = settings({ FEARCH_ENGINES: "google,duckduckgo", DISPLAY: ":0" });
     const seen: import("../src/fetch/browser.js").RenderOptions[] = [];
     const browser = {
       enabled: () => true,
@@ -446,11 +443,11 @@ describe("human handoff loop", () => {
 describe("server flags", () => {
   it("maps flags onto settings, wins over env, derives engines, and passes the rest through", () => {
     const base = { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error" };
-    const a = settingsFromArgs(["--browser", "headed", "search", "some query", "--n", "3"], base, "linux");
+    const a = settingsFromArgs(["--browser", "extension", "search", "some query", "--n", "3"], base, "linux");
     // A visible browser means handoff on; Google is still a choice, not a consequence.
     expect([a.settings.robotsPolicy, a.settings.browser, a.settings.handoff, a.settings.engines]).toEqual([
       "default",
-      "headed",
+      "extension",
       true,
       ["duckduckgo"],
     ]);
@@ -477,8 +474,10 @@ describe("server flags", () => {
     ]);
     // handoff opted out (env escape hatch): nobody would see a check, so back to DuckDuckGo only
     expect(
-      settingsFromArgs(["--browser", "headed"], { ...base, FEARCH_HANDOFF: "0" }, "linux").settings.engines,
+      settingsFromArgs(["--browser", "extension"], { ...base, FEARCH_HANDOFF: "0" }, "linux").settings.engines,
     ).toEqual(["duckduckgo"]);
+    // The old headed mode says where it went, rather than just "must be one of".
+    expect(() => settingsFromArgs(["--browser", "headed"], base, "linux")).toThrow(/headed was removed/);
     expect(settingsFromArgs([], base, "linux").settings.engines).toEqual(["duckduckgo"]);
     expect(() => settingsFromArgs(["--robots"], base, "linux")).toThrow(/needs a value/);
     expect(() => settingsFromArgs(["--robots", "sometimes"], base, "linux")).toThrow(/must be one of/);
@@ -545,16 +544,16 @@ describe("config dials", () => {
     // incognito is a switch for the person's-Chrome tier, whether pinned (extension) or preferred (auto)
     expect(settings({ FEARCH_INCOGNITO: "1" }).incognito).toBe(true);
     expect(settings({ FEARCH_BROWSER: "extension", FEARCH_INCOGNITO: "1" }).incognito).toBe(true);
-    expect(settings({ FEARCH_BROWSER: "headed", FEARCH_INCOGNITO: "1" }).incognito).toBe(false);
+    expect(settings({ FEARCH_BROWSER: "headless", FEARCH_INCOGNITO: "1" }).incognito).toBe(false);
     expect(settings({ FEARCH_HUMAN_SEARCH: "1" }).humanSearch).toBe(true);
     const h = settings({
-      FEARCH_BROWSER: "headed",
+      FEARCH_BROWSER: "extension",
       FEARCH_HANDOFF: "1",
       FEARCH_ENGINES: "Google, duckduckgo",
       FEARCH_ROBOTS_POLICY: "strict",
     });
     expect([h.browser, h.handoff, h.engines, h.robotsPolicy]).toEqual([
-      "headed",
+      "extension",
       true,
       ["google", "duckduckgo"],
       "strict",
@@ -563,9 +562,8 @@ describe("config dials", () => {
     const hl = settings({ FEARCH_BROWSER: "headless", FEARCH_HANDOFF: "1" });
     expect([hl.handoff, hl.canSurface]).toEqual([false, false]);
     // Handoff defaults on wherever a person could be reached; FEARCH_HANDOFF=0 opts out.
-    expect(settings({ FEARCH_BROWSER: "headed" }).handoff).toBe(true);
     expect(settings({ FEARCH_BROWSER: "extension" }).handoff).toBe(true);
-    expect(settings({ FEARCH_BROWSER: "headed", FEARCH_HANDOFF: "0" }).handoff).toBe(false);
+    expect(settings({ FEARCH_BROWSER: "extension", FEARCH_HANDOFF: "0" }).handoff).toBe(false);
     // A display via env works for auto on linux too; unknown modes fall back to auto.
     expect(settings({ DISPLAY: ":0" }).canSurface).toBe(true);
     expect(settings({ FEARCH_BROWSER: "nonsense" }).browser).toBe("auto");
