@@ -7,6 +7,13 @@ import { settingsFromEnv, type Settings } from "./config.js";
 import { BrowserRenderer, EscalatingRenderer, type BrowserTier, type HandoffGate } from "./fetch/browser.js";
 import { ExtensionBridge, ExtensionRenderer, loadOrCreateExtensionToken } from "./fetch/extension.js";
 import { PendingChecks } from "./fetch/pending.js";
+
+/**
+ * How long a page that hit a bot check waits in the background for the person's answer. Longer than
+ * any prompt timeout on purpose: a suspended tab costs nothing, and a late "yes" should land on the
+ * live page rather than on "fetch it again".
+ */
+const PENDING_CHECK_TTL_MS = 10 * 60_000;
 import { Fetcher } from "./fetch/pipeline.js";
 import { RobotsChecker } from "./fetch/robots.js";
 import { Transport } from "./fetch/transport.js";
@@ -45,7 +52,7 @@ export function createApp(settings: Settings = settingsFromEnv()): App {
   const events = new EventEmitter() as AppEvents;
   const gate: HandoffGate = {};
   // A suspended check outlives the prompt's own timeout by a little, so a late "yes" still lands.
-  const pending = new PendingChecks(settings.handoffTimeoutMs + 60_000);
+  const pending = new PendingChecks(PENDING_CHECK_TTL_MS);
   const audit = new Audit(settings);
   const cache = new Cache(settings.noCache ? null : `${settings.cacheDir}/cache-v2.sqlite`);
   const transport = new Transport(settings, audit);

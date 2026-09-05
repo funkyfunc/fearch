@@ -143,8 +143,8 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   headed brings the tab to the front; the extension activates the tab in the person's Chrome — and
   the tool waits (default 45 s from the yes, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with
   it, then continues with what they were shown. On no, that is the answer. If nobody answers, the
-  client reports the timed-out prompt (the same timeout bounds each round), the suspended page closes
-  a minute later, and the next request asks again — there is no backoff, because the prompt itself
+  client reports the timed-out prompt (the same timeout bounds each round), the suspended page waits
+  ten minutes for a late answer and then closes, and the next request asks again — there is no backoff, because the prompt itself
   is the test of presence. A client that cannot show a prompt gets the pre-prompt behaviour (the tab
   or window is surfaced straight away, and an unanswered one earns a 10-minute pause on further
   windows). If the check is still there, the answer is a `captcha_or_challenge` diagnosis marked
