@@ -259,10 +259,7 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   it served decoy results to automated browsers and its home page cannot carry a query without
   submitting it. `doctor` reports exactly which
   engines are in use and why the rest are not. Engine pages are opened in the same browser tier as
-  page reads, one query per search call, at least 3 s apart — two when nothing on Google's default
-  page could be parsed at all: its plain "Web" view (`udm=14`, a documented view of its own UI) of
-  the same query is looked at once, same identity, same session, before the page is handed to the
-  agent as markdown. A bot-check page is that engine's "no"
+  page reads, one query per search call, at least 3 s apart. The `google` engine opens Google's Web tab (`udm=14`: links only, what a person clicking "Web" gets); the generated answer is `google-ai`'s job. A bot-check page is that engine's "no"
   to the tool and a question for the person: they are asked whether to open it, and pass it
   themselves or not. With a person on call there is no cooldown — the next search asks again. Only
   where nobody can be asked (headless, no display, `FEARCH_HANDOFF=0`) does the provider sit out for

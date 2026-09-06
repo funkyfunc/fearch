@@ -653,7 +653,7 @@ describe("the ladder", () => {
     const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
     const browser = fakeBrowser(async (url) => {
       seen.push(url);
-      return { html: pages[/udm=14/.test(url) ? "plain" : "default"] ?? "<html></html>", status: 200 };
+      return { html: pages.default ?? "<html></html>", status: 200 };
     });
     return {
       provider: new EngineProvider(
@@ -675,24 +675,15 @@ describe("the ladder", () => {
     expect(r.note).toMatch(/read by page shape/);
   });
 
-  it("looks once at Google's plain Web view when nothing parsed, then hands the page over as markdown", async () => {
+  it("hands the page over as markdown when nothing on it reads as a result", async () => {
     const seen: string[] = [];
-    const { provider } = google({ default: NOTHING, plain: GOOGLE_2026 }, seen);
+    const { provider } = google({ default: NOTHING }, seen);
     const r = await provider.search({ query: "q", maxResults: 5 }, approved);
-    expect(seen.length).toBe(2);
-    expect(seen[1]).toContain("udm=14");
-    expect(r.parsed).toBe("first-class");
-    expect(r.results[0].url).toBe("https://playwright.dev/docs/auth");
-    expect(r.note).toMatch(/plain Web view/);
-
-    const seen2: string[] = [];
-    const { provider: p2 } = google({ default: NOTHING, plain: NOTHING }, seen2);
-    const r2 = await p2.search({ query: "q", maxResults: 5 }, approved);
-    expect(seen2.length).toBe(2);
-    expect(r2.parsed).toBe("page");
-    expect(r2.results).toEqual([]);
-    expect(r2.page).toContain("Everything moved");
-    expect(r2.note).toMatch(/plain Web view follows as a page/);
+    expect(seen.length).toBe(1); // one page view per query, never a second
+    expect(r.parsed).toBe("page");
+    expect(r.results).toEqual([]);
+    expect(r.page).toContain("Everything moved");
+    expect(r.note).toMatch(/results column follows as markdown/);
   });
 
   it("carries the rung through the registry: a shape read is reported, a page read is returned, neither is cached", async () => {
@@ -891,7 +882,7 @@ describe("locale", () => {
     expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
     // Google gets the URL a person's address bar would carry: the query and Google's own date filter,
     // no language or region parameters (Accept-Language and the network carry the locale).
-    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toBe("https://www.google.com/search?q=q&tbs=qdr:m");
+    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toBe("https://www.google.com/search?q=q&udm=14&tbs=qdr:m");
     expect(ENGINE_SPECS.google.url("q", undefined, "en-US")).not.toMatch(/num=|hl=|gl=/);
     expect(ENGINE_SPECS["google-ai"].url("q", undefined, "de-DE")).toBe("https://www.google.com/search?q=q&udm=50");
     expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");

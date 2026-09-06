@@ -70,11 +70,6 @@ export interface EngineSpec {
   resultsSelector: string;
   /** The engine's own generated answer on the page, if any (see overview.ts). */
   overview?(html: string, query: string): Omit<EngineSummary, "provider"> | null;
-  /**
-   * A plainer results page of the same query (Google's "Web" tab, `udm=14`): requested once when
-   * the default page could not be parsed at all, before the page is handed over as markdown.
-   */
-  plainUrl?(query: string, recency?: Recency, locale?: string): string;
   /** True while that answer is still streaming in, so the render waits a little longer for it. */
   overviewPending?(html: string): boolean;
   /** How long the render may wait for that answer; AI Mode streams longer than an overview. */
@@ -334,19 +329,20 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.google.com",
     robotsPermitted: false,
     privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
-    // The URL a person's address bar would carry: the query, and the date filter exactly as Google's
-    // own "Tools" menu writes it. Nothing else — no `num=` (ten is the default), no `hl=`/`gl=` (the
-    // browser's Accept-Language and the network already say where and in what language the person
-    // is, and a person's URL never carries them). AI Mode is this same page with `udm=50`, and it is
-    // the most sensitive to parameters that no browser adds.
-    url: (q, r) => `https://www.google.com/search?q=${encodeURIComponent(q)}${r ? `&tbs=qdr:${r}` : ""}`,
+    // The Web tab (`udm=14`, what a person clicking "Web" gets): links only — no generated answer,
+    // no AI-organised sections — a third the size of the default page, with markup that has held
+    // still. Answers are `google-ai`'s job. Beyond the tab, the URL carries the query and the date
+    // filter exactly as Google's "Tools" menu writes it: no `num=` (ten is the default), no
+    // `hl=`/`gl=` (Accept-Language and the network already carry the locale; a person's URL never has
+    // them). AI Mode is this same page with `udm=50` and is the most sensitive to any parameter no
+    // browser adds.
+    url: (q, r) => `https://www.google.com/search?q=${encodeURIComponent(q)}&udm=14${r ? `&tbs=qdr:${r}` : ""}`,
     parse: parseGoogle,
     isChallenge: googleChallenge,
     noResults: /did not match any documents|No results found for/i,
     resultsSelector: "a h3, a [role=heading]",
+    // The Web tab carries no generated answer; one is read if it ever appears, never waited for.
     overview: parseGoogleOverview,
-    overviewPending,
-    plainUrl: (q, r, loc = "en-US") => `${ENGINE_SPECS.google.url(q, r, loc)}&udm=14`,
     human: {
       // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
       homeUrl: (q) => `https://www.google.com/?q=${encodeURIComponent(q)}`,
@@ -528,31 +524,7 @@ export class EngineProvider implements SearchProvider {
         );
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
-    const first = this.finish(rendered, q, !!human, submittedByPerson);
-    if (first.parsed !== "page" || human || !this.spec.plainUrl) return first;
-    // Nothing parsed from the default page: one look at the engine's plainer page of the same
-    // query (a documented view of its own UI, the same query, the same identity), then the page.
-    try {
-      const plain = await this.politeness.run(
-        this.spec.host,
-        () =>
-          this.browser.render(this.spec.plainUrl!(query, q.recency, this.settings.locale), {
-            session: true,
-            handoff: false,
-            incognito: opts.incognito,
-            isChallenge: this.spec.isChallenge,
-            settleSelector: this.spec.resultsSelector,
-          }),
-        this.gapMs,
-      );
-      if (this.spec.isChallenge(plain.html, plain.status, plain.finalUrl)) return first;
-      const second = this.read(plain.html, q);
-      const saved = /page saved to [^)]+/.exec(second.note ?? "")?.[0];
-      const note = `${this.name}: the default results page was not recognised; ${second.parsed === "page" ? "its plain Web view follows as a page" : `results read from its plain Web view${second.parsed === "shape" ? " by page shape (approximate)" : ""}`}${saved ? ` (${saved})` : ""}`;
-      return { ...second, summary: second.summary ?? first.summary, note };
-    } catch {
-      return first;
-    }
+    return this.finish(rendered, q, !!human, submittedByPerson);
   }
 
   /** Everything after the render: the engine's answer, judged and parsed. A suspended check resumes here. */

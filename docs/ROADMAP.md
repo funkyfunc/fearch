@@ -14,6 +14,11 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **`google` is the Web tab (2026-09-06).** With AI Mode an engine of its own, the two jobs
+  separate: `google` opens `udm=14` — links only, a third the size of the default page, `<h3>`
+  markup that has held still, nothing to wait for — and `google-ai` opens the reply with its
+  citations. The one-time plain-view retry is gone with it (that page is now the page).
+
 - **Google URLs as a person's address bar writes them (2026-09-06).** Only the query, Google's own
   date filter (`tbs=qdr:`), and the tab (`udm=50` for AI Mode, `udm=14` for the plain Web view).
   `num=`, `hl=` and `gl=` are gone: ten results is the default, and the browser's Accept-Language

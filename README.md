@@ -13,7 +13,7 @@ endpoint that logs it against an account.
 Two tools:
 
 - **`search`** — real search engines, honestly: DuckDuckGo lite by default (the one engine whose
-  robots.txt permits its result pages), silently; Google when you list it, and then every Google
+  robots.txt permits its result pages), silently; Google's Web tab (links only, `udm=14`) when you list it, and then every Google
   query is shown to you in your MCP client first — the query to edit, a Google/DuckDuckGo choice,
   incognito or not — and runs only when you accept it (`--human-search` shows you every query,
   DuckDuckGo included). `fetch_top=N` inlines excerpts of the top results so one call replaces
@@ -27,8 +27,7 @@ Two tools:
   results page is read on a ladder, because engines change their markup: the engine's own parser
   first (exact); by page shape when that recognises nothing — a title that is a link, a display URL,
   a snippet — marked approximate; and when nothing on the page reads as a result, the results
-  column itself as markdown for the agent to read (Google is asked once for its plain Web view
-  first). The header names the rung, the lower rungs are never cached, and the page is kept on disk
+  column itself as markdown for the agent to read. The header names the rung, the lower rungs are never cached, and the page is kept on disk
   (redacted) so the parser can be fixed; `raw=true` returns the engine page's rendered HTML on request (bounded, account chrome redacted) for whoever is fixing it. When no engine answers, the failure says exactly why and
   what to do next — nothing is ever silently substituted; a Google query you did not approve is
   skipped with a note, and DuckDuckGo still runs. MCP clients that read `structuredContent` get the
