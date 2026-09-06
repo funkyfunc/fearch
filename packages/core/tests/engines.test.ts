@@ -352,7 +352,7 @@ describe("you press search (FEARCH_HUMAN_SEARCH)", () => {
       return { html: GOOGLE, url: RESULTS_URL, handedOff: true, handoffWhere: "a browser window on your screen" };
     });
     const { results } = await p.search({ query: "turndown gfm", maxResults: 5 });
-    expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm&hl=en");
+    expect(seen[0].url).toBe("https://www.google.com/?q=turndown%20gfm");
     expect(seen[0].opts.handToPerson?.message).toMatch(/press Enter/);
     expect(seen[0].opts.settleSelector).toBeUndefined();
     expect(results.map((r) => r.url)).toContain("https://www.npmjs.com/package/@joplin/turndown-plugin-gfm");
@@ -889,8 +889,11 @@ describe("locale", () => {
     expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "en-GB")).toContain("kl=uk-en");
     expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "fr")).toContain("kl=wt-wt");
     expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
-    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&tbs=qdr:m");
-    expect(ENGINE_SPECS.google.url("q", undefined, "en-US")).not.toContain("num="); // nothing a browser would not send
+    // Google gets the URL a person's address bar would carry: the query and Google's own date filter,
+    // no language or region parameters (Accept-Language and the network carry the locale).
+    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toBe("https://www.google.com/search?q=q&tbs=qdr:m");
+    expect(ENGINE_SPECS.google.url("q", undefined, "en-US")).not.toMatch(/num=|hl=|gl=/);
+    expect(ENGINE_SPECS["google-ai"].url("q", undefined, "de-DE")).toBe("https://www.google.com/search?q=q&udm=50");
     expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");
     expect(acceptLanguage("en-US")).toBe("en-US,en;q=0.8");
   });

@@ -334,12 +334,12 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.google.com",
     robotsPermitted: false,
     privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
-    url: (q, r, loc = "en-US") => {
-      const { lang, region } = localeParts(loc);
-      // The URL a person's address bar would carry: no `num=` (ten is the default, and the parameter
-      // is a tell that no browser adds), no `gl=` when the machine's locale has no region.
-      return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}${r ? `&tbs=qdr:${r}` : ""}`;
-    },
+    // The URL a person's address bar would carry: the query, and the date filter exactly as Google's
+    // own "Tools" menu writes it. Nothing else — no `num=` (ten is the default), no `hl=`/`gl=` (the
+    // browser's Accept-Language and the network already say where and in what language the person
+    // is, and a person's URL never carries them). AI Mode is this same page with `udm=50`, and it is
+    // the most sensitive to parameters that no browser adds.
+    url: (q, r) => `https://www.google.com/search?q=${encodeURIComponent(q)}${r ? `&tbs=qdr:${r}` : ""}`,
     parse: parseGoogle,
     isChallenge: googleChallenge,
     noResults: /did not match any documents|No results found for/i,
@@ -349,7 +349,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     plainUrl: (q, r, loc = "en-US") => `${ENGINE_SPECS.google.url(q, r, loc)}&udm=14`,
     human: {
       // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
-      homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
+      homeUrl: (q) => `https://www.google.com/?q=${encodeURIComponent(q)}`,
       resultsUrl: /\/search\?/,
     },
   },
@@ -366,10 +366,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     host: "www.google.com",
     robotsPermitted: false,
     privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
-    url: (q, _r, loc = "en-US") => {
-      const { lang, region } = localeParts(loc);
-      return `https://www.google.com/search?q=${encodeURIComponent(q)}&udm=50&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}`;
-    },
+    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&udm=50`,
     parse: parseAiModeCitations,
     isChallenge: googleChallenge,
     resultsSelector: "h3",

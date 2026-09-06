@@ -14,6 +14,13 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Google URLs as a person's address bar writes them (2026-09-06).** Only the query, Google's own
+  date filter (`tbs=qdr:`), and the tab (`udm=50` for AI Mode, `udm=14` for the plain Web view).
+  `num=`, `hl=` and `gl=` are gone: ten results is the default, and the browser's Accept-Language
+  and the network already carry the locale — a person's URL never has them, and AI Mode, which is
+  `/search` with one parameter, is the most sensitive to any it does not expect. DuckDuckGo lite
+  keeps `kl=` and `df=`, which its own settings write into the URL.
+
 - **Incognito is a session, not a query (2026-09-06).** The maintainer passed two bot checks for
   two incognito queries: each opened a fresh context and Google checked it again. Both tiers now
   keep the incognito session — the Playwright context while the browser runs, the extension's
