@@ -38,7 +38,7 @@ import {
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
-import { overviewPending, parseGoogleOverview } from "./overview.js";
+import { aiModeComplete, overviewPending, parseGoogleOverview } from "./overview.js";
 import { parseByShape, resultsPageMarkdown } from "./shape.js";
 
 /** How long a results page may keep streaming its generated answer before the page is read as is. */
@@ -281,10 +281,12 @@ export function parseAiModeCitations(html: string, provider: string): SearchResu
   return out;
 }
 
-/** AI Mode streams its reply first and its citations later: the page is done when both are there. */
+/**
+ * AI Mode streams its reply, then its feedback form; the citations arrive with the form when the
+ * page shows them at all (a signed-out session shows none, and must not be waited on).
+ */
 function aiModePending(html: string): boolean {
-  if (overviewPending(html)) return true;
-  return !/AI Mode reply for/.test(html) || parseAiModeCitations(html, "google-ai").length === 0;
+  return overviewPending(html) || !aiModeComplete(html);
 }
 
 /**
@@ -334,7 +336,9 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
     url: (q, r, loc = "en-US") => {
       const { lang, region } = localeParts(loc);
-      return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}&num=10${r ? `&tbs=qdr:${r}` : ""}`;
+      // The URL a person's address bar would carry: no `num=` (ten is the default, and the parameter
+      // is a tell that no browser adds), no `gl=` when the machine's locale has no region.
+      return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}${r ? `&tbs=qdr:${r}` : ""}`;
     },
     parse: parseGoogle,
     isChallenge: googleChallenge,

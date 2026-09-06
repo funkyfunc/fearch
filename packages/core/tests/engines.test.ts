@@ -889,7 +889,8 @@ describe("locale", () => {
     expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "en-GB")).toContain("kl=uk-en");
     expect(ENGINE_SPECS.duckduckgo.url("q", undefined, "fr")).toContain("kl=wt-wt");
     expect(ENGINE_SPECS.duckduckgo.url("q", "w", "en-US")).toContain("kl=us-en&df=w");
-    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&num=10&tbs=qdr:m");
+    expect(ENGINE_SPECS.google.url("q", "m", "de-DE")).toContain("hl=de&gl=de&tbs=qdr:m");
+    expect(ENGINE_SPECS.google.url("q", undefined, "en-US")).not.toContain("num="); // nothing a browser would not send
     expect(acceptLanguage("de-DE")).toBe("de-DE,de;q=0.9,en;q=0.5");
     expect(acceptLanguage("en-US")).toBe("en-US,en;q=0.8");
   });

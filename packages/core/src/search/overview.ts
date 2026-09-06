@@ -82,6 +82,11 @@ function blockAround($: cheerio.CheerioAPI, el: Element): Element | null {
 }
 
 /** Is this page still writing its answer (a heading with a "Thinking…" placeholder, no finished block)? */
+/** An AI Mode reply is finished when its feedback form has followed it — with or without source links. */
+export function aiModeComplete(html: string): boolean {
+  return /AI Mode reply for/.test(html) && AI_MODE_END_RE.test(html);
+}
+
 export function overviewPending(html: string): boolean {
   const $ = cheerio.load(html);
   const labels = labelElements($);
