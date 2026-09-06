@@ -3,25 +3,20 @@ method: main
 ---
 # PEP 8 – Style Guide for Python Code
 
-Author:
+**Author:**
+    Guido van Rossum <guido at python.org>, Barry Warsaw <barry at python.org>, Alyssa Coghlan <ncoghlan at gmail.com>
 
-Guido van Rossum <guido at python.org>, Barry Warsaw <barry at python.org>, Alyssa Coghlan <ncoghlan at gmail.com>
+**Status:**
+    Active
 
-Status:
+**Type:**
+    Process
 
-Active
+**Created:**
+    05-Jul-2001
 
-Type:
-
-Process
-
-Created:
-
-05-Jul-2001
-
-Post-History:
-
-05-Jul-2001, 01-Aug-2013
+**Post-History:**
+    05-Jul-2001, 01-Aug-2013
 
 ---
 

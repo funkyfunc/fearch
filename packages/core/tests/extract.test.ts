@@ -244,4 +244,30 @@ describe("content selection guards", () => {
     expect(a.markdown).toContain("# Blog");
     expect(a.markdown).toContain("## Post\nhttps://b.test/p · 2026-01-02\n\nShort.");
   });
+
+  it("does not read a utility class with a variant prefix as a role (Tailwind's toc-visible:@md:…)", () => {
+    const html = `<html><body><main><p>Intro paragraph long enough to be content for the extractor guard, with more words here so it counts.</p>
+<div class="col-span-full toc-visible:@md:col-start-2 max-w-none"><ul class="mb-8 in-[:where(ul,ol)]:mt-2 list-disc"><li>Automatically or programmatically extract data or Output.</li><li>Represent that Output was human-generated when it was not.</li></ul></div>
+<div class="toc"><a href="#a">A</a><a href="#b">B</a></div></main></body></html>`;
+    const md = htmlToMarkdown(html).markdown;
+    expect(md).toContain("programmatically extract data");
+    expect(md).not.toMatch(/^-\s+A\s*$/m); // a real table-of-contents block still goes
+  });
+
+  it("renders formulas as TeX once, keeps meaningful image alt text, and shapes definition lists", () => {
+    const html = `<html><body><main><p>Lead paragraph long enough to count as content for the guard, with enough words in it to pass the size rule.</p>
+<p>Gating: <math alttext="G(x)=\\text{Softmax}(x)"><semantics><mrow><mi>G</mi></mrow><annotation encoding="application/x-tex">G(x)=\\text{Softmax}(x)</annotation></semantics></math> per token.</p>
+<math display="block"><semantics><mrow><mi>y</mi></mrow><annotation encoding="text/plain">y equals x</annotation></semantics></math>
+<img src="a.png" alt="Diagram of the Calvin cycle"><a href="/big.png"><img src="t.png" alt="Thumbnail of the same diagram"></a><img src="i.png" alt="icon">
+<dl><dt><code>asyncio.run(coro)</code></dt><dd><p>Execute the coroutine and return the result.</p></dd></dl></main></body></html>`;
+    const md = htmlToMarkdown(html).markdown;
+    expect(md).toContain("$G(x)=\\text{Softmax}(x)$");
+    expect(md).not.toContain("Softmax}(x)G"); // the annotation is not printed a second time
+    expect(md).toContain("$$y$$"); // no TeX: the formula's own text, on its own line
+    expect(md).not.toContain("y equals x");
+    expect(md).toContain("[image: Diagram of the Calvin cycle]");
+    expect(md).not.toContain("Thumbnail"); // a linked image is a thumbnail or a badge
+    expect(md).not.toContain("[image: icon]");
+    expect(md).toMatch(/\*\*`asyncio\.run\(coro\)`\*\*\n\s+Execute the coroutine/);
+  });
 });

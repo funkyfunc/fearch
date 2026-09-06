@@ -11,6 +11,8 @@ by David Pierce
 
 Jan 9, 2024, 6:30 PM UTC
 
+[image: A photo of the red Rabbit R1 on a gray background.]
+
 *The Rabbit R1 is not a phone... but it’s not not a phone.*
 
 Image: Rabbit

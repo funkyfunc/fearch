@@ -9,42 +9,42 @@ The name of the actual ranking function is *BM25*. The fuller name, *Okapi BM25*
 
 BM25 is a [bag-of-words](https://en.wikipedia.org/wiki/Bag_of_words_model "Bag of words model") retrieval function that ranks a set of documents based on the query terms appearing in each document, regardless of their proximity within the document. It is a family of scoring functions with slightly different components and parameters. One of the most prominent instantiations of the function is as follows.
 
-Given a query Q, containing keywords q 1 , . . . , q n {\displaystyle q_{1},...,q_{n}} , the BM25 score of a document D is:
+Given a query Q, containing keywords $q_{1},...,q_{n}$ , the BM25 score of a document D is:
 
-score ( D , Q ) = ∑ i = 1 n IDF ( q i ) ⋅ f ( q i , D ) ⋅ ( k 1 + 1 ) f ( q i , D ) + k 1 ⋅ ( 1 − b + b ⋅ | D | avgdl ) {\displaystyle {\text{score}}(D,Q)=\sum _{i=1}^{n}{\text{IDF}}(q_{i})\cdot {\frac {f(q_{i},D)\cdot (k_{1}+1)}{f(q_{i},D)+k_{1}\cdot \left(1-b+b\cdot {\frac {|D|}{\text{avgdl}}}\right)}}}
+    ${\text{score}}(D,Q)=\sum _{i=1}^{n}{\text{IDF}}(q_{i})\cdot {\frac {f(q_{i},D)\cdot (k_{1}+1)}{f(q_{i},D)+k_{1}\cdot \left(1-b+b\cdot {\frac {|D|}{\text{avgdl}}}\right)}}$
 
-where f ( q i , D ) {\displaystyle f(q_{i},D)} is the number of times that the keyword q i {\displaystyle q_{i}} occurs in the document D, | D | {\displaystyle |D|} is the length of the document D in words, and avgdl is the average document length in the text collection from which documents are drawn. k 1 {\displaystyle k_{1}} and b are free parameters, usually chosen, in absence of an advanced optimization, as k 1 ∈ [ 1.2 , 2.0 ] {\displaystyle k_{1}\in [1.2,2.0]} and b = 0.75 {\displaystyle b=0.75} .[[3]](#cite_note-3) IDF ( q i ) {\displaystyle {\text{IDF}}(q_{i})} is the IDF ([inverse document frequency](https://en.wikipedia.org/wiki/Inverse_document_frequency "Inverse document frequency")) weight of the query term q i {\displaystyle q_{i}} . It is usually computed as:
+where $f(q_{i},D)$ is the number of times that the keyword $q_{i}$ occurs in the document D, $|D|$ is the length of the document D in words, and avgdl is the average document length in the text collection from which documents are drawn. $k_{1}$ and b are free parameters, usually chosen, in absence of an advanced optimization, as $k_{1}\in [1.2,2.0]$ and $b=0.75$ .[[3]](#cite_note-3) ${\text{IDF}}(q_{i})$ is the IDF ([inverse document frequency](https://en.wikipedia.org/wiki/Inverse_document_frequency "Inverse document frequency")) weight of the query term $q_{i}$ . It is usually computed as:
 
-IDF ( q i ) = ln ⁡ ( N − n ( q i ) + 0.5 n ( q i ) + 0.5 + 1 ) {\displaystyle {\text{IDF}}(q_{i})=\ln \left({\frac {N-n(q_{i})+0.5}{n(q_{i})+0.5}}+1\right)}
+    ${\text{IDF}}(q_{i})=\ln \left({\frac {N-n(q_{i})+0.5}{n(q_{i})+0.5}}+1\right)$
 
-where N is the total number of documents in the collection, and n ( q i ) {\displaystyle n(q_{i})} is the number of documents containing q i {\displaystyle q_{i}} .
+where N is the total number of documents in the collection, and $n(q_{i})$ is the number of documents containing $q_{i}$ .
 
 There are several interpretations for IDF and slight variations on its formula. In the original BM25 derivation, the IDF component is derived from the [Binary Independence Model](https://en.wikipedia.org/wiki/Binary_Independence_Model "Binary Independence Model").
 
 ## IDF information theoretic interpretation
 
-Here is an interpretation from [information theory](https://en.wikipedia.org/wiki/Information_theory "Information theory"). Suppose a query term q {\displaystyle q} appears in n ( q ) {\displaystyle n(q)} documents. Then a randomly picked document D {\displaystyle D} will contain the term with probability n ( q ) N {\displaystyle {\frac {n(q)}{N}}} (where N {\displaystyle N} is again the cardinality of the set of documents in the collection). Therefore, the [information content](https://en.wikipedia.org/wiki/Information_content "Information content") of the message " D {\displaystyle D} contains q {\displaystyle q} " is:
+Here is an interpretation from [information theory](https://en.wikipedia.org/wiki/Information_theory "Information theory"). Suppose a query term $q$ appears in $n(q)$ documents. Then a randomly picked document $D$ will contain the term with probability ${\frac {n(q)}{N}}$ (where $N$ is again the cardinality of the set of documents in the collection). Therefore, the [information content](https://en.wikipedia.org/wiki/Information_content "Information content") of the message " $D$ contains $q$ " is:
 
-− log ⁡ n ( q ) N = log ⁡ N n ( q ) . {\displaystyle -\log {\frac {n(q)}{N}}=\log {\frac {N}{n(q)}}.}
+    $-\log {\frac {n(q)}{N}}=\log {\frac {N}{n(q)}}.$
 
-Now suppose we have two query terms q 1 {\displaystyle q_{1}} and q 2 {\displaystyle q_{2}} . If the two terms occur in documents entirely independently of each other, then the probability of seeing both q 1 {\displaystyle q_{1}} and q 2 {\displaystyle q_{2}} in a randomly picked document D {\displaystyle D} is:
+Now suppose we have two query terms $q_{1}$ and $q_{2}$ . If the two terms occur in documents entirely independently of each other, then the probability of seeing both $q_{1}$ and $q_{2}$ in a randomly picked document $D$ is:
 
-n ( q 1 ) N ⋅ n ( q 2 ) N , {\displaystyle {\frac {n(q_{1})}{N}}\cdot {\frac {n(q_{2})}{N}},}
+    ${\frac {n(q_{1})}{N}}\cdot {\frac {n(q_{2})}{N}},$
 
 and the information content of such an event is:
 
-∑ i = 1 2 log ⁡ N n ( q i ) . {\displaystyle \sum _{i=1}^{2}\log {\frac {N}{n(q_{i})}}.}
+    $\sum _{i=1}^{2}\log {\frac {N}{n(q_{i})}}.$
 
 With a small variation, this is exactly what is expressed by the IDF component of BM25.
 
 ## Modifications
 
--   At the extreme values of the coefficient b BM25 turns into ranking functions known as **BM11** (for b = 1 {\displaystyle b=1} ) and **BM15** (for b = 0 {\displaystyle b=0} ).[[4]](#cite_note-4)
+-   At the extreme values of the coefficient b BM25 turns into ranking functions known as **BM11** (for $b=1$ ) and **BM15** (for $b=0$ ).[[4]](#cite_note-4)
 -   **BM25F**[[5]](#cite_note-5)[[2]](#cite_note-robertson2009-2) (or the **BM25 model with Extension to Multiple Weighted Fields**[[6]](#cite_note-6)) is a modification of BM25 in which the document is considered to be composed from several fields (such as headlines, main text, anchor text) with possibly different degrees of importance, term relevance saturation and length normalization. BM25F defines each type of field as a *stream*, applying a per-stream weighting to scale each stream against the calculated score.
 
--   **BM25+**[[7]](#cite_note-7) is an extension of BM25. BM25+ was developed to address one deficiency of the standard BM25 in which the component of term frequency normalization by document length is not properly lower-bounded; as a result of this deficiency, long documents which do match the query term can often be scored unfairly by BM25 as having a similar relevancy to shorter documents that do not contain the query term at all. The scoring formula of BM25+ only has one additional free parameter δ {\displaystyle \delta } (the default value is 1.0) as compared with BM25:
+-   **BM25+**[[7]](#cite_note-7) is an extension of BM25. BM25+ was developed to address one deficiency of the standard BM25 in which the component of term frequency normalization by document length is not properly lower-bounded; as a result of this deficiency, long documents which do match the query term can often be scored unfairly by BM25 as having a similar relevancy to shorter documents that do not contain the query term at all. The scoring formula of BM25+ only has one additional free parameter $\delta $ (the default value is 1.0) as compared with BM25:
 
-score ( D , Q ) = ∑ i = 1 n IDF ( q i ) ⋅ [ f ( q i , D ) ⋅ ( k 1 + 1 ) f ( q i , D ) + k 1 ⋅ ( 1 − b + b ⋅ | D | avgdl ) + δ ] {\displaystyle {\text{score}}(D,Q)=\sum _{i=1}^{n}{\text{IDF}}(q_{i})\cdot \left[{\frac {f(q_{i},D)\cdot (k_{1}+1)}{f(q_{i},D)+k_{1}\cdot \left(1-b+b\cdot {\frac {|D|}{\text{avgdl}}}\right)}}+\delta \right]}
+    ${\text{score}}(D,Q)=\sum _{i=1}^{n}{\text{IDF}}(q_{i})\cdot \left[{\frac {f(q_{i},D)\cdot (k_{1}+1)}{f(q_{i},D)+k_{1}\cdot \left(1-b+b\cdot {\frac {|D|}{\text{avgdl}}}\right)}}+\delta \right]$
 
 ## References
 

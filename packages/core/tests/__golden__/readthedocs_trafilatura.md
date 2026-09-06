@@ -71,29 +71,22 @@ Note that combining TXT and CSV formats with certain structural elements (e.g. f
 
 Customize the extraction process by including or excluding specific HTML elements:
 
--   Text elements:
+-   **Text elements:**
+        **`include_comments=True`**
+            Include comment sections at the bottom of articles.
 
-    `include_comments=True`
+        **`include_tables=True`**
+            Extract text from HTML `<table>` elements.
 
-    Include comment sections at the bottom of articles.
+-   **Structural elements:**
+        **`include_formatting=True`**
+            Keep structural elements related to formatting (`<b>`/`<strong>`, `<i>`/`<emph>` etc.)
 
-    `include_tables=True`
+        **`include_links=True`**
+            Keep link targets (in `href="..."`)
 
-    Extract text from HTML `<table>` elements.
-
--   Structural elements:
-
-    `include_formatting=True`
-
-    Keep structural elements related to formatting (`<b>`/`<strong>`, `<i>`/`<emph>` etc.)
-
-    `include_links=True`
-
-    Keep link targets (in `href="..."`)
-
-    `include_images=True`
-
-    Keep track of images along with their targets (`<img>` attributes: alt, src, title)
+        **`include_images=True`**
+            Keep track of images along with their targets (`<img>` attributes: alt, src, title)
 
 To operate on these elements, pass the corresponding parameters to the `extract()` function:
 

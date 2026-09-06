@@ -138,9 +138,58 @@ function turndown(): TurndownService {
     "audio",
     "source",
     "picture",
+    // MathML carries its own text twice: the marked-up formula and a plain or TeX annotation.
+    "annotation",
+    "annotation-xml",
   ]);
   td.remove((node) => dropTags.has(node.nodeName.toLowerCase()));
-  td.addRule("images", { filter: "img", replacement: () => "" });
+  // An image is its alt text when the alt says something (a diagram's description, a chart's
+  // caption), and nothing when it is decorative, a badge, or a linked thumbnail.
+  td.addRule("images", {
+    filter: "img",
+    replacement: (_content, node) => {
+      const el = node as unknown as Element;
+      const alt = (el.getAttribute("alt") ?? "").replace(/\s+/g, " ").trim();
+      if (alt.length < 8 || /^(image|icon|logo|photo|picture|thumbnail)$/i.test(alt) || el.closest("a")) return "";
+      return `[image: ${alt}]`;
+    },
+  });
+  // A formula is its TeX when the page carries one (LaTeXML's alttext, MathJax's annotation),
+  // else the formula's own text; block formulas stand on their own line.
+  td.addRule("math", {
+    filter: (node) => node.nodeName.toLowerCase() === "math",
+    replacement: (_content, node) => {
+      const el = node as unknown as Element;
+      const tex =
+        el.getAttribute("alttext")?.trim() ||
+        el.querySelector("annotation[encoding*='x-tex' i], annotation[encoding*='latex' i]")?.textContent?.trim() ||
+        "";
+      // The formula's own text, without its annotation (that text is the formula a second time);
+      // MediaWiki wraps every formula in `{\displaystyle …}`, presentation and not the formula.
+      const own = el.cloneNode(true) as Element;
+      own.querySelectorAll("annotation, annotation-xml").forEach((n) => n.remove());
+      const body = (tex || (own.textContent ?? "").replace(/\s+/g, " ").trim()).replace(
+        /^\{\\displaystyle\s+([\s\S]*)\}$/,
+        "$1",
+      );
+
+      if (!body) return "";
+      const block = (el.getAttribute("display") ?? "").toLowerCase() === "block";
+      return block ? `\n\n$$${body}$$\n\n` : `$${body}$`;
+    },
+  });
+  // Definition lists (Sphinx API signatures, glossaries): the term in bold on its own line, the
+  // definition indented under it.
+  td.addRule("dt", { filter: "dt", replacement: (content) => `\n\n**${content.trim()}**\n` });
+  td.addRule("dd", {
+    filter: "dd",
+    replacement: (content) =>
+      `\n${content
+        .trim()
+        .split("\n")
+        .map((l) => (l ? "    " + l : l))
+        .join("\n")}\n\n`,
+  });
   td.addRule("pre", {
     filter: "pre",
     replacement: (_content, node) => {
@@ -225,12 +274,16 @@ function stripBoilerplate($: CheerioAPI, $root: Cheerio<AnyNode>): void {
     if ($h.find("nav").length || $h.find("a").length >= 3) $h.remove();
   });
   // Class/id-based noise removal applies to block containers only — never inside a heading
-  // (Sphinx wraps heading text in <a class="toc-backref">) and never inside code.
+  // (Sphinx wraps heading text in <a class="toc-backref">) and never inside code. Utility classes
+  // with a variant prefix or an arbitrary value (Tailwind's `toc-visible:@md:col-start-2`,
+  // `in-[:where(ul,ol)]:mt-2`) describe layout, not a role, and are not read.
   $root.find(BLOCK_TAGS).each((_, el) => {
     const $el = $(el);
     if ($el.closest(HEADING_TAGS).length || inCode(el)) return;
-    const ident = `${$el.attr("class") ?? ""} ${$el.attr("id") ?? ""}`.trim();
-    if (ident && NOISE_CLASS_RE.test(ident)) $el.remove();
+    const idents = `${$el.attr("class") ?? ""} ${$el.attr("id") ?? ""}`
+      .split(/\s+/)
+      .filter((t) => t && !/[:[\]@]/.test(t));
+    if (idents.some((t) => NOISE_CLASS_RE.test(t))) $el.remove();
   });
   removeLinkFarms($, $root);
   // Permalink anchors (¶, #, "Link to this heading") add nothing but noise.
@@ -376,6 +429,8 @@ export function cleanMarkdownSource(md: string): string {
   while (lines.length && SKIP_LINE_RE.test(lines[0])) lines.shift();
   s = lines.join("\n");
   s = s.replace(HEADING_PILCROW_RE, "$1");
+  // The same picture served twice (a <picture> source and its fallback, a lightbox copy) is one image.
+  s = s.replace(/^(\[image: [^\]]+\])\n+(?:\1\n+)+/gm, "$1\n\n");
   s = s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
   return s.trim() + "\n";
 }
