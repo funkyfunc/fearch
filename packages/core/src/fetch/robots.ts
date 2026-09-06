@@ -43,12 +43,37 @@ export interface RobotsDecision {
   contentSignal?: string;
 }
 
-const CONTENT_SIGNAL_LINE = /^\s*content-signal\s*:\s*(.+)$/gim;
-
-/** Any robots.txt `Content-Signal:` line with ai-input=no (site-wide reading, not group-scoped). */
-export function robotsContentSignalNoAiInput(body: string): string | null {
-  for (const m of body.matchAll(CONTENT_SIGNAL_LINE)) {
-    if (/ai-input\s*=\s*no/i.test(m[1])) return m[1].trim();
+/**
+ * A robots.txt `Content-Signal:` line saying `ai-input=no` that applies to us, read the way
+ * contentsignals.org scopes it: inside a `User-agent` group naming `*` or one of our tokens, and
+ * optionally limited to a path prefix (`Content-Signal: /blog/ ai-input=no`). A signal aimed at
+ * another crawler, or at another part of the site, is not a signal to this tool.
+ */
+export function robotsContentSignalNoAiInput(body: string, url: string, tokens: string[]): string | null {
+  const ours = new Set(["*", ...tokens.map((t) => t.toLowerCase())]);
+  const path = new URL(url).pathname;
+  let agents: string[] = [];
+  let groupOpen = false; // a directive has followed the User-agent lines
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.replace(/#.*$/, "").trim();
+    const m = /^([a-z-]+)\s*:\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    const value = m[2].trim();
+    if (key === "user-agent") {
+      if (groupOpen) {
+        agents = [];
+        groupOpen = false;
+      }
+      agents.push(value.toLowerCase());
+      continue;
+    }
+    groupOpen = true;
+    if (key !== "content-signal" || !agents.some((a) => ours.has(a))) continue;
+    const scoped = /^(\/\S*)\s+(.*)$/.exec(value);
+    const prefix = scoped ? scoped[1] : "/";
+    const signals = scoped ? scoped[2] : value;
+    if (path.startsWith(prefix) && /ai-input\s*=\s*no/i.test(signals)) return value;
   }
   return null;
 }
@@ -99,9 +124,11 @@ export class RobotsChecker {
     if (entry.status === 401 || entry.status === 403) {
       // RFC 9309 §2.3.1.3 lets a crawler treat a 4xx as "no robots.txt". fearch chooses the
       // conservative reading: a host that refuses to say its rules is not asked for anything else.
+      // Reported as `unavailable`, not `disallowed`: a WAF answering our User-Agent is not the
+      // operator's stated decision, and the diagnosis must not read as one.
       return {
         allowed: false,
-        status: "disallowed",
+        status: "unavailable",
         reason: `robots.txt returned HTTP ${entry.status}; fearch fails closed on 4xx (RFC 9309 §2.3.1.3 would permit access)`,
       };
     }
@@ -132,7 +159,7 @@ export class RobotsChecker {
     const delay = robots.getCrawlDelay(PRODUCT) ?? robots.getCrawlDelay("*");
     // Content Signals in robots.txt: `ai-input=no` says "don't feed my pages into an AI model" —
     // exactly what a coding assistant does with a fetched page.
-    const cs = robotsContentSignalNoAiInput(entry.body);
+    const cs = robotsContentSignalNoAiInput(entry.body, url, tokensFor(this.policy));
     if (cs)
       return {
         allowed: false,

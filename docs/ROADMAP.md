@@ -14,6 +14,24 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Third outside review (2026-09-05; report in `review-notes.md`).** Docs made true: POLICY's
+  *Session* paragraph now says every Playwright render shares the tool profile (it does, and must,
+  for a passed check to hold); the profile file is 0600 and `fearch clear-profile` empties it.
+  Never garbage: a yield rule catches script-heavy pages that render to a footer (YouTube), RSS/Atom
+  feeds render as one heading per entry, the read-mode outline is computed on the same link-stripped
+  text it windows (it listed sections that were on screen), MDX component code and Wikipedia's
+  FlaggedRevs box are dropped, a heading that names the query wins `focus`, an llms.txt keeps its
+  links. Consent read as specified: robots.txt `Content-Signal` is scoped to the User-agent group
+  and path prefix the spec gives it; a robots.txt 401/403 is `robots_unavailable`, not
+  `robots_disallowed`. Search: an unanswered or declined Google form no longer stops the search —
+  DuckDuckGo still runs and a note says so; `allowed_domains` (≤3) reach the engine as `site:`
+  operators; the AI Overview extraction, `blocked_domains`, the unimplemented result `date`, and
+  three tuning flags (`--max-bytes`, `--excerpt-chars`, `--log-file`) are gone; a zero-parse engine
+  page is always kept, redacted, so "no results" can be diagnosed after the fact. Hygiene: `doctor`
+  no longer calls httpbin.org; the `/llms.txt` probe runs only for a home page or a thin landing
+  page; the live test asserts what the product is; `server.json` drops `headed`; the flag table's
+  defaults are checked against the code by a test.
+
 - **MCP SDK v2 and protocol revision 2026-07-28 (2026-09-05).** `@modelcontextprotocol/sdk` 1.x gave
   way to `@modelcontextprotocol/server` 2.0 (`/client` in tests). The revision has no server→client
   request channel, so the two questions to the person — the query form and "open this bot check?" —
@@ -116,7 +134,6 @@ is not a goal to get through them.
 - GitHub `tree/` listings and `releases` via the API (the HTML pages are robots-disallowed).
 - Layout-table unwrapping (Hacker News and forum threads convert to text; discussions are kept as content).
 - **API tightening:** `fetch` is now `mode` + `query` + `cursor` (9 params, was 11); cursors are scoped to their view; one-line header.
-- Search results carry a **date** when the provider knows one.
 - **Per-host "needs browser" memory** (24 h) so known JS-only/refusing hosts skip the doomed plain attempt.
 - **Eval harness** (`npm run eval`, `evals/questions.json`, incl. adversarial cases) and `evals/results/latest.json`.
 - `docs/AGENT-GUIDANCE.md`, `server.json` (MCP registry), scrape provider folded into the single package.

@@ -9,8 +9,11 @@ import { applyLinkMode } from "../fetch/render.js";
 import { focusSections, joinSections, splitSections } from "../fetch/sections.js";
 import type { SearchResult } from "./provider.js";
 
+/** Characters per inline excerpt: enough for the relevant paragraph, small enough for three of them. */
+const EXCERPT_CHARS = 1500;
+
 export async function excerptFor(app: App, url: string, query: string): Promise<string | undefined> {
-  const budget = app.settings.excerptChars;
+  const budget = EXCERPT_CHARS;
   try {
     const doc = await app.fetcher.fetch(url);
     const relevant = focusSections(splitSections(doc.markdown), query, budget);

@@ -19,7 +19,7 @@
         {
           "type": "named",
           "name": "--browser",
-          "description": "auto | headless | headed | extension | off — auto (default): headless until a site shows a challenge, which then opens in a visible window for the person (their own Chrome via the bridge extension when connected; final where no display exists).",
+          "description": "auto | headless | extension | off — auto (default): headless until a site shows a challenge, which then opens in a visible window for the person (their own Chrome via the bridge extension when connected; final where no display exists).",
           "isRequired": false
         },
         {

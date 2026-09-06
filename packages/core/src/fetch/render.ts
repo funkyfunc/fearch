@@ -49,6 +49,11 @@ export function applyLinkMode(md: string, includeLinks: boolean): { body: string
       if (!refs.has(url)) refs.set(url, refs.size + 1);
       return `[${text}][${refs.get(url)}]`;
     });
+    // Stripped images and badges leave blank lines behind (a listing page's `-   \n\n    $639,900`).
+    c = c
+      .replace(/\n[ \t]+\n/g, "\n\n")
+      .replace(/^([ \t]*[-*] )[ \t]*\n\n[ \t]+/gm, "$1")
+      .replace(/\n{3,}/g, "\n\n");
     out.push(c);
   }
   let linksFooter = "";

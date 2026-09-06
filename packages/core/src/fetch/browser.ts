@@ -18,7 +18,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isIP } from "node:net";
 import { dirname } from "node:path";
@@ -407,6 +407,8 @@ export class BrowserRenderer implements BrowserTier {
     try {
       await mkdir(dirname(this.settings.browserStatePath), { recursive: true });
       const state = await this.profile.storageState({ path: this.settings.browserStatePath });
+      // Cookies from every site the tool's browser touched: private to this user, like the pairing token.
+      await chmod(this.settings.browserStatePath, 0o600).catch(() => {});
       this.audit.log(
         "debug",
         `browser profile saved: ${state.cookies.length} cookie(s) (${state.cookies
@@ -870,8 +872,9 @@ export class EscalatingRenderer implements BrowserTier {
         throw e;
       }
     }
-    // Always with the tool profile: it holds only what the person did in escalation windows, and
-    // carrying it is what keeps a passed check passed — the window must not reappear per page.
+    // Always with the tool profile: carrying it is what keeps a passed check passed — the window must
+    // not reappear per page. The profile therefore also accumulates whatever ordinary sites set in
+    // these headless renders (POLICY.md, "Session"); `fearch clear-profile` empties it.
     const first = await this.routine.render(url, { ...opts, session: true, handoff: false });
     const isChallenge = opts.isChallenge ?? isChallengePage;
     if (!isChallenge(first.html, first.status, first.finalUrl) || opts.handoff === false || !this.canEscalate()) {

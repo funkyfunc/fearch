@@ -17,9 +17,9 @@ Two tools:
   query is shown to you in your MCP client first — the query to edit, a Google/DuckDuckGo choice,
   incognito or not — and runs only when you accept it (`--human-search` shows you every query,
   DuckDuckGo included). `fetch_top=N` inlines excerpts of the top results so one call replaces
-  search-then-fetch. Every result names its provider. Searches through Google include the page's AI Overview when present — labelled as
-  Google's unverified summary, with its sources. When no engine answers, the failure says exactly
-  why and what to do next — nothing is ever silently substituted.
+  search-then-fetch. Every result names its provider. When no engine answers, the failure says
+  exactly why and what to do next — nothing is ever silently substituted; a Google query you did not
+  approve is skipped with a note, and DuckDuckGo still runs.
 - **`fetch`** — main content as markdown, **keeping code blocks and tables** (pure HTML→markdown on
   the main container, guarded by counting `<pre>` in vs. fences out; Readability only as a fallback).
   Long pages: `mode=focus` (BM25 sections for a phrase), `mode=section` (one heading), `mode=pattern`
@@ -53,6 +53,7 @@ fearch search "asyncio cancel task" --fetch-top 1
 fearch fetch https://docs.python.org/3/library/asyncio-task.html --mode focus --query cancel
 fearch search "playwright storageState" --json | jq '.results[].url'
 fearch doctor          # effective config; tests the network, browser, and one search
+fearch clear-profile   # forget the tool-owned browser profile (passed checks, cookies sites set)
 ```
 
 `--json` for machine-readable output. Exit codes: `0` ok · `1` refused (with a Diagnosis) · `2` failed.
@@ -79,6 +80,10 @@ Every rule below is enforced in code and covered by tests.
   per-session budget that refuses with an explanation.
 - **Egress** — fetches go direct (via `HTTPS_PROXY` if set). No reader proxies; Wayback only via
   explicit `archive=true` for pages that are _gone_. No telemetry.
+- **Session** — the plain client holds no cookies. The browser tier has one tool-owned profile
+  (`browser-state.json` in the cache dir, mode 0600) used by every render, so a check you passed in a
+  window stays passed for the next headless read; it also keeps what ordinary sites set in those
+  reads. Never your own Chrome's cookies. `fearch clear-profile` empties it.
 - **Safety** — SSRF guard (private/loopback/metadata; the address is re-checked at connection time
   against DNS rebinding, and per redirect hop), an explicit `https://` is never downgraded,
   10 MB / 30 s / 6-hop caps, domain allow/deny lists, JSON audit log.
@@ -122,8 +127,8 @@ _can_ be shown (a server, CI, no display), the check is simply final, reported h
 you've installed the bridge extension, your own Chrome is used instead whenever it's connected — no
 window management at all, just a tab that appears when you say yes.
 
-Search is DuckDuckGo lite with zero flags, in every mode, and it runs without asking. Google (with
-its AI Overview) is a choice you make with `--engines google,duckduckgo`, and every Google query is
+Search is DuckDuckGo lite with zero flags, in every mode, and it runs without asking. Google is a
+choice you make with `--engines google,duckduckgo`, and every Google query is
 yours to approve: Google's robots.txt disallows result pages for crawlers, so before a query reaches
 Google you see a form in your MCP client — the query (edit it), "Search on Google" (off means
 DuckDuckGo), "Incognito" (off means your signed-in Chrome through the extension, or fearch's own
@@ -231,7 +236,7 @@ If you operate a website and see this agent in your logs:
 ## Tool reference
 
 ```
-search(query, max_results=8, recency?: d|w|m|y, site?, allowed_domains?, blocked_domains?, fetch_top=0..3)
+search(query, max_results=8, recency?: d|w|m|y, site?, allowed_domains?, fetch_top=0..3)
 
 fetch(url | urls[≤5], mode=read|focus|section|pattern|raw, query?, max_chars=12000,
       cursor?, include_links=false, context_chars=200, archive=false)

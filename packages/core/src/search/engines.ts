@@ -16,7 +16,6 @@
  */
 
 import * as cheerio from "cheerio";
-import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { localeParts, personPresent, type Settings } from "../config.js";
@@ -29,7 +28,6 @@ import {
   RateLimited,
   SearchCheckRequired,
   SearchError,
-  type EngineSummary,
   type Recency,
   type SearchOptions,
   type SearchProvider,
@@ -60,8 +58,6 @@ export interface EngineSpec {
   human?: { homeUrl(query: string, locale?: string): string; resultsUrl: RegExp };
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
-  /** Extract the engine's own generated answer box, if the page carries one. */
-  overview?(html: string): Omit<EngineSummary, "provider"> | null;
 }
 
 const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
@@ -233,57 +229,6 @@ function unescapeJson(s: string): string {
   }
 }
 
-/**
- * Google's AI Overview / AI Mode reply, when the results page carries one. The markup is volatile and
- * A/B-tested, so the anchor is the stable container id (`#m-x-content`) with a text-marker fallback;
- * hidden elements are dropped first — every overview region carries "not available" fallback spans
- * with display:none, which must not be mistaken for content (or vice versa).
- */
-export function parseGoogleOverview(html: string): Omit<EngineSummary, "provider"> | null {
-  const $ = cheerio.load(html);
-  let region: cheerio.Cheerio<AnyNode> = $("#m-x-content").first();
-  if (!region.length) {
-    // "AI Overview" or "AI Mode reply for …" mark a real overview region; the bare "AI Mode" TAB in
-    // the results-page navigation must not (it would make the tab bar the "overview").
-    const marker = $("div, span, h1, h2").filter(
-      (_, e) => $(e).children().length === 0 && /^(AI Overview|AI Mode reply)/.test($(e).text().trim()),
-    );
-    if (!marker.length) return null;
-    region = marker.first().closest("div[id], div[jscontroller]");
-  }
-  if (!region.length) return null;
-  region
-    .find("style, script, svg, noscript, [aria-hidden=true], [style*='display:none'], [style*='display: none']")
-    .remove();
-
-  const sources: EngineSummary["sources"] = [];
-  const seen = new Set<string>();
-  const ownHosts = GOOGLE_OWN.filter((re) => !re.source.includes("youtube"));
-  region.find("a[href^='http']").each((_, a) => {
-    const url = unwrapGoogle($(a).attr("href") ?? "");
-    if (!/^https?:/.test(url) || skipHost(url, ...ownHosts) || seen.has(url)) return;
-    seen.add(url);
-    sources.push({ title: $(a).text().replace(/\s+/g, " ").trim() || new URL(url).hostname, url });
-  });
-
-  // cheerio's .text() joins adjacent elements without whitespace ("apiA REST"); prepending a space
-  // to every tag before extracting keeps element boundaries as word boundaries.
-  const spaced = cheerio
-    .load(`<x>${(region.html() ?? "").replace(/</g, " <")}</x>`)("x")
-    .text();
-  const text = spaced
-    .replace(/\s+/g, " ")
-    .replace(/^(\s*AI (Overview\b|Mode reply for [^A-Z]*))+\s*/, "")
-    // Everything from the disclaimer on is Google's UI (export buttons, dialogs), not the answer.
-    .replace(/\s*AI can make mistakes[\s\S]*$/, "")
-    .replace(/\s*(Save to Google (Drive|Gmail)|When you export,[^.]*\.|Got it|Transcribing\.\.\.)/g, "")
-    .replace(/Shared?\s*\d+\s*files?\s*$/, "")
-    .replace(/Show (more|all)\s*$/i, "")
-    .trim();
-  if (text.length < 80 || /^(An AI Overview is not available|Can't generate|All Web Images)/.test(text)) return null;
-  return { text: text.slice(0, 2500), sources: sources.slice(0, 10) };
-}
-
 // ---------------------------------------------------------------- specs
 
 export const ENGINE_SPECS: Record<string, EngineSpec> = {
@@ -313,7 +258,6 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     isChallenge: googleChallenge,
     noResults: /did not match any documents|No results found for/i,
     resultsSelector: "a h3",
-    overview: parseGoogleOverview,
     human: {
       // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
       homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
@@ -322,10 +266,21 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
   },
 };
 
+/**
+ * The query as the engine receives it: `site` as the engine's own operator, and up to three
+ * `allowed_domains` the same way (`(site:a OR site:b)`) so the engine narrows the search rather than
+ * the tool discarding twenty unrelated results afterwards. Longer lists are enforced on the results only.
+ */
+export function scopedQuery(q: SearchQuery): string {
+  const domains = q.site ? [q.site] : (q.allowedDomains ?? []);
+  if (!domains.length || domains.length > 3) return q.query;
+  const ops = domains.map((d) => `site:${d}`);
+  return `${q.query} ${ops.length === 1 ? ops[0] : `(${ops.join(" OR ")})`}`;
+}
+
 export class EngineProvider implements SearchProvider {
   readonly name: string;
   readonly label: string;
-  readonly posture: SearchProvider["posture"] = "browser";
   /** Result pages the engine's robots.txt does not permit: opened only as the person's own act. */
   readonly needsPerson: boolean;
   /** The profile choice the last query ran with, for the disclosure line. */
@@ -397,7 +352,7 @@ export class EngineProvider implements SearchProvider {
   }
 
   async search(q: SearchQuery, opts: SearchOptions = {}): Promise<SearchResponse> {
-    const query = q.site ? `${q.query} site:${q.site}` : q.query;
+    const query = scopedQuery(q);
     // The person approved (and may have edited) the query in their client: it runs as their
     // submission. Where nobody could be asked that way and the engine needs their act, the engine's
     // home page is handed over in the browser with the query in the box and the person presses Enter.
@@ -441,12 +396,6 @@ export class EngineProvider implements SearchProvider {
                 }
               : undefined,
             settleSelector: human ? undefined : this.spec.resultsSelector,
-            // Generated answer boxes stream in after the results; wait briefly for one that is coming,
-            // never for one that isn't (no marker on the page).
-            settleUntil: this.spec.overview
-              ? (html) => !/AI Overview/.test(html) || this.spec.overview!(html) !== null
-              : undefined,
-            settleUntilMs: 2500,
           }),
         Math.max(this.gapMs, crawlDelayMs),
       );
@@ -491,34 +440,34 @@ export class EngineProvider implements SearchProvider {
     const results = filterDomains(dedupe(parsed), q);
     if (!parsed.length) {
       // An empty results page is an answer; a page with results we cannot read is a parser problem.
-      if (this.spec.noResults.test(rendered.html)) throw new SearchError(`${this.name}: no results for this query`);
+      // Either way the page is kept (redacted) so the next report of "no results" can be diagnosed:
+      // an interstitial that merely mentions "did not match" must not pass as an honest empty answer.
       const dump = this.dumpUnparsed(rendered.html);
+      const saved = dump ? ` (page saved to ${dump})` : "";
+      const empty = this.spec.noResults.test(rendered.html) && !/<h3/i.test(rendered.html);
       throw new SearchError(
-        `${this.name}: no results parsed (markup may have changed${dump ? `; page saved to ${dump} for debugging` : "; run with --log-level debug to save the page"})`,
+        empty
+          ? `${this.name}: no results for this query${saved}`
+          : `${this.name}: no results parsed (markup may have changed)${saved}`,
       );
     }
     if (!results.length) throw new SearchError(`${this.name}: no results matched the domain filters`);
-    const overview = this.spec.overview?.(rendered.html);
-    return {
-      results: results.slice(0, q.maxResults),
-      summary: overview ? { ...overview, provider: this.name } : undefined,
-    };
+    return { results: results.slice(0, q.maxResults) };
   }
 
   /**
-   * Keep the last few pages that produced no results, so a markup change can be diagnosed from disk.
-   * Only at debug level: an engine page opened in the person's own profile carries their account
-   * chrome, so it is never written by default and the account header and any e-mail are removed.
+   * Keep the last two pages that produced no results, so a markup change (or an interstitial read as
+   * "no results") can be diagnosed from disk. An engine page opened in the person's own profile
+   * carries their account chrome, so the account header and any e-mail are removed first.
    */
   private dumpUnparsed(html: string): string | null {
-    if (this.settings.logLevel !== "debug") return null;
     try {
       const dir = join(this.settings.cacheDir, "debug");
       mkdirSync(dir, { recursive: true });
       const old = readdirSync(dir)
         .filter((f) => f.startsWith(`${this.name}-`))
         .sort();
-      for (const f of old.slice(0, Math.max(0, old.length - 2))) rmSync(join(dir, f), { force: true });
+      for (const f of old.slice(0, Math.max(0, old.length - 1))) rmSync(join(dir, f), { force: true });
       const path = join(dir, `${this.name}-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
       writeFileSync(path, redactAccount(html));
       return path;

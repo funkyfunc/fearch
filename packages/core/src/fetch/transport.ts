@@ -59,6 +59,8 @@ export class FetchError extends Error {
 
 /** Longest Retry-After the transport will actually sit out; anything longer becomes a final diagnosis. */
 export const RETRY_AFTER_MAX_S = 15;
+/** Response size cap for a page (robots.txt has a smaller one of its own). */
+export const MAX_BYTES = 10 * 1024 * 1024;
 
 /** RFC 9110 §10.2.3: delay-seconds or an HTTP-date. Returns whole seconds, or null if unparseable. */
 export function parseRetryAfter(value: string | undefined): number | null {
@@ -103,13 +105,28 @@ function looksBinary(body: Uint8Array): boolean {
   return false;
 }
 
+const FEED_SHAPE_RE = /^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<(?:rss|feed|rdf:RDF)[\s>]/i;
+const MARKDOWN_SHAPES = [/^#{1,6} \S[^\n]*\n\s*\n/m, /^[-*] \S/m, /^\d+\. \S/m, /\]\(https?:\/\//, /^> \S/m];
+const ROBOTS_LIKE_RE = /^(user-agent|disallow|allow|sitemap|crawl-delay)\s*:/im;
+
+function looksMarkdown(head: string): boolean {
+  if (/^```/m.test(head)) return true;
+  if (ROBOTS_LIKE_RE.test(head)) return false;
+  return MARKDOWN_SHAPES.some((re) => re.test(head));
+}
+
 export function classify(contentType: string, body: Uint8Array, url: string): ContentKind {
   const ct = (contentType || "").split(";")[0].trim().toLowerCase();
   const head = new TextDecoder().decode(body.slice(0, 4000));
   if (ct === "text/markdown" || ct === "text/x-markdown") return "markdown";
   if (ct === "application/pdf" || (!ct && url.toLowerCase().endsWith(".pdf")) || head.startsWith("%PDF-")) return "pdf";
   if (ct === "application/json" || ct.endsWith("+json")) return "json";
-  if (ct.startsWith("text/plain")) return /^#{1,6} |^```|^\* |^- /m.test(head) ? "markdown" : "text";
+  // RSS/Atom by declared type, or by shape when the server calls it XML, text or nothing.
+  if (ct === "application/rss+xml" || ct === "application/atom+xml" || (ct !== "text/html" && FEED_SHAPE_RE.test(head)))
+    return "feed";
+  // Plain text is markdown when it has markdown's shapes (a heading followed by a blank line, a list,
+  // a link, a fence); a robots.txt comment line starts with "# " too and is not.
+  if (ct.startsWith("text/plain")) return looksMarkdown(head) ? "markdown" : "text";
   if (ct === "text/html" || ct === "application/xhtml+xml") return "html";
   if (ct.startsWith("text/")) return "text";
   // A declared non-document type is one whatever its bytes look like.
@@ -146,7 +163,7 @@ export class Transport {
 
   async get(url: string, opts: GetOptions = {}): Promise<HttpResponse> {
     const started = Date.now();
-    const maxBytes = opts.maxBytes ?? this.settings.maxBytes;
+    const maxBytes = opts.maxBytes ?? MAX_BYTES;
     const headers: Record<string, string> = {
       "user-agent": this.settings.userAgent,
       accept: ACCEPT_HEADER,

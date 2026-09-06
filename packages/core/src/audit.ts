@@ -8,7 +8,7 @@ export interface AuditEvent {
   method?: string;
   status?: number | string;
   bytes?: number;
-  robots?: "allowed" | "disallowed" | "skipped" | "api" | "unavailable";
+  robots?: "allowed" | "disallowed" | "api" | "unavailable";
   provider?: string;
   cache?: "hit" | "miss" | "revalidated" | "bypass";
   note?: string;
@@ -18,23 +18,11 @@ export interface AuditEvent {
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
 
 export class Audit {
-  constructor(
-    private readonly settings: Pick<Settings, "auditLog" | "logLevel"> & Partial<Pick<Settings, "logFile">>,
-  ) {}
-
-  private tee(line: string): void {
-    if (!this.settings.logFile) return;
-    try {
-      appendFileSync(this.settings.logFile, line + "\n");
-    } catch {
-      /* the file is a convenience; never fail a request over it */
-    }
-  }
+  constructor(private readonly settings: Pick<Settings, "auditLog" | "logLevel">) {}
 
   record(ev: AuditEvent): void {
     if (this.settings.auditLog === "off") return;
     const line = JSON.stringify({ ts: new Date().toISOString(), ...ev });
-    this.tee(`AUDIT ${line}`);
     if (this.settings.auditLog === "stderr") process.stderr.write(`AUDIT ${line}\n`);
     else {
       try {
@@ -47,7 +35,6 @@ export class Audit {
 
   log(level: keyof typeof LEVELS, msg: string): void {
     if (LEVELS[level] < LEVELS[this.settings.logLevel]) return;
-    this.tee(`${new Date().toISOString()} ${level.toUpperCase()} ${msg}`);
     process.stderr.write(`${level.toUpperCase()} fearch: ${msg}\n`);
   }
 }

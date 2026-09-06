@@ -1,5 +1,7 @@
 /** Engine result pages via the browser tier: parsers, robots-gated eligibility, the human handoff. */
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Cache } from "../src/cache.js";
 import { acceptLanguage, settingsFromArgs, settingsFromEnv, type Settings } from "../src/config.js";
@@ -12,12 +14,11 @@ import {
   engineProviders,
   ddgChallenge,
   parseGoogle,
-  parseGoogleOverview,
   parseLite,
+  scopedQuery,
   redactAccount,
 } from "../src/search/engines.js";
 import { RateLimited, SearchError } from "../src/search/provider.js";
-import { renderResults } from "../src/search/render.js";
 import { SearchRegistry } from "../src/search/registry.js";
 import { Audit } from "../src/audit.js";
 
@@ -48,9 +49,10 @@ const GOOGLE_SORRY = `<html><body>Our systems have detected unusual traffic from
 
 // Platform pinned to "linux" (no display) so defaults are deterministic across dev machines and CI;
 // a display is simulated with DISPLAY=":0", a Mac desktop with platform "darwin".
+const CACHE_DIR = mkdtempSync(join(tmpdir(), "fearch-engines-"));
 function settings(env: Record<string, string> = {}, platform = "linux"): Settings {
   return settingsFromEnv(
-    { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error", ...env },
+    { FEARCH_NO_CACHE: "1", FEARCH_AUDIT_LOG: "off", FEARCH_LOG_LEVEL: "error", FEARCH_CACHE_DIR: CACHE_DIR, ...env },
     platform,
   );
 }
@@ -250,20 +252,42 @@ describe("engine eligibility — the dials play together", () => {
     await expect(p.search({ query: "x", maxResults: 5 })).rejects.toThrow(RateLimited);
   });
 
-  it("tells an empty results page from a parser failure, and never writes a page to disk unless debugging", async () => {
+  it("tells an empty results page from a parser failure, and keeps the redacted page either way", async () => {
     const approved = { submittedByPerson: true };
     const empty = provider("google", async () => ({
       html: `<html><body><div id="search"><p>Your search - xqzv - did not match any documents.</p></div></body></html>`,
       status: 200,
     }));
-    await expect(empty.search({ query: "xqzv", maxResults: 5 }, approved)).rejects.toThrow(/no results for this query/);
+    await expect(empty.search({ query: "xqzv", maxResults: 5 }, approved)).rejects.toThrow(
+      /no results for this query \(page saved to/,
+    );
     const odd = provider("google", async () => ({
       html: `<html><body><div id="search">${"<p>x</p>".repeat(40)}</div></body></html>`,
       status: 200,
     }));
     await expect(odd.search({ query: "x", maxResults: 5 }, approved)).rejects.toThrow(
-      /markup may have changed; run with --log-level debug/,
+      /markup may have changed\) \(page saved to/,
     );
+    // A page that says "did not match" but still carries result headings is a parse problem, not an
+    // empty answer (an interstitial or consent page must never pass as "no results").
+    const mixed = provider("google", async () => ({
+      html: `<html><body><div id="search"><p>did not match any documents</p><h3>Still a result</h3></div></body></html>`,
+      status: 200,
+    }));
+    await expect(mixed.search({ query: "x", maxResults: 5 }, approved)).rejects.toThrow(/markup may have changed/);
+    const dumps = readdirSync(join(CACHE_DIR, "debug")).filter((f) => f.startsWith("google-"));
+    expect(dumps.length).toBeGreaterThan(0);
+    expect(dumps.length).toBeLessThanOrEqual(2); // only the last two are kept
+  });
+
+  it("sends site and up to three allowed domains to the engine as its own operator", () => {
+    expect(scopedQuery({ query: "q", maxResults: 5 })).toBe("q");
+    expect(scopedQuery({ query: "q", maxResults: 5, site: "docs.python.org" })).toBe("q site:docs.python.org");
+    expect(scopedQuery({ query: "q", maxResults: 5, allowedDomains: ["a.org"] })).toBe("q site:a.org");
+    expect(scopedQuery({ query: "q", maxResults: 5, allowedDomains: ["a.org", "b.org"] })).toBe(
+      "q (site:a.org OR site:b.org)",
+    );
+    expect(scopedQuery({ query: "q", maxResults: 5, allowedDomains: ["a", "b", "c", "d"] })).toBe("q");
   });
 
   it("redacts the signed-in account chrome and e-mail addresses from debug dumps", () => {
@@ -568,57 +592,6 @@ describe("config dials", () => {
     expect(settings({ DISPLAY: ":0" }).canSurface).toBe(true);
     expect(settings({ FEARCH_BROWSER: "nonsense" }).browser).toBe("auto");
     expect(settings({ FEARCH_ENGINES: "" }).engines).toEqual([]);
-  });
-});
-
-describe("google AI overview", () => {
-  const fixture = readFileSync(new URL("../../../tests/fixtures/google-ai-overview.html", import.meta.url), "utf8");
-  it("extracts the labelled summary and its sources from a real page region", () => {
-    const ov = parseGoogleOverview(fixture);
-    expect(ov).not.toBeNull();
-    expect(ov!.text).toMatch(/^A REST API/);
-    expect(ov!.text).not.toContain("not available");
-    expect(ov!.text.length).toBeLessThanOrEqual(2500);
-    expect(ov!.sources.map((s) => s.url)).toContain("https://www.youtube.com/watch?v=-mN3VyJuCjM");
-  });
-  it("returns null for stubs and pages without an overview", () => {
-    expect(parseGoogleOverview(GOOGLE_2026)).toBeNull();
-    // the hidden "not available" fallback spans alone are not a summary
-    const stub = `<div id="search"><div id="m-x-content"><span style="display:none"><span>An AI Overview is not available for this search</span></span><div>AI Overview</div></div></div>`;
-    expect(parseGoogleOverview(stub)).toBeNull();
-  });
-  it("flows from the engine through the registry into the rendered output, labelled and cached", async () => {
-    const page = `<html><body><div id="search">${fixture}<div class="yuRUbf"><a class="zReHs" href="https://example.com/rest"><h3>REST</h3><cite>https://example.com › rest</cite></a></div></div></body></html>`;
-    const s = settings({ FEARCH_ENGINES: "google", DISPLAY: ":0" });
-    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
-    const engines = engineProviders(
-      s,
-      fakeBrowser(async () => ({ html: page, status: 200 })),
-      robots,
-      new Politeness(1, { count: 100, windowMs: 60_000 }),
-    );
-    const cache = new Cache(null);
-    const reg = new SearchRegistry(s, cache, new Audit(s), engines);
-    // a client that approves each Google query as asked
-    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
-    const out = await reg.search({ query: "what is a rest api", maxResults: 3 });
-    expect(out.summary?.provider).toBe("google");
-    expect(out.summary?.text).toMatch(/^A REST API/);
-    const rendered = renderResults("what is a rest api", out);
-    expect(rendered).toContain("Google's AI Overview");
-    expect(rendered).toContain("unverified");
-    expect(rendered).toContain("Sources: [1] https://www.youtube.com/watch");
-    // cached outcomes keep the summary
-    const again = await reg.search({ query: "what is a rest api", maxResults: 3 });
-    expect(again.fromCache).toBe(true);
-    expect(again.summary?.text).toMatch(/^A REST API/);
-  });
-});
-
-describe("google AI overview — tab bar is not an overview", () => {
-  it("ignores the 'AI Mode' navigation tab when the page has no overview region", () => {
-    const nav = `<div id="search"><div role="navigation"><div><span>AI Mode</span></div><div><span>All</span></div><div><span>Web</span></div><div><span>Images</span></div><div><span>Short videos</span></div><div><span>Maps</span></div><div><span>Videos</span></div><div><span>More</span></div></div><div class="g"><a href="https://example.com/x"><h3>A result</h3></a></div></div>`;
-    expect(parseGoogleOverview(nav)).toBeNull();
   });
 });
 

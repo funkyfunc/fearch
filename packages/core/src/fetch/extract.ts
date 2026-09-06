@@ -21,7 +21,7 @@ import { gfm } from "turndown-plugin-gfm";
 export interface Extracted {
   title: string;
   markdown: string;
-  method: "main" | "readability" | "body" | "pdf";
+  method: "main" | "readability" | "body" | "pdf" | "feed";
 }
 
 const MAIN_SELECTORS = [
@@ -57,8 +57,10 @@ const REMOVE_SELECTORS =
   ".ltx_page_header, .ltx_page_footer, .ltx_ERROR, .ltx_missing, .ltx_page_navbar, " +
   // third-party comment widgets (the discussion itself, e.g. on HN or forums, is content and is kept)
   "#disqus_thread, .disqus, #comments-form, .comment-form, .comment-respond, " +
-  // MediaWiki chrome: navboxes, edit links, category links, hatnotes
-  ".navbox, .vertical-navbox, .navbox-styles, .mw-editsection, .catlinks, .hatnote, .mw-jump-link, .noprint";
+  // MediaWiki chrome: navboxes, edit links, category links, hatnotes, page-status indicators and the
+  // FlaggedRevs "Checked / Page version status" box
+  ".navbox, .vertical-navbox, .navbox-styles, .mw-editsection, .catlinks, .hatnote, .mw-jump-link, .noprint, " +
+  ".mw-indicators, [id^=mw-fr-], .flaggedrevs_short";
 
 const NOISE_CLASS_RE =
   /(^|[\s_-])(cookie|consent|gdpr|sidebar|side-nav|sidenav|breadcrumbs?|share|social|advert|ads?|promo|newsletter|popup|modal|subscribe|related|recommended|footer|navbar|topbar|menu|skip-link|skip-to|toc|table-of-contents|pagination|pager|announcement|banner|edit-this-page|feedback|on-this-page|page-nav|prev-next|theme-doc-toc|docs-toc)([\s_-]|$)/i;
@@ -86,6 +88,9 @@ const SHELL_PATTERNS =
 /** Below this much visible text, a page whose bytes are mostly script is a client-rendered shell. */
 const SHELL_MAX_TEXT = 600;
 const SHELL_SCRIPT_SHARE = 0.5;
+/** The yield rule: this much HTML producing under this much text is a client-rendered app. */
+const SHELL_YIELD_MIN_HTML = 200_000;
+const SHELL_YIELD_MAX_TEXT = 1_000;
 /** Interactive chrome that must be *unwrapped*, not removed, when it sits inside code (Twoslash hovers, copy buttons). */
 const CODE_CONTAINERS = "pre, code";
 
@@ -179,9 +184,12 @@ export function detectShell(html: string): boolean {
   const text = visibleText($("body").length ? $("body") : $.root());
   if (SHELL_PATTERNS.test(text.slice(0, 3000)) && text.length < 1500) return true;
   if (text.length < 50) return scripts > 0;
-  if (text.length < 200) return scripts > 0 && emptyMount;
+  if (scripts > 0 && emptyMount && text.length < 200) return true;
   if (text.length < SHELL_MAX_TEXT && scripts > 0 && html.length > 0 && scriptBytes / html.length > SHELL_SCRIPT_SHARE)
     return true;
+  // Yield: a large page whose bytes are mostly markup and script and whose visible text is a footer
+  // (YouTube watch pages: 1.3 MB in, "About Press Copyright" out) is a shell whatever its mount is called.
+  if (scripts > 0 && html.length > SHELL_YIELD_MIN_HTML && text.length < SHELL_YIELD_MAX_TEXT) return true;
   return false;
 }
 
@@ -322,15 +330,49 @@ function findMain($: CheerioAPI): Cheerio<AnyNode> | null {
 }
 
 /**
+ * MDX module code outside fences: `import x from "y"`, one-line `export const a = 1;`, and multi-line
+ * `export const Card = (...) => { ... };` component definitions (Mintlify pages carry those inline).
+ * Fenced code is never touched, so a snippet that happens to start with `export` survives.
+ */
+function dropMdxCode(lines: string[]): string[] {
+  const out: string[] = [];
+  let inFence = false;
+  let inExport = false;
+  for (const line of lines) {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    if (inExport) {
+      if (/^[}\])]+;?\s*$/.test(line)) inExport = false;
+      continue;
+    }
+    if (/^export\s+(const|let|var|function|default|async)\b/.test(line) && !/;\s*$/.test(line)) {
+      inExport = true;
+      continue;
+    }
+    if (/^(import\s.+\sfrom\s.+|export\s.+;)\s*$/.test(line)) continue;
+    if (JSX_LINE_RE.test(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+/**
  * Normalize markdown from any source: fence info strings reduced to the language token
- * (Mintlify emits ```python theme={...}), MDX/JSX-only lines dropped, heading pilcrows removed,
+ * (Mintlify emits ```python theme={...}), MDX/JSX module code dropped, heading pilcrows removed,
  * zero-width chars and leading "Skip to content" removed, whitespace collapsed.
  */
 export function cleanMarkdownSource(md: string): string {
   let s = md.replace(/\r\n/g, "\n").replace(ZERO_WIDTH_RE, "");
   s = s.replace(FENCE_INFO_RE, (_m, fence: string, lang: string) => `${fence}${lang}`);
   s = s.replace(EMPTY_ANCHOR_RE, "").replace(MDX_COMMENT_RE, "");
-  const lines = s.split("\n").filter((l) => !JSX_LINE_RE.test(l));
+  const lines = dropMdxCode(s.split("\n"));
   while (lines.length && SKIP_LINE_RE.test(lines[0])) lines.shift();
   s = lines.join("\n");
   s = s.replace(HEADING_PILCROW_RE, "$1");
@@ -430,6 +472,37 @@ export function htmlToMarkdown(html: string): Extracted {
   stripBoilerplate($2, body);
   const md = cleanMarkdownSource(turndown().turndown($2.html(body)));
   return { title, markdown: md, method: "body" };
+}
+
+/**
+ * RSS 2.0 / Atom → one heading per entry, so `focus`/`section` work on a feed like on a page.
+ * The entry body (HTML in most feeds) is converted with the same converter as any snippet.
+ */
+export function feedToMarkdown(xml: string): Extracted {
+  const $ = cheerio.load(xml, { xml: true });
+  const atom = $("feed").length > 0;
+  const text = (el: Cheerio<AnyNode>) => el.first().text().replace(/\s+/g, " ").trim();
+  const title = text(atom ? $("feed > title") : $("channel > title"));
+  const about = text(atom ? $("feed > subtitle") : $("channel > description"));
+  const entries = (atom ? $("feed > entry") : $("item")).toArray();
+  const out = [`# ${title || "Feed"}`, ""];
+  if (about) out.push(about, "");
+  for (const e of entries) {
+    const $e = $(e);
+    const name = text($e.children("title")) || "(untitled)";
+    const link = atom
+      ? ($e.children("link[rel=alternate]").attr("href") ?? $e.children("link").attr("href") ?? "")
+      : text($e.children("link"));
+    const when = text($e.children(atom ? "updated, published" : "pubDate, dc\\:date"));
+    const stamp = when && Number.isFinite(Date.parse(when)) ? new Date(when).toISOString().slice(0, 10) : "";
+    const body = atom
+      ? $e.children("content").first().text() || $e.children("summary").first().text()
+      : $e.children("content\\:encoded").first().text() || $e.children("description").first().text();
+    out.push(`## ${name}`, [link, stamp].filter(Boolean).join(" · "), "");
+    const md = /<[a-z][\s\S]*>/i.test(body) ? htmlSnippetToMarkdown(body) : body.trim();
+    if (md.trim()) out.push(md.trim(), "");
+  }
+  return { title, markdown: out.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", method: "feed" };
 }
 
 export async function pdfToMarkdown(data: Uint8Array, maxPages = 200): Promise<Extracted> {

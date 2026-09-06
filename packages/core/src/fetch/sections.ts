@@ -16,14 +16,15 @@ export interface Section {
 const HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const FENCE_RE = /^\s*(`{3,}|~{3,})/;
 const MD_LINK_RE = /\[([^\]]*)\]\([^)]*\)/g;
-const MD_INLINE_RE = /[*_`]+/g;
+/** Paired emphasis/code markers only: a literal `*` in a heading (`Universal "*" match`) is text. */
+const MD_INLINE_RE = /(?<![\w*_`])(\*\*|__|`|\*|_)(\S(?:[^\n]*?\S)?)\1(?![\w*_`])/g;
 const TOKEN_RE = /[a-z0-9_]+(?:[.-][a-z0-9_]+)*/g;
 const REFERENCE_TITLE_RE =
   /^(references?|external links?|see also|notes|footnotes|bibliography|citations?|further reading|sources|navigation|table of contents|contents)$/i;
 
 /** Heading text without link/emphasis markup, for outlines and matching. */
 export function cleanTitle(raw: string): string {
-  const t = raw.replace(MD_LINK_RE, "$1").replace(MD_INLINE_RE, "");
+  const t = raw.replace(MD_LINK_RE, "$1").replace(MD_INLINE_RE, "$2");
   return t
     .replace(/\s+/g, " ")
     .trim()
@@ -245,12 +246,25 @@ export function focusSections(
   if (!q.length || sections.length === 1) return { sections: sections.slice(0, 1), matched: sections.length === 1 };
   const corpus = sections.map((s) => tokenize([s.title, s.title, s.title, s.path.join(" "), s.text].join(" ")));
   const scores = new BM25(corpus).scores(q);
+  const best = Math.max(0, ...scores);
   const ranked = sections.map((s, i) => {
+    const titleTokens = tokenize(s.title);
+    const hit = (t: string) => titleTokens.some((tt) => tt === t || (t.length >= 4 && tt.startsWith(t)));
+    // A heading that names the query ("Task cancellation" for "cancel") beats a long section that
+    // merely mentions the word often: it scores at least as well as the best section, and the more
+    // of the heading the query fills, the better ("Task cancellation" over "Shielding from
+    // cancellation"). Word prefixes count, so an inflected heading matches even when its body never
+    // uses the stem. The heading is the stronger signal, so the code-block boost is skipped for it.
+    const named = q.every(hit);
+    const fill = titleTokens.length
+      ? titleTokens.filter((tt) => q.some((t) => tt === t || tt.startsWith(t))).length / titleTokens.length
+      : 0;
     let boost = 1;
     if (s.level >= 1 && s.level <= 2) boost *= 1.3;
-    if (s.text.includes("```")) boost *= 1.2;
+    if (!named && s.text.includes("```")) boost *= 1.2;
     if (s.level === 0 && s.text.length < 400) boost *= 0.8;
-    return { score: scores[i] * boost, s, reference: REFERENCE_TITLE_RE.test(s.title) };
+    const base = named ? Math.max(scores[i], best) * (1 + 2 * fill) : scores[i];
+    return { score: base * boost, s, reference: REFERENCE_TITLE_RE.test(s.title) };
   });
   ranked.sort((a, b) => b.score - a.score);
   // Reference lists repeat the page's key terms without saying anything about them: consider them

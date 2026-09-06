@@ -31,7 +31,7 @@ function quietForPeople(settings: Settings, overrides: Record<string, string>): 
   return {
     ...settings,
     auditLog: overrides.FEARCH_AUDIT_LOG ?? process.env.FEARCH_AUDIT_LOG ?? "off",
-    logLevel: (overrides.FEARCH_LOG_LEVEL ?? process.env.FEARCH_LOG_LEVEL ?? "warn") as Settings["logLevel"],
+    logLevel: overrides.FEARCH_LOG_LEVEL || process.env.FEARCH_LOG_LEVEL ? settings.logLevel : "warn",
   };
 }
 

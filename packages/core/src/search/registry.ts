@@ -24,7 +24,6 @@ import {
   SearchCheckRequired,
   SearchError,
   type ConfirmQuery,
-  type EngineSummary,
   type QueryChoice,
   type SearchProvider,
   type SearchQuery,
@@ -35,8 +34,12 @@ import {
 /** A search call re-entered with what the person answered in the form, and what earlier rounds already tried. */
 export interface SearchRound {
   noCache?: boolean;
-  /** The person's answer to the form the previous round returned; consumed by the first engine that needs one. */
-  answer?: QueryChoice | "declined";
+  /**
+   * The person's answer to the form the previous round returned; consumed by the first engine that
+   * needs one. `declined` and `{ unanswered }` (nobody answered, or the prompt was dismissed) both
+   * mean that engine does not run; engines that need no approval still do, and the note says so.
+   */
+  answer?: QueryChoice | "declined" | { unanswered: string };
   /** Engines already run in earlier rounds of this call, with their failure lines. */
   skip?: string[];
   priorErrors?: string[];
@@ -52,8 +55,6 @@ export interface SearchOutcome {
   results: SearchResult[];
   providers: SearchProvider[];
   fromCache: boolean;
-  /** The engine's own generated answer box, when the page carried one. Labelled, never merged into results. */
-  summary?: EngineSummary;
   /** Human-readable notes about what happened (rate limits, cooldowns), shown to the model. */
   notes: string[];
 }
@@ -128,26 +129,17 @@ export class SearchRegistry {
     const key = createHash("sha1")
       .update(JSON.stringify({ ...q, engines: this.web.map((p) => p.name), v: 3 }))
       .digest("hex");
-    const cached = opts.noCache
-      ? null
-      : this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
+    const cached = opts.noCache ? null : this.cache.getSearch<{ results: SearchResult[]; providers: string[] }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
       const providers = this.web.filter((p) => cached.providers.includes(p.name));
-      return {
-        results: cached.results,
-        providers,
-        fromCache: true,
-        notes: [],
-        summary: cached.summary,
-      };
+      return { results: cached.results, providers, fromCache: true, notes: [] };
     }
 
     const errors: string[] = [...(opts.priorErrors ?? [])];
     const notes: string[] = [...(opts.priorNotes ?? [])];
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
-    let summary: EngineSummary | undefined;
     /** A provider ahead of the first one that answered failed or was skipped (chain searches only). */
     let preferredFailed = false;
     const now = Date.now();
@@ -167,6 +159,8 @@ export class SearchRegistry {
     let answer = opts.answer;
     /** The form answer applied in this round (carried into a suspended check's next round). */
     let applied: QueryChoice | undefined;
+    /** The person declined or did not answer: no further engine that needs their approval is asked this call. */
+    let notAsking = false;
 
     const runOne = async (p: SearchProvider): Promise<SearchResult[]> => {
       const cd = this.cooldown.get(p.name);
@@ -183,7 +177,6 @@ export class SearchRegistry {
           r = await resume.complete(await opts.resumeCheck!.rendered);
         } else r = await p.search({ ...q, query }, { submittedByPerson, incognito });
         used.push(p);
-        summary ??= r.summary;
         this.audit.record({
           url: `search:${q.query}`,
           provider: p.name,
@@ -237,6 +230,7 @@ export class SearchRegistry {
       if (answer === "unavailable") return p; // the engine hands the search box over in the browser instead
       if (answer === "declined") {
         notes.push(`${p.name}: you declined to run this query`);
+        notAsking = true;
         return null;
       }
       applied = answer;
@@ -263,6 +257,11 @@ export class SearchRegistry {
           answer = undefined;
           if (a === "declined") {
             notes.push(`${p.name}: you declined to run this query`);
+            notAsking = true;
+            chosen = null;
+          } else if (typeof a === "object" && "unanswered" in a) {
+            notes.push(`${p.name}: ${a.unanswered}`);
+            notAsking = true;
             chosen = null;
           } else {
             applied = a;
@@ -275,6 +274,9 @@ export class SearchRegistry {
               () => (submittedByPerson = true),
             );
           }
+        } else if (notAsking) {
+          notes.push(`${p.name}: not asked about after the earlier prompt went unanswered or was declined`);
+          chosen = null;
         } else {
           try {
             chosen = await ask(p);
@@ -287,7 +289,9 @@ export class SearchRegistry {
             throw e;
           }
         }
-        if (!chosen) break;
+        // A declined or unanswered prompt takes this engine out of the chain, not the engines that
+        // need no approval (DuckDuckGo lite): they still run, and the notes say what happened to this one.
+        if (!chosen) continue;
         p = chosen;
       } else if (this.remembered?.engine === p.name) {
         if (offerProfile) incognito = this.remembered.incognito;
@@ -298,17 +302,20 @@ export class SearchRegistry {
       results = dedupe([...results, ...got]);
     }
 
-    if (!results.length)
-      throw new SearchError(
-        `No results (${[...new Set([...errors, ...notes])].join("; ") || "no engines configured"}). ` +
-          "Fetch a URL you already know, or retry after any cooldown named above.",
-      );
+    if (!results.length) {
+      const why = [...new Set([...errors, ...notes])];
+      const next = ["Fetch a URL you already know"];
+      if (why.some((n) => /skipped \(/.test(n))) next.push("retry after the cooldown named above");
+      if (why.some((n) => /approval|declined|unanswered/.test(n)))
+        next.push("search again when the user is at the screen");
+      throw new SearchError(`No results (${why.join("; ") || "no engines configured"}). ${next.join(", or ")}.`);
+    }
     results = results.slice(0, q.maxResults);
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than
     // 15 minutes of the fallback's answer.
-    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
-    return { query, results, providers: used, fromCache: false, notes, summary };
+    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name) });
+    return { query, results, providers: used, fromCache: false, notes };
   }
 
   /** Apply the person's form answer: the query they settled on, the engine, incognito or not, and whether to remember. */

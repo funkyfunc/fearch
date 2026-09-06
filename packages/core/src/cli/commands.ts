@@ -1,8 +1,10 @@
 /**
- * The CLI twin of the MCP tools: `fearch fetch <url>`, `fearch search <query>`, `doctor`, `extension`.
+ * The CLI twin of the MCP tools: `fearch fetch <url>`, `fearch search <query>`, `doctor`, `extension`,
+ * `clear-profile`.
  * Prints exactly what the tools would return; `--json` prints structured output instead.
  */
 
+import { existsSync, rmSync } from "node:fs";
 import { createApp } from "../app.js";
 import { UsageError, type Settings } from "../config.js";
 import { describeError, isExpected } from "../errors.js";
@@ -36,12 +38,25 @@ export async function runCommand(argv: string[], settings: Settings): Promise<nu
         return await doctor(app, { json: flags.json === true });
       case "extension":
         return await extensionCommand(app, positional[0] ?? "status", flags);
+      case "clear-profile":
+        return clearProfile(app.settings.browserStatePath);
       default:
-        throw new UsageError(`unknown command "${command}" (fetch, search, doctor, extension)`);
+        throw new UsageError(`unknown command "${command}" (fetch, search, doctor, extension, clear-profile)`);
     }
   } finally {
     await app.close();
   }
+}
+
+/** Forget the tool-owned browser profile: passed checks, and every cookie a site set in the tool's browser. */
+function clearProfile(path: string): number {
+  if (!existsSync(path)) {
+    process.stdout.write(`no browser profile at ${path}\n`);
+    return EXIT_OK;
+  }
+  rmSync(path);
+  process.stdout.write(`removed ${path} (passed checks and site cookies forgotten)\n`);
+  return EXIT_OK;
 }
 
 const emit = (flags: Flags, human: string, json: unknown): void => {

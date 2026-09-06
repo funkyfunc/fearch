@@ -27,7 +27,6 @@ describe("provider helpers", () => {
   it("filters domains", () => {
     const rs = [r("https://docs.python.org/3/x"), r("https://example.com/y")];
     expect(filterDomains(rs, { query: "", maxResults: 5, site: "docs.python.org" }).length).toBe(1);
-    expect(filterDomains(rs, { query: "", maxResults: 5, blockedDomains: ["example.com"] }).length).toBe(1);
     expect(filterDomains(rs, { query: "", maxResults: 5, allowedDomains: ["python.org"] }).length).toBe(1);
   });
 });
@@ -41,7 +40,6 @@ describe("registry", () => {
   ): SearchProvider & { calls: number } => ({
     name,
     disclosure: `${name} disclosure`,
-    posture: "official",
     calls: 0,
     available: () => true,
     async search() {
@@ -291,12 +289,11 @@ describe("registry", () => {
   it("renders with disclosure", () => {
     const a = stub("a", [r("https://x.com/1", "One")]);
     const text = renderResults("q", {
-      results: [{ ...r("https://x.com/1", "One"), excerpt: "e1\ne2", date: "2026-04-23" }],
+      results: [{ ...r("https://x.com/1", "One"), excerpt: "e1\ne2" }],
       providers: [a],
       fromCache: false,
       notes: [],
     });
-    expect(text).toContain("https://x.com/1 · 2026-04-23");
     expect(text).toContain('Results for "q" (1, via a):');
     expect(text).toContain("Provider: a disclosure");
     expect(text).toContain("1. **One** — https://x.com/1");

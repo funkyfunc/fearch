@@ -23,9 +23,7 @@ export interface Settings {
   uaContact: string;
   userAgent: string;
   maxChars: number;
-  excerptChars: number;
   timeoutMs: number;
-  maxBytes: number;
   maxRedirects: number;
   perHostDelayMs: number;
   sessionBudget: { count: number; windowMs: number };
@@ -42,9 +40,7 @@ export interface Settings {
   cacheDir: string;
   noCache: boolean;
   auditLog: string; // "stderr" | "off" | file path
-  /** Also append every log line (INFO/WARN/DEBUG and AUDIT) to this file — for sharing a debug run. */
-  logFile: string;
-  logLevel: "debug" | "info" | "warn" | "error";
+  logLevel: (typeof LOG_LEVELS)[number];
   /**
    * `auto` (default): headless until a page shows a challenge — then the same page opens once in a
    * visible window for the person to deal with; where no window can be shown, the challenge stays
@@ -147,6 +143,7 @@ export const KNOWN_ENGINES = ["duckduckgo", "google"] as const;
 export const ROBOTS_POLICIES = ["default", "strict"] as const;
 export const BROWSER_MODES = ["auto", "headless", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "off"] as const;
+export const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 
 /** The machine's locale from the environment (FEARCH_LOCALE wins), normalised to lang or lang-REGION. */
 function localeFrom(env: Env): string {
@@ -188,9 +185,7 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     uaContact: contact,
     userAgent: userAgentFor(infoUrl, contact),
     maxChars: envInt(env, "FEARCH_MAX_CHARS", 12_000),
-    excerptChars: envInt(env, "FEARCH_EXCERPT_CHARS", 1_500),
     timeoutMs: envInt(env, "FEARCH_TIMEOUT_MS", 30_000),
-    maxBytes: envInt(env, "FEARCH_MAX_BYTES", 10 * 1024 * 1024),
     maxRedirects: 6,
     perHostDelayMs: envInt(env, "FEARCH_PER_HOST_DELAY_MS", 1_000),
     sessionBudget: {
@@ -204,8 +199,7 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     cacheDir,
     noCache: envBool(env, "FEARCH_NO_CACHE"),
     auditLog: env.FEARCH_AUDIT_LOG?.trim() || "stderr",
-    logFile: env.FEARCH_LOG_FILE?.trim() || "",
-    logLevel: (env.FEARCH_LOG_LEVEL?.toLowerCase() as Settings["logLevel"]) || "info",
+    logLevel: pick(env.FEARCH_LOG_LEVEL, LOG_LEVELS, "info"),
     browser,
     canSurface,
     handoff,
@@ -365,7 +359,7 @@ export const FLAGS: readonly FlagSpec[] = [
     flag: "log-level",
     env: "FEARCH_LOG_LEVEL",
     kind: "enum",
-    values: ["debug", "info", "warn", "error"],
+    values: LOG_LEVELS,
     default: "info (server) · warn (commands)",
     help: "Log verbosity on stderr. debug also saves engine pages that failed to parse (account details redacted).",
   },
@@ -449,22 +443,6 @@ export const FLAGS: readonly FlagSpec[] = [
     tuning: true,
   },
   {
-    flag: "max-bytes",
-    env: "FEARCH_MAX_BYTES",
-    kind: "int",
-    default: "10485760",
-    help: "Response size cap.",
-    tuning: true,
-  },
-  {
-    flag: "excerpt-chars",
-    env: "FEARCH_EXCERPT_CHARS",
-    kind: "int",
-    default: "1500",
-    help: "Budget of each fetch_top excerpt.",
-    tuning: true,
-  },
-  {
     flag: "extension-connect-ms",
     env: "FEARCH_EXTENSION_CONNECT_MS",
     kind: "int",
@@ -478,14 +456,6 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "int",
     default: "2",
     help: "Concurrent browser renders.",
-    tuning: true,
-  },
-  {
-    flag: "log-file",
-    env: "FEARCH_LOG_FILE",
-    kind: "string",
-    default: "",
-    help: "Also append every log and audit line to this file.",
     tuning: true,
   },
 ];

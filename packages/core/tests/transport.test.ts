@@ -123,6 +123,25 @@ describe("transport", () => {
 
 describe("content classification", () => {
   const bytes = (s: string) => new TextEncoder().encode(s);
+  it("classifies feeds by type or shape, and plain text as markdown only with more than one markdown shape", () => {
+    const enc = (s: string) => new TextEncoder().encode(s);
+    expect(classify("application/rss+xml", enc("<rss>"), "https://x/f")).toBe("feed");
+    expect(
+      classify(
+        "text/xml; charset=utf-8",
+        enc('<?xml version="1.0"?>\n<feed xmlns="http://www.w3.org/2005/Atom">'),
+        "https://x/f",
+      ),
+    ).toBe("feed");
+    expect(classify("application/xml", enc("<note><to>x</to></note>"), "https://x/n")).toBe("html");
+    // robots.txt opens with "# comment": one shape is not markdown
+    expect(
+      classify("text/plain", enc("# Ensure all paths are crawled\nUser-agent: *\nDisallow:"), "https://x/robots.txt"),
+    ).toBe("text");
+    expect(classify("text/plain", enc("# Title\n\n- one\n- two\n"), "https://x/README")).toBe("markdown");
+    expect(classify("text/plain", enc("plain\n```js\nx\n```\n"), "https://x/t")).toBe("markdown");
+  });
+
   it("never reads binary as HTML, and prefers the declared type over sniffing", () => {
     expect(
       classify("application/octet-stream", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0x0d]), "https://x/a"),

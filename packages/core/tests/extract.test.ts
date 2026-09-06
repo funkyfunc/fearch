@@ -1,7 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { cleanMarkdownSource, detectShell, htmlToMarkdown, splitFrontmatter } from "../src/fetch/extract.js";
+import {
+  cleanMarkdownSource,
+  detectShell,
+  feedToMarkdown,
+  htmlToMarkdown,
+  splitFrontmatter,
+} from "../src/fetch/extract.js";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/html");
 // Documentation pages: the code-retention and size thresholds below are docs-shaped. The full fixture
@@ -181,5 +187,61 @@ describe("content selection guards", () => {
     const ex = htmlToMarkdown(html);
     expect(ex.method).not.toBe("main");
     expect(ex.markdown).toContain("The article");
+  });
+
+  it("treats a huge, script-heavy page that yields only a footer as a shell (YouTube watch pages)", () => {
+    const footer = "About Press Copyright Contact us Creators Advertise Developers Terms Privacy Policy & Safety";
+    const filler = `<script>${"x".repeat(150_000)}</script><ytd-app>${"<div></div>".repeat(8000)}</ytd-app>`;
+    const big = `<html><head><title>V</title></head><body>${filler}<footer>${footer}</footer></body></html>`;
+    expect(big.length).toBeGreaterThan(200_000);
+    expect(detectShell(big)).toBe(true);
+    // The same footer on a small static page is just a small page.
+    expect(detectShell(`<html><body><footer>${footer}</footer></body></html>`)).toBe(false);
+  });
+
+  it("drops MDX module code (multi-line component exports, imports) but never fenced code", () => {
+    const mdx = [
+      'import { Card } from "@/components";',
+      "",
+      "# Intro",
+      "",
+      "export const HeroCard = ({ title }) => {",
+      '  return <a className="x">',
+      "      {title}",
+      "    </a>;",
+      "};",
+      "",
+      "Prose stays.",
+      "",
+      "```ts",
+      "export const keep = () => {",
+      "  return 1;",
+      "};",
+      "```",
+      "",
+    ].join("\n");
+    const out = cleanMarkdownSource(mdx);
+    expect(out).not.toContain("HeroCard");
+    expect(out).not.toContain("import {");
+    expect(out).toContain("Prose stays.");
+    expect(out).toContain("export const keep = () => {");
+  });
+
+  it("renders RSS and Atom feeds as one heading per entry", () => {
+    const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Front Page</title><description>News</description>
+<item><title>First &amp; best</title><link>https://a.test/1</link><pubDate>Sat, 05 Sep 2026 22:15:52 +0000</pubDate>
+<description><![CDATA[<p>Article URL: <a href="https://a.test/1">x</a></p><p>Points: 21</p>]]></description></item>
+<item><title>Second</title><link>https://a.test/2</link></item></channel></rss>`;
+    const md = feedToMarkdown(rss);
+    expect(md.title).toBe("Front Page");
+    expect(md.markdown).toContain("## First & best\nhttps://a.test/1 · 2026-09-05");
+    expect(md.markdown).toContain("Points: 21");
+    expect(md.markdown).not.toContain("CDATA");
+    expect(md.markdown).toContain("## Second\nhttps://a.test/2");
+    const atom = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Blog</title><entry><title>Post</title>
+<link rel="alternate" href="https://b.test/p"/><updated>2026-01-02T00:00:00Z</updated><summary>Short.</summary></entry></feed>`;
+    const a = feedToMarkdown(atom);
+    expect(a.markdown).toContain("# Blog");
+    expect(a.markdown).toContain("## Post\nhttps://b.test/p · 2026-01-02\n\nShort.");
   });
 });

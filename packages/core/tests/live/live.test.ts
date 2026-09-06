@@ -78,20 +78,24 @@ d("live", () => {
     expect(text(r)).toMatch(/kind: (blocked_or_waf|captcha_or_challenge|robots_disallowed|rate_limited)/);
   }, 60_000);
 
-  it("searches keylessly via the Exa hosted endpoint and the federation", async () => {
+  it("searches an engine in a browser window, or says honestly why it could not", async () => {
+    // Search is engines or an honest no. On a runner with no display, or from a datacenter IP an
+    // engine answers with its bot check; both are reported as such, never as substituted results.
     const web = await c.callTool({
       name: "search",
       arguments: { query: "python asyncio timeout context manager", max_results: 5 },
     });
-    expect(web.isError).toBeFalsy();
-    expect(text(web)).toMatch(/via [a-z+-]+/); // an engine normally; federation as the fallback
-    const code = text(
-      await c.callTool({
-        name: "search",
-        arguments: { query: "duckduckgo metasearch python site:github.com", max_results: 5 },
-      }),
+    const out = text(web);
+    if (web.isError) {
+      expect(out).toMatch(/No results \(|No search engine is available|bot-check|approval/);
+    } else {
+      expect(out).toMatch(/via duckduckgo|via google/);
+      expect(out).toMatch(/https?:\/\//);
+    }
+    // GitHub is read through its API by fetch, never searched.
+    const gh = text(
+      await c.callTool({ name: "fetch", arguments: { url: "https://github.com/funkyfunc/fearch", max_chars: 600 } }),
     );
-    expect(code).toContain("via github");
-    expect(code).toContain("https://github.com/");
+    expect(gh).toContain("source: github-readme");
   }, 120_000);
 });

@@ -9,8 +9,8 @@ export interface SearchQuery {
   maxResults: number;
   recency?: Recency;
   site?: string;
+  /** Only these domains; up to three are sent to the engine as `site:` operators, all are enforced on the results. */
   allowedDomains?: string[];
-  blockedDomains?: string[];
 }
 
 export interface SearchResult {
@@ -18,33 +18,11 @@ export interface SearchResult {
   url: string;
   snippet: string;
   provider: string;
-  /** ISO date (YYYY-MM-DD) when the provider knows it: published/updated/last activity. */
-  date?: string;
   excerpt?: string;
-}
-
-/** Normalize a provider's date-ish value (ISO string, RFC date, or epoch seconds) to YYYY-MM-DD. */
-export function isoDate(v: unknown): string | undefined {
-  if (v === undefined || v === null || v === "") return undefined;
-  const t = typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(String(v));
-  if (!Number.isFinite(t)) return undefined;
-  const d = new Date(t);
-  return d.getFullYear() > 1995 ? d.toISOString().slice(0, 10) : undefined;
-}
-
-/**
- * An answer box the engine itself generated (Google's AI Overview). It is that engine's model's
- * claim, not a fact: always shown labelled, with the sources it cited, never merged into results.
- */
-export interface EngineSummary {
-  text: string;
-  sources: Array<{ title: string; url: string }>;
-  provider: string;
 }
 
 export interface SearchResponse {
   results: SearchResult[];
-  summary?: EngineSummary;
 }
 
 /**
@@ -136,8 +114,6 @@ export interface SearchProvider {
   label?: string;
   /** Human description of where queries go, shown in the result header. */
   disclosure: string;
-  /** Posture per docs/SPECTRUM.md: official API, or a result page opened in the browser tier. */
-  posture: "official" | "browser";
   /** The engine's result pages are not robots-permitted: only a person's own act may open them. */
   needsPerson?: boolean;
   available(): boolean;
@@ -193,7 +169,7 @@ function hostMatches(host: string, domain: string): boolean {
   return h === d || h.endsWith("." + d);
 }
 
-/** Apply site / allowed / blocked domain filters client-side (providers may not support them). */
+/** Enforce `site` / `allowed_domains` on the results (the engine's own operator is a request, not a guarantee). */
 export function filterDomains(results: SearchResult[], q: SearchQuery): SearchResult[] {
   return results.filter((r) => {
     let host: string;
@@ -204,11 +180,6 @@ export function filterDomains(results: SearchResult[], q: SearchQuery): SearchRe
     }
     if (q.site && !hostMatches(host, q.site)) return false;
     if (q.allowedDomains?.length && !q.allowedDomains.some((d) => hostMatches(host, d))) return false;
-    if (q.blockedDomains?.length && q.blockedDomains.some((d) => hostMatches(host, d))) return false;
     return true;
   });
-}
-
-export function recencyToDays(r?: Recency): number | undefined {
-  return r ? { d: 1, w: 7, m: 31, y: 365 }[r] : undefined;
 }

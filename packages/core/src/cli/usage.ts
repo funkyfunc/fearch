@@ -59,6 +59,7 @@ commands (same flags apply; add --json for machine-readable output):
   search <query> [--site domain] [--recency d|w|m|y] [--n N] [--fetch-top N]
   doctor                                  check configuration, providers, browser, and network
   extension install|status|path           set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder
+  clear-profile                           forget the tool-owned browser profile (passed checks, cookies sites set)
   --version                               print the version
 
 When a person runs a command, the audit log is off and only warnings are printed unless --audit-log /

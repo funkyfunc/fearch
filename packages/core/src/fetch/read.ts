@@ -55,7 +55,10 @@ export function readDocument(doc: PageDoc, o: ReadOptions): string {
     return renderPage({ ...page, window: { ...window, total: 0, truncated: false }, note: notes.join(" ") });
   }
 
-  const sections = splitSections(doc.markdown);
+  // Links are stripped (or rewritten) before sectioning, so section offsets, the window and the
+  // cursor all describe the same text. An llms.txt is a link index: its links always stay.
+  const { body, footer } = applyLinkMode(doc.markdown, o.includeLinks || doc.source === "llms.txt");
+  const sections = splitSections(body);
   let selected: Section[] = sections;
   if (o.mode === "section") {
     const found = findSection(sections, requireQuery(o, "a heading"));
@@ -72,8 +75,7 @@ export function readDocument(doc: PageDoc, o: ReadOptions): string {
     );
   }
 
-  const { body, footer } = applyLinkMode(o.mode === "read" ? doc.markdown : joinSections(selected), o.includeLinks);
-  const window = applyBudget(body, offset, o.maxChars);
+  const window = applyBudget(o.mode === "read" ? body : joinSections(selected), offset, o.maxChars);
   // In read mode the sections "shown" are whatever the window covers; otherwise the ones selected.
   const shown =
     o.mode === "read" && window.truncated

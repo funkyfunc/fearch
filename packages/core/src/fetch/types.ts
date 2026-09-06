@@ -1,5 +1,5 @@
-/** `binary`: a response that is not a document at all (an image, an archive, an executable). */
-export type ContentKind = "html" | "markdown" | "text" | "pdf" | "json" | "binary";
+/** `feed`: RSS/Atom. `binary`: a response that is not a document at all (an image, an archive, an executable). */
+export type ContentKind = "html" | "markdown" | "text" | "pdf" | "json" | "feed" | "binary";
 
 export interface Fetched {
   url: string;

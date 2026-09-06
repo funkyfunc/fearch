@@ -87,6 +87,17 @@ describe("sections", () => {
       "# API\n\n## Timeouts\n\nUse asyncio.timeout(10) to bound a wait.\n\n## Sleeping\n\nasyncio.sleep(1) pauses.\n";
     const s3 = splitSections(dotted);
     expect(focusSections(s3, "set a timeout", 120).sections.map((s) => s.title)).toEqual(["Timeouts"]);
+
+    // A heading that names the query beats a long section that merely repeats the word
+    // (docs.python.org asyncio: "Task cancellation" for `cancel`, not the "Task object" reference).
+    const named =
+      "# Tasks\n\n## Task object\n\n" +
+      "To cancel a running Task use cancel(). cancelled() reports whether cancel took. cancel cancel cancel cancel cancel cancel. ".repeat(
+        3,
+      ) +
+      "\n\n## Task cancellation\n\nTasks can easily and safely be cancelled. When a task is cancelled, CancelledError is raised.\n";
+    const s4 = splitSections(named);
+    expect(focusSections(s4, "cancel", 300).sections[0].title).toBe("Task cancellation");
   });
 
   it("says when nothing matched instead of presenting the first section as relevant", () => {
@@ -109,5 +120,7 @@ describe("sections", () => {
   it("cleans titles", () => {
     expect(cleanTitle("[Running tasks](#id8)")).toBe("Running tasks");
     expect(cleanTitle("**Bold** `code` ¶")).toBe("Bold code");
+    expect(cleanTitle('Universal "*" match')).toBe('Universal "*" match');
+    expect(cleanTitle("_em_ and snake_case_name")).toBe("em and snake_case_name");
   });
 });

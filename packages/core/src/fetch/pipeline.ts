@@ -20,6 +20,7 @@ import {
   diagnoseContentSignal,
   diagnoseEmpty,
   diagnoseRobots,
+  diagnoseRobotsUnavailable,
   diagnoseUnpassedChallenge,
   finalizeAfterBrowser,
   isChallengePage,
@@ -28,6 +29,7 @@ import {
 import {
   cleanMarkdownSource,
   detectShell,
+  feedToMarkdown,
   htmlTitle,
   htmlToMarkdown,
   pdfToMarkdown,
@@ -199,12 +201,14 @@ export class Fetcher {
     });
     if (decision.contentSignal)
       throw new DiagnosedError(url, diagnoseContentSignal("robots.txt", decision.contentSignal));
+    if (decision.status === "unavailable")
+      throw new DiagnosedError(url, diagnoseRobotsUnavailable(decision.reason ?? "unreachable"));
     throw new DiagnosedError(url, diagnoseRobots(decision.reason ?? "disallowed"));
   }
 
-  private charge(url: string, units = 1): void {
+  private charge(url: string): void {
     try {
-      for (let i = 0; i < units; i++) this.politeness.charge();
+      this.politeness.charge();
     } catch (e) {
       if (e instanceof BudgetExceeded) throw new DiagnosedError(url, diagnoseBudget(e.message));
       throw e;
@@ -334,22 +338,19 @@ export class Fetcher {
   }
 
   /**
-   * On a docs site's root pages, /llms.txt is usually a far better index than the HTML home. Probed on
-   * the origin the page actually came from, and never recommended when that is the page itself.
+   * On a site's home page, /llms.txt is usually a far better index than the HTML — it replaces the
+   * page. One level down it is probed only when the page came back thin (a docs landing page that is
+   * all navigation); an ordinary one-level page costs the operator no extra request. Probed on the
+   * origin the page actually came from, and never when that is the page itself.
    */
   private async preferLlmsTxt(url: string, finalUrl: string, doc: PageDoc): Promise<PageDoc> {
     const final = new URL(finalUrl);
     const depth = final.pathname.split("/").filter(Boolean).length;
-    if (depth > 1 || /\/llms\.txt$/.test(final.pathname)) return doc;
+    const thin = doc.markdown.trim().length < 500;
+    if (/\/llms\.txt$/.test(final.pathname) || depth > 1 || (depth === 1 && !thin)) return doc;
     const llms = await llmsTxt(finalUrl, this.http("llms.txt")).catch(() => null);
     if (!llms) return doc;
-    if (depth === 0 || doc.markdown.trim().length < 500) {
-      return { ...doc, title: doc.title || "llms.txt", source: "llms.txt", markdown: withTrailingNewline(llms) };
-    }
-    return {
-      ...doc,
-      note: `${doc.note} Note: this site publishes ${final.origin}/llms.txt (an agent-friendly index of its docs).`.trim(),
-    };
+    return { ...doc, title: doc.title || "llms.txt", source: "llms.txt", markdown: withTrailingNewline(llms) };
   }
 
   private async fetchRaw(url: string, httpFallback: boolean): Promise<PageDoc> {
@@ -425,12 +426,17 @@ export class Fetcher {
       const ex = htmlToMarkdown(fetchedText(f));
       return doc(ex.title, f.source === "direct" ? `direct (html/${ex.method})` : f.source, ex.markdown);
     }
+    if (f.kind === "feed") {
+      const ex = feedToMarkdown(fetchedText(f));
+      return doc(ex.title, f.source === "direct" ? "direct (feed)" : f.source, ex.markdown);
+    }
     if (f.kind === "binary") throw new DiagnosedError(url, diagnose(f)!);
     // markdown, text, json
     const { meta, body } = splitFrontmatter(fetchedText(f));
     const text = f.kind === "markdown" ? cleanMarkdownSource(body) : body;
+    // Plain text has no headings: a robots.txt comment line is not a title.
     return doc(
-      meta.title ?? firstHeading(text),
+      meta.title ?? (f.kind === "text" ? "" : firstHeading(text)),
       f.source === "direct" ? `direct (${f.kind})` : f.source,
       withTrailingNewline(text),
     );
@@ -453,7 +459,7 @@ export class Fetcher {
     directLabel?: string,
   ): Promise<Fetched> {
     const attempts = [`direct: ${directLabel ?? plain.kind}`];
-    this.charge(url, 1);
+    this.charge(url);
     let rendered;
     try {
       rendered = await this.politeness.run(

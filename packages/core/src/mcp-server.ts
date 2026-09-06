@@ -43,15 +43,18 @@ export function searchDescription(s: Settings): string {
 
 Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
 
-\`site="docs.python.org"\` restricts to a domain (sent as the engine's \`site:\` operator and enforced on the results); \`recency="w"\` limits to the past week (d/w/m/y, as the engine's own date filter). Quoted phrases and \`-term\` exclusions work as typed. Results carry a date when the engine shows one. Quote exact error strings. If results are poor, rephrase rather than paging.
+\`site="docs.python.org"\` restricts to a domain (sent as the engine's \`site:\` operator and enforced on the results; \`allowed_domains\` does the same for up to three); \`recency="w"\` limits to the past week (d/w/m/y, as the engine's own date filter). Quoted phrases and \`-term\` exclusions work as typed. Quote exact error strings. If results are poor, rephrase rather than paging.
 
 ${posture} It never impersonates a browser or hides that it is automated.`;
 }
 
-export function fetchDescription(_s: Settings): string {
+export function fetchDescription(s: Settings): string {
   const robots =
     "identifies itself honestly, honours robots.txt (including AI-agent opt-outs), and waits between requests to a host";
-  return `Fetch a web page and return its main content as clean markdown (boilerplate removed; code blocks and tables preserved). Handles HTML, markdown, plain text, PDF, GitHub (files, READMEs, issues, tree listings, releases, gists), PyPI, npm, StackOverflow and llms.txt.
+  const check = personPresent(s)
+    ? "A bot check is the exception: you are asked whether to open it for the user, the page waits for them, and the Diagnosis is marked retryable — call the same URL again once they have passed it."
+    : "A bot check is final here too: nobody can be shown one on this server.";
+  return `Fetch a web page and return its main content as clean markdown (boilerplate removed; code blocks and tables preserved). Handles HTML, markdown, plain text, PDF, RSS/Atom feeds, GitHub (files, READMEs, issues, tree listings, releases, gists), PyPI, npm, StackOverflow and llms.txt.
 
 Output is bounded by \`max_chars\` (default 12000). Long pages: don't page blindly — pick a mode:
   - \`mode="focus", query="what you are looking for"\` → only the sections relevant to that phrase (BM25, no LLM).
@@ -61,19 +64,23 @@ Output is bounded by \`max_chars\` (default 12000). Long pages: don't page blind
 The header says when the page was last updated when the site declares it; "may be stale" means over a year old.
 \`urls=[...]\` (max 5) reads several pages in one call. \`include_links=true\` keeps hyperlinks as reference-style links.
 
-Respectful by design: ${robots}. If the plain HTTP client gets an empty JavaScript shell or is refused, the page is opened once in a real, self-identified browser (no stealth, no CAPTCHA solving). If that is refused too (403, paywall, login) the refusal is final — you get a Diagnosis explaining why and what to do instead; do not retry the same URL. A bot check is the exception: where a person is on call you are asked whether to open it, the page waits for you, and the Diagnosis is marked retryable — call the same URL again once you have passed it. \`archive=true\` reads a Wayback Machine copy, only for pages that are gone (404/410).`;
+Respectful by design: ${robots}. If the plain HTTP client gets an empty JavaScript shell or is refused, the page is opened once in a real, self-identified browser (no stealth, no CAPTCHA solving). If that is refused too (403, paywall, login) the refusal is final — you get a Diagnosis explaining why and what to do instead; do not retry the same URL. ${check} \`archive=true\` reads a Wayback Machine copy, only for pages that are gone (404/410).`;
 }
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true, idempotentHint: true, destructiveHint: false } as const;
 const MAX_URLS_PER_CALL = 5;
+/** Questions to the person per tool call before the tool gives up (a form, then a check, then a form…). */
+const MAX_ROUNDS = 8;
 
 const SEARCH_INPUT = {
   query: z.string().min(2).describe("Search query. Supports quoted phrases."),
   max_results: z.number().int().min(1).max(20).default(8).describe("Number of results (default 8)."),
   recency: z.enum(["d", "w", "m", "y"]).optional().describe("Restrict to the past day/week/month/year."),
   site: z.string().optional().describe("Restrict results to this domain, e.g. 'docs.python.org'."),
-  allowed_domains: z.array(z.string()).optional().describe("Only include results from these domains."),
-  blocked_domains: z.array(z.string()).optional().describe("Never include results from these domains."),
+  allowed_domains: z
+    .array(z.string())
+    .optional()
+    .describe("Only results from these domains (up to three are sent to the engine as site: operators)."),
   fetch_top: z
     .number()
     .int()
@@ -262,7 +269,10 @@ function queryFormSchema(
       : ask.profileKind === "own-chrome"
         ? "On: a private window. Off: your Chrome, signed in as you."
         : "On: a private window. Off: fearch's own Chrome profile.";
-    properties.incognito = { type: "boolean", title: "Incognito", description, default: s.incognito };
+    // Google in the person's own Chrome defaults to incognito: the query then binds no account of
+    // theirs (docs/RESEARCH-RECONCILIATION.md, Report E); `--incognito` sets it everywhere.
+    const incognitoDefault = s.incognito || (ask.engine === "google" && ask.profileKind === "own-chrome");
+    properties.incognito = { type: "boolean", title: "Incognito", description, default: incognitoDefault };
   }
   properties.ask_again = {
     type: "boolean",
@@ -346,7 +356,7 @@ function searchCheckRequest(e: SearchCheckRequired): { params: ElicitRequestForm
 }
 
 /** The answer to the form, as the next search round. */
-function searchRound(state: SearchState, answer: QueryChoice | "declined"): SearchRound {
+function searchRound(state: SearchState, answer: SearchRound["answer"]): SearchRound {
   return { answer, skip: state.tried, priorErrors: state.errors, priorNotes: state.notes };
 }
 
@@ -359,12 +369,15 @@ function unansweredSearchCheck(st: { engine: string; url: string }, how: string)
   );
 }
 
-/** No answer to the form: nothing ran under the person's name. `how`: what became of the prompt. */
-function unansweredSearch(ask: QueryAsk, how: string): CallToolResult {
-  const engine = ask.engines.find((e) => e.name === ask.engine)?.label ?? ask.engine;
-  return failure(
-    `${engine}: needs your approval in your MCP client and ${how} (asked at ${utcNow()}) — search again when you are at the screen. Nothing ran.`,
-  );
+/**
+ * No answer to the form: nothing runs under the person's name on that engine. The round goes on
+ * without it — engines that need no approval still answer — and the note says what happened.
+ */
+function unansweredSearch(state: SearchState, how: string): SearchRound {
+  const engine = state.ask.engines.find((e) => e.name === state.ask.engine)?.label ?? state.ask.engine;
+  return searchRound(state, {
+    unanswered: `${engine} needs your approval in your MCP client and ${how} (asked at ${utcNow()}) — not run; search again when you are at the screen to run it there`,
+  });
 }
 
 /** No answer to "open this bot check?": the page keeps waiting in the background; the next fetch asks again. */
@@ -406,6 +419,27 @@ async function askLegacy(
   }
 }
 
+type Asked = { input: InputRequiredResult } | { answer: ElicitResult | "unanswered" };
+
+/**
+ * One question to the person: as the tool's result carrying sealed state (2026-07-28, the client
+ * owns the wait), or asked directly and awaited on fearch's clock (2025-era).
+ */
+async function askPerson(
+  server: McpServer,
+  ctx: ServerContext,
+  key: "form" | "open",
+  params: ElicitRequestFormParams,
+  next: RoundState,
+  timeoutMs: number,
+): Promise<Asked> {
+  if (!isLegacy(server)) {
+    const requestState = await stateCodec.mint(next, ctx);
+    return { input: inputRequired({ inputRequests: { [key]: inputRequired.elicit(params) }, requestState }) };
+  }
+  return { answer: await askLegacy(server, params, timeoutMs) };
+}
+
 export function buildServer(app: App): McpServer {
   const server = new McpServer(
     { name: "fearch", version: app.settings.version },
@@ -422,6 +456,13 @@ export function buildServer(app: App): McpServer {
   /** Pages whose bot check is waiting for an answer, by the URL the caller used: the next fetch asks again, no re-render. */
   const waitingByTarget = new Map<string, { id: string; attempts: string[] }>();
   const waited = `${Math.round(timeoutMs / 1000)} s`;
+  /** What became of a directly-asked prompt that brought no choice, or null when it did. */
+  const silence = (r: ElicitResult | "unanswered"): string | null =>
+    r === "unanswered"
+      ? `nobody answered within ${waited}`
+      : r.action === "cancel"
+        ? "the prompt was dismissed without an answer"
+        : null;
 
   server.registerTool(
     "search",
@@ -456,7 +497,6 @@ export function buildServer(app: App): McpServer {
               recency: args.recency,
               site: args.site?.trim() || undefined,
               allowedDomains: args.allowed_domains,
-              blockedDomains: args.blocked_domains,
             },
             round,
           );
@@ -476,43 +516,44 @@ export function buildServer(app: App): McpServer {
       if (state?.kind === "search") {
         const v = inputResponse(ctx.mcpReq.inputResponses, "form");
         // `cancel` is the client's word for a prompt dismissed or timed out without a choice — not a no.
-        if (v.kind !== "elicit" || v.action === "cancel")
-          return unansweredSearch(state.ask, "the prompt was dismissed or timed out without an answer");
-        round = searchRound(state, v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined");
+        round =
+          v.kind !== "elicit" || v.action === "cancel"
+            ? unansweredSearch(state, "the prompt was dismissed or timed out without an answer")
+            : searchRound(state, v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined");
       } else if (state?.kind === "searchCheck") {
         const v = inputResponse(ctx.mcpReq.inputResponses, "open");
         if (v.kind !== "elicit" || v.action === "cancel")
           return unansweredSearchCheck(state, "the prompt was dismissed or timed out without an answer");
         round = resumeSearch(state, v.action === "accept" ? "accept" : "declined");
       }
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < MAX_ROUNDS; i++) {
         const out = await run(round);
         if (out instanceof SearchCheckRequired) {
           const { params, state: next } = searchCheckRequest(out);
-          if (!isLegacy(server))
-            return inputRequired({
-              inputRequests: { open: inputRequired.elicit(params) },
-              requestState: await stateCodec.mint(next, ctx),
-            });
-          const r = await askLegacy(server, params, timeoutMs);
-          if (r === "unanswered") return unansweredSearchCheck(out, `nobody answered within ${waited}`);
-          if (r.action === "cancel") return unansweredSearchCheck(out, "the prompt was dismissed without an answer");
-          round = resumeSearch(next, r.action === "accept" ? "accept" : "declined");
+          const asked = await askPerson(server, ctx, "open", params, next, timeoutMs);
+          if ("input" in asked) return asked.input;
+          const how = silence(asked.answer);
+          if (how) return unansweredSearchCheck(out, how);
+          round = resumeSearch(
+            next,
+            asked.answer !== "unanswered" && asked.answer.action === "accept" ? "accept" : "declined",
+          );
           continue;
         }
         if (!(out instanceof QueryFormRequired)) return out;
         const { params, state: next } = queryFormRequest(out, app.settings);
-        if (!isLegacy(server))
-          return inputRequired({
-            inputRequests: { form: inputRequired.elicit(params) },
-            requestState: await stateCodec.mint(next, ctx),
-          });
-        const r = await askLegacy(server, params, timeoutMs);
-        if (r === "unanswered") return unansweredSearch(out.ask, `nobody answered within ${waited}`);
-        if (r.action === "cancel") return unansweredSearch(out.ask, "the prompt was dismissed without an answer");
-        round = searchRound(next, r.action === "accept" ? choiceFrom(r.content ?? {}, next.ask) : "declined");
+        const asked = await askPerson(server, ctx, "form", params, next, timeoutMs);
+        if ("input" in asked) return asked.input;
+        const how = silence(asked.answer);
+        const r = asked.answer;
+        round = how
+          ? unansweredSearch(next, how)
+          : searchRound(
+              next,
+              r !== "unanswered" && r.action === "accept" ? choiceFrom(r.content ?? {}, next.ask) : "declined",
+            );
       }
-      return failure(`search:${query}: asked ${8} times without a search running; giving up.`);
+      return failure(`search:${query}: asked ${MAX_ROUNDS} times without a search running; giving up.`);
     },
   );
 
@@ -616,24 +657,21 @@ export function buildServer(app: App): McpServer {
         }
         resumed = resume(state, v.action === "accept" ? "accept" : "declined");
       }
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < MAX_ROUNDS; i++) {
         const out = await run(resumed);
         if (!isWaiting(out)) return out;
         const { params, state: next } = openRequest(out.pending, out.target);
         waitingByTarget.set(out.target, { id: out.pending.id, attempts: out.pending.attempts });
-        if (!isLegacy(server))
-          return inputRequired({
-            inputRequests: { open: inputRequired.elicit(params) },
-            requestState: await stateCodec.mint(next, ctx),
-          });
-        const r = await askLegacy(server, params, timeoutMs);
-        if (r === "unanswered")
-          return unansweredCheck(out.target, out.pending.attempts, `nobody answered within ${waited}`);
-        if (r.action === "cancel")
-          return unansweredCheck(out.target, out.pending.attempts, "the prompt was dismissed without an answer");
-        resumed = resume(next, r.action === "accept" ? "accept" : "declined");
+        const asked = await askPerson(server, ctx, "open", params, next, timeoutMs);
+        if ("input" in asked) return asked.input;
+        const how = silence(asked.answer);
+        if (how) return unansweredCheck(out.target, out.pending.attempts, how);
+        resumed = resume(
+          next,
+          asked.answer !== "unanswered" && asked.answer.action === "accept" ? "accept" : "declined",
+        );
       }
-      return failure(`${targets[0]}: asked ${8} times without an answer that finished the read; giving up.`);
+      return failure(`${targets[0]}: asked ${MAX_ROUNDS} times without an answer that finished the read; giving up.`);
     },
   );
 

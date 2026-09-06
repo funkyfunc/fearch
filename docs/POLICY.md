@@ -15,10 +15,10 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   `FEARCH_UA_CONTACT` exists for deployments that want to append one.
 - The User-Agent cannot be set to a browser string. There is no configuration option to do so.
 - No TLS fingerprint impersonation, no header randomization, no fake `Referer`/`Origin`. The plain
-  HTTP client holds no cookies. The browser tier's cookies are exactly what a person's browsing
-  creates: the tool-owned profile keeps what the person did in windows the tool opened, and the
-  extension mode is the person's own Chrome profile (their choice to pair it); reads that carry a
-  person's session are labelled in the result header.
+  HTTP client holds no cookies. The browser tier has one tool-owned profile (see *Session* below)
+  that holds only what the tool's own browser accumulated — passed checks and the cookies ordinary
+  sites set; the extension mode is the person's own Chrome profile (their choice to pair it), and
+  reads that carry a person's session are labelled in the result header.
 
 ## Consent signals
 
@@ -73,8 +73,9 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   agents that identify themselves, and neither company reads search results by driving a user's
   browser. RFC 9309 scopes itself to "automatic clients known as crawlers". See
   `RESEARCH-RECONCILIATION.md`, Report C.
-- If `robots.txt` returns 401/403, the host is treated as disallowed. This is a choice, not the RFC's
-  rule: RFC 9309 §2.3.1.3 lets a crawler treat a 4xx as "no robots.txt" and read; §2.3.1.4 mandates
+- If `robots.txt` returns 401/403, the host is treated as disallowed — reported as a `robots_unavailable`
+  diagnosis, not `robots_disallowed`, because a WAF refusing our User-Agent is not the operator's
+  stated rule. This is a choice, not the RFC's rule: RFC 9309 §2.3.1.3 lets a crawler treat a 4xx as "no robots.txt" and read; §2.3.1.4 mandates
   disallow only for 5xx/network failures, which fearch also honours. A network failure while
   fetching robots.txt is not cached (the next call asks again); an answer from the host is cached for
   an hour. When the page URL was upgraded from `http://` optimistically, the robots.txt probe may fall
@@ -156,12 +157,17 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   nothing; it only watches for the page to stop being a challenge. The extension activates the tab
   and asks for attention (dock/taskbar) without taking focus. Without handoff, or where nothing can
   be shown, a challenge is final.
-- **Session.** The tool-owned profile (auto) holds only what the person did in windows the
-  tool opened — passed checks, above all. It is sent to engine pages (that is where a passed check
-  lives) and never to ordinary page reads; there is no setting that forwards it to ordinary pages
-  (one existed until 2026-09-02 and was removed). Through the bridge extension, ordinary reads in
-  `auto` go to the logged-out headless tier first and reach the person's Chrome only for a check;
-  `--incognito` keeps the person's profile out of engine pages too.
+- **Session.** `auto` has one tool-owned browser profile, persisted as `browser-state.json`
+  under the cache directory (mode 0600), and every Playwright render uses it — headless page
+  reads, escalation windows and engine pages alike. That is what keeps a passed check passed: the
+  clearance the person earned for a host in a window must reach the next headless read of that
+  host, or the window would reappear per page. The profile therefore holds two kinds of thing:
+  what the person did in windows the tool opened (passed checks, a login they chose to do there),
+  and whatever ordinary sites set during headless reads (session cookies, trackers). It never
+  holds the person's own Chrome cookies — Chrome refuses automation on a real profile — and
+  `fearch clear-profile` empties it. Explicit `headless` mode is stateless. Through the bridge
+  extension, ordinary reads in `auto` go to this headless tier first and reach the person's Chrome
+  only for a check; `--incognito` keeps the person's profile out of engine pages too.
 - **Identity.** Every request from the Playwright tiers carries `From:` (RFC 9110 §10.1.2 — the
   header defined for a robot to name who controls it; set to the bot-info URL or `FEARCH_UA_CONTACT`)
   and `X-Agent: fearch/<version> (+<info-url>)`. There is no setting that removes them (one existed

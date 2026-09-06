@@ -38,7 +38,8 @@ You have `search` and `fetch`.
   came back, or another URL on the site.
 - GitHub, PyPI, npm and StackOverflow URLs are read through their APIs — prefer those URLs over
   mirrors. Documentation sites often serve markdown directly; you will see `source: direct (markdown)`.
-- Results and pages show a date when the site declares one. Prefer recent sources for anything
-  version-specific, and say when a page is marked "may be stale".
+- Pages show a date when the site declares one. Prefer recent sources for anything
+  version-specific, and say when a page is marked "may be stale". A page whose header says
+  `direct (html/body)` and holds only a line or two is probably an app the tool could not read.
 - The tools identify themselves honestly and respect robots.txt. Never ask for that to be bypassed.
 ```

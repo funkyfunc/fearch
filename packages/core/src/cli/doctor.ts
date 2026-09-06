@@ -28,14 +28,17 @@ export async function doctor(app: App, opts: { json?: boolean } = {}): Promise<n
   const providers = app.search.describe();
   (s.searchMode !== "off" && /\(none\)/.test(providers) ? warn : ok)("search providers", providers);
 
-  // The network, and that the honest UA reaches the other end.
+  // The network: one request to the tool's own bot-info page, the only host doctor ever contacts
+  // (no echo services — a third party would see the machine's address on every doctor run).
+  const probe = s.uaInfoUrl.replace(/#.*$/, "");
   try {
-    const r = await app.fetcher.http("doctor")("https://httpbin.org/user-agent", {});
-    const ua = ((await r.json()) as { "user-agent"?: string })["user-agent"] ?? "";
-    if (ua.includes("fearch/")) ok("network", `reached httpbin.org; server saw UA "${ua}"`);
-    else warn("network", `httpbin.org saw an unexpected UA: ${ua}`);
+    const r = await app.fetcher.http("doctor")(probe, {});
+    (r.status < 400 ? ok : warn)(
+      "network",
+      `reached ${new URL(probe).host} (HTTP ${r.status}) with the User-Agent above`,
+    );
   } catch (e) {
-    fail("network", `could not reach httpbin.org: ${(e as Error).message}`);
+    fail("network", `could not reach ${new URL(probe).host}: ${(e as Error).message}`);
   }
 
   // One real search, never from the cache: doctor checks the engines, not yesterday's answer.

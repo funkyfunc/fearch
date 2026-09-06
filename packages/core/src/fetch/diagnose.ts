@@ -8,6 +8,7 @@ import { fetchedText } from "./types.js";
 
 export type DiagnosisKind =
   | "robots_disallowed"
+  | "robots_unavailable"
   | "blocked_or_waf"
   | "captcha_or_challenge"
   | "rate_limited"
@@ -148,6 +149,17 @@ export function diagnoseRobots(reason: string): Diagnosis {
     retryable: false,
     message: `robots.txt disallows fetching this URL (${reason}). The page was not requested.`,
     nextAction: "Use a different source (search with site: for an alternative, or an official API/mirror). " + BOOK,
+  };
+}
+
+/** robots.txt could not be read (4xx, 5xx, network): the tool fails closed, and says that this is its choice, not the operator's. */
+export function diagnoseRobotsUnavailable(reason: string): Diagnosis {
+  return {
+    kind: "robots_unavailable",
+    retryable: false,
+    message: `robots.txt could not be read (${reason}), so the page was not requested: fearch fails closed rather than guess the operator's rules. This is not the operator saying no.`,
+    nextAction:
+      "Use a different source, or ask the user to open the page. Retrying later may help if the host was down. " + BOOK,
   };
 }
 
