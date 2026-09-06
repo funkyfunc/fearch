@@ -20,13 +20,14 @@ import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { localeParts, personPresent, type Settings } from "../config.js";
-import type { BrowserTier } from "../fetch/browser.js";
+import { HandoffPending, type BrowserTier, type Rendered } from "../fetch/browser.js";
 import type { RobotsChecker } from "../fetch/robots.js";
 import type { Politeness } from "../politeness.js";
 import {
   dedupe,
   filterDomains,
   RateLimited,
+  SearchCheckRequired,
   SearchError,
   type EngineSummary,
   type Recency,
@@ -423,7 +424,7 @@ export class EngineProvider implements SearchProvider {
         );
       crawlDelayMs = decision.crawlDelayMs ?? 0;
     }
-    let rendered;
+    let rendered: Rendered;
     try {
       rendered = await this.politeness.run(
         this.spec.host,
@@ -450,8 +451,18 @@ export class EngineProvider implements SearchProvider {
         Math.max(this.gapMs, crawlDelayMs),
       );
     } catch (e) {
+      // The check is being put to the person as the tool's result; the page waits for their answer.
+      if (e instanceof HandoffPending)
+        throw new SearchCheckRequired(e.id, e.url, e.where, this.name, async (r) =>
+          this.finish(r, q, !!human, submittedByPerson),
+        );
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
+    return this.finish(rendered, q, !!human, submittedByPerson);
+  }
+
+  /** Everything after the render: the engine's answer, judged and parsed. A suspended check resumes here. */
+  private finish(rendered: Rendered, q: SearchQuery, human: boolean, submittedByPerson: boolean): SearchResponse {
     if (human && !rendered.handedOff) {
       // The tab/window was closed when the render returned: there is nothing left to press Enter in.
       throw new SearchError(

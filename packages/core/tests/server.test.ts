@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { settingsFromEnv } from "../src/config.js";
 import { PendingCheck, type PageDoc } from "../src/fetch/pipeline.js";
 import type { HandoffContinuation, Rendered } from "../src/fetch/browser.js";
-import { RateLimited } from "../src/search/provider.js";
+import { RateLimited, SearchCheckRequired } from "../src/search/provider.js";
 import { createApp, type App } from "../src/app.js";
 import { buildServer } from "../src/server.js";
 
@@ -571,5 +571,96 @@ describe("query confirmation across engines", () => {
     expect(text(r)).toContain("https://x.test/g");
     expect(text(r)).toContain("bot check"); // the first engine's failure is still reported
     await c.close();
+  });
+});
+
+describe("a bot check on an engine page", () => {
+  /** google, faked: its result page hits a check; the search suspends like the real engine does and finishes from the resumed render. */
+  function checkingGoogle(state: App) {
+    const answers: string[] = [];
+    const engines = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines;
+    const google = engines.find((e) => e.name === "google")!;
+    const ddg = engines.find((e) => e.name === "duckduckgo")!;
+    (state.search as unknown as { web: unknown[] }).web = [google, ddg];
+    let ddgRuns = 0;
+    ddg.search = async () => {
+      ddgRuns++;
+      return { results: [{ title: "d", url: "https://x.test/ddg", snippet: "s", provider: "duckduckgo" }] };
+    };
+    google.search = async (q: { query: string }) => {
+      const url = `https://www.google.com/search?q=${encodeURIComponent(q.query)}`;
+      const cont: HandoffContinuation = {
+        async resume(answer) {
+          answers.push(answer);
+          return {
+            html: "<html>results</html>",
+            finalUrl: url,
+            status: 200,
+            salvaged: false,
+            usedSession: true,
+            handedOff: answer === "accept",
+            handoff: answer === "accept" ? "passed" : "declined",
+          } as Rendered;
+        },
+        async cancel() {},
+      };
+      const asked = await state.gate.ask!({ url, where: "a tab in your Chrome" }, cont);
+      if (typeof asked !== "object") throw new Error(`unexpected gate answer ${asked}`);
+      throw new SearchCheckRequired(asked.deferred, url, "a tab in your Chrome", "google", async (r) => {
+        if (r.handedOff)
+          return { results: [{ title: "g", url: "https://x.test/google", snippet: "s", provider: "google" }] };
+        throw new RateLimited("google: Google showed its bot-check page; you declined to open it");
+      });
+    };
+    return { answers, ddgRuns: () => ddgRuns };
+  }
+
+  it("asks to open it after the form; yes finishes the search from that page, no falls through to the next engine, dismissed leaves it waiting", async () => {
+    const state = createApp(
+      settingsFromEnv({
+        FEARCH_NO_CACHE: "1",
+        FEARCH_AUDIT_LOG: "off",
+        FEARCH_LOG_LEVEL: "error",
+        FEARCH_ENGINES: "google,duckduckgo",
+        ...NO_EXTENSION,
+      } as NodeJS.ProcessEnv),
+    );
+    const fake = checkingGoogle(state);
+    const asked: string[] = [];
+    let ddgRunsAtPrompt = -1;
+    let open: "accept" | "decline" | "cancel" = "accept";
+    const c = await elicitingClient(state, async (req) => {
+      asked.push(req.params.message);
+      if (req.params.message.includes("Run this search as you?"))
+        return { action: "accept", content: { query: "checked query", google: true, ask_again: true } };
+      ddgRunsAtPrompt = fake.ddgRuns();
+      return { action: open };
+    });
+    const yes = await c.callTool({ name: "search", arguments: { query: "checked query" } });
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toContain("Run this search as you?");
+    expect(asked[1]).toContain("A bot check appeared on www.google.com. Open it for you in a tab in your Chrome?");
+    expect(fake.answers).toEqual(["accept"]);
+    expect(text(yes)).toContain("https://x.test/google");
+    expect(ddgRunsAtPrompt).toBe(0); // the search did not fall through while the question was open
+    expect(fake.ddgRuns()).toBe(1); // …and the chain went on to fill the result count once Google answered
+    expect(state.pending.size).toBe(0);
+
+    open = "decline";
+    const no = await c.callTool({ name: "search", arguments: { query: "checked query two" } }); // a new query: the first was cached
+    expect(fake.answers).toEqual(["accept", "declined"]);
+    expect(text(no)).toContain("https://x.test/ddg"); // that is the answer for Google; DuckDuckGo still runs
+    expect(text(no)).toContain("you declined to open it");
+    expect(fake.ddgRuns()).toBe(2);
+
+    open = "cancel";
+    const gone = await c.callTool({ name: "search", arguments: { query: "checked query three" } });
+    expect(gone.isError).toBe(true);
+    expect(text(gone)).toContain("dismissed without an answer");
+    expect(text(gone)).toContain("waits in the background");
+    expect(fake.answers).toHaveLength(2);
+    expect(state.pending.size).toBe(1); // the Google tab waits for the person
+    await c.close();
+    await state.close();
   });
 });

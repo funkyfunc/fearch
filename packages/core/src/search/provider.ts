@@ -1,5 +1,7 @@
 /** Search provider contract shared by every backend, plus result normalization. */
 
+import type { Rendered } from "../fetch/browser.js";
+
 export type Recency = "d" | "w" | "m" | "y";
 
 export interface SearchQuery {
@@ -92,6 +94,30 @@ export class QueryFormRequired extends Error {
   constructor(readonly ask: QueryAsk) {
     super(`the query needs the person's approval (${ask.engine})`);
     this.name = "QueryFormRequired";
+  }
+}
+
+/**
+ * Thrown by an engine whose result page hit a bot check while the question to the person travels as
+ * the tool's result: the render is suspended under `id` (see `PendingChecks`); when the answer comes
+ * back, `complete` finishes the search from the resumed render. Like `QueryFormRequired`, it carries
+ * what this round established so the next one can pick up where it stopped.
+ */
+export class SearchCheckRequired extends Error {
+  tried: string[] = [];
+  errors: string[] = [];
+  notes: string[] = [];
+  /** The form answer applied in this round, re-applied when the search resumes. */
+  answer?: QueryChoice;
+  constructor(
+    readonly id: string,
+    readonly url: string,
+    readonly where: string,
+    readonly engine: string,
+    readonly complete: (rendered: Rendered) => Promise<SearchResponse>,
+  ) {
+    super(`${engine}: bot check on ${url} is waiting for the person (${id})`);
+    this.name = "SearchCheckRequired";
   }
 }
 

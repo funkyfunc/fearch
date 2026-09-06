@@ -25,7 +25,7 @@ import { PendingCheckGone } from "./fetch/pending.js";
 import { PendingCheck } from "./fetch/pipeline.js";
 import { READ_MODES, readDocument, type ReadOptions } from "./fetch/read.js";
 import { attachExcerpts } from "./search/excerpt.js";
-import { QueryFormRequired, type QueryAsk, type QueryChoice } from "./search/provider.js";
+import { QueryFormRequired, SearchCheckRequired, type QueryAsk, type QueryChoice } from "./search/provider.js";
 import type { SearchRound } from "./search/registry.js";
 import { renderResults } from "./search/render.js";
 
@@ -159,7 +159,18 @@ export function serverInstructions(s: Settings): string {
  */
 type RoundState =
   | { kind: "search"; ask: QueryAsk; tried: string[]; errors: string[]; notes: string[] }
-  | { kind: "check"; id: string; url: string; target: string; where: string; attempts: string[] };
+  | { kind: "check"; id: string; url: string; target: string; where: string; attempts: string[] }
+  | {
+      kind: "searchCheck";
+      id: string;
+      url: string;
+      where: string;
+      engine: string;
+      answer?: QueryChoice;
+      tried: string[];
+      errors: string[];
+      notes: string[];
+    };
 
 const stateCodec = createRequestStateCodec<RoundState>({ key: randomBytes(32), ttlSeconds: 900 });
 
@@ -281,13 +292,14 @@ function choiceFrom(content: Record<string, unknown>, ask: QueryAsk): QueryChoic
 type ElicitSchema = ElicitRequestFormParams["requestedSchema"];
 type SearchState = Extract<RoundState, { kind: "search" }>;
 type CheckState = Extract<RoundState, { kind: "check" }>;
+type SearchCheckState = Extract<RoundState, { kind: "searchCheck" }>;
 
 /** The two questions, as elicitation params plus the state the answer must come back with. */
 function queryFormRequest(e: QueryFormRequired, s: Settings): { params: ElicitRequestFormParams; state: SearchState } {
   const { properties, required } = queryFormSchema(e.ask, s);
   return {
     params: {
-      message: `${e.ask.reason ? `${e.ask.reason} ` : ""}Run this search as you? Edit the query if you like.`,
+      message: `Run this search as you? Edit the query if you like.${e.ask.reason ? ` (${e.ask.reason})` : ""}`,
       requestedSchema: { type: "object", properties, required } as unknown as ElicitSchema,
     },
     state: { kind: "search", ask: e.ask, tried: e.tried, errors: e.errors, notes: e.notes },
@@ -295,18 +307,41 @@ function queryFormRequest(e: QueryFormRequired, s: Settings): { params: ElicitRe
 }
 
 function openRequest(e: PendingCheck, target: string): { params: ElicitRequestFormParams; state: CheckState } {
-  let host = e.url;
-  try {
-    host = new URL(e.url).host;
-  } catch {
-    // keep the raw url
-  }
   return {
     params: {
-      message: `A bot check appeared on ${host}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
+      message: `A bot check appeared on ${hostOf(e.url)}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
       requestedSchema: { type: "object", properties: {} } as unknown as ElicitSchema,
     },
     state: { kind: "check", id: e.id, url: e.url, target, where: e.where, attempts: e.attempts },
+  };
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** "Open this bot check?" for an engine page, plus the state that resumes the search. */
+function searchCheckRequest(e: SearchCheckRequired): { params: ElicitRequestFormParams; state: SearchCheckState } {
+  return {
+    params: {
+      message: `A bot check appeared on ${hostOf(e.url)}. Open it for you in ${e.where}? You then pass it yourself; the tool never solves checks.`,
+      requestedSchema: { type: "object", properties: {} } as unknown as ElicitSchema,
+    },
+    state: {
+      kind: "searchCheck",
+      id: e.id,
+      url: e.url,
+      where: e.where,
+      engine: e.engine,
+      answer: e.answer,
+      tried: e.tried,
+      errors: e.errors,
+      notes: e.notes,
+    },
   };
 }
 
@@ -316,6 +351,13 @@ function searchRound(state: SearchState, answer: QueryChoice | "declined"): Sear
 }
 
 const utcNow = () => new Date().toISOString().slice(11, 16) + " UTC";
+
+/** No answer to "open this bot check?" on an engine page: nothing opened, the page waits; the search stops here. */
+function unansweredSearchCheck(st: { engine: string; url: string }, how: string): CallToolResult {
+  return failure(
+    `${st.engine}: showed its bot check (${hostOf(st.url)}); you were asked (${utcNow()}) whether to open it and ${how}, so nothing was opened. The page waits in the background for ten minutes. Search again when you are at the screen and you will be asked again.`,
+  );
+}
 
 /** No answer to the form: nothing ran under the person's name. `how`: what became of the prompt. */
 function unansweredSearch(ask: QueryAsk, how: string): CallToolResult {
@@ -393,7 +435,19 @@ export function buildServer(app: App): McpServer {
       begin(ctx);
       const query = args.query.trim();
       const progress = progressReporter(ctx, 1 + args.fetch_top);
-      const run = async (round: SearchRound): Promise<CallToolResult | QueryFormRequired> => {
+      /** The person's answer to "open this bot check?": the suspended engine finishes from the resumed render. */
+      const resumeSearch = (st: SearchCheckState, a: "accept" | "declined"): SearchRound => {
+        const rendered = app.pending.resume(st.id, a);
+        rendered.catch(() => {}); // surfaced by the registry as that engine's failure, not as an unhandled rejection
+        return {
+          answer: st.answer,
+          skip: st.tried,
+          priorErrors: st.errors,
+          priorNotes: st.notes,
+          resumeCheck: { id: st.id, rendered },
+        };
+      };
+      const run = async (round: SearchRound): Promise<CallToolResult | QueryFormRequired | SearchCheckRequired> => {
         try {
           const outcome = await app.search.search(
             {
@@ -412,7 +466,7 @@ export function buildServer(app: App): McpServer {
           );
           return text(renderResults(query, outcome));
         } catch (e) {
-          if (e instanceof QueryFormRequired) return e;
+          if (e instanceof QueryFormRequired || e instanceof SearchCheckRequired) return e;
           return failure(describeError(`search:${query}`, e));
         }
       };
@@ -425,9 +479,27 @@ export function buildServer(app: App): McpServer {
         if (v.kind !== "elicit" || v.action === "cancel")
           return unansweredSearch(state.ask, "the prompt was dismissed or timed out without an answer");
         round = searchRound(state, v.action === "accept" ? choiceFrom(v.content ?? {}, state.ask) : "declined");
+      } else if (state?.kind === "searchCheck") {
+        const v = inputResponse(ctx.mcpReq.inputResponses, "open");
+        if (v.kind !== "elicit" || v.action === "cancel")
+          return unansweredSearchCheck(state, "the prompt was dismissed or timed out without an answer");
+        round = resumeSearch(state, v.action === "accept" ? "accept" : "declined");
       }
       for (let i = 0; i < 8; i++) {
         const out = await run(round);
+        if (out instanceof SearchCheckRequired) {
+          const { params, state: next } = searchCheckRequest(out);
+          if (!isLegacy(server))
+            return inputRequired({
+              inputRequests: { open: inputRequired.elicit(params) },
+              requestState: await stateCodec.mint(next, ctx),
+            });
+          const r = await askLegacy(server, params, timeoutMs);
+          if (r === "unanswered") return unansweredSearchCheck(out, `nobody answered within ${waited}`);
+          if (r.action === "cancel") return unansweredSearchCheck(out, "the prompt was dismissed without an answer");
+          round = resumeSearch(next, r.action === "accept" ? "accept" : "declined");
+          continue;
+        }
         if (!(out instanceof QueryFormRequired)) return out;
         const { params, state: next } = queryFormRequest(out, app.settings);
         if (!isLegacy(server))

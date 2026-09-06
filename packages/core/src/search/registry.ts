@@ -15,18 +15,20 @@ import { createHash } from "node:crypto";
 import type { Audit } from "../audit.js";
 import type { Cache } from "../cache.js";
 import { personPresent, type Settings } from "../config.js";
-import type { BrowserTier } from "../fetch/browser.js";
+import type { BrowserTier, Rendered } from "../fetch/browser.js";
 import type { EngineProvider } from "./engines.js";
 import {
   dedupe,
   QueryFormRequired,
   RateLimited,
+  SearchCheckRequired,
   SearchError,
   type ConfirmQuery,
   type EngineSummary,
   type QueryChoice,
   type SearchProvider,
   type SearchQuery,
+  type SearchResponse,
   type SearchResult,
 } from "./provider.js";
 
@@ -40,6 +42,8 @@ export interface SearchRound {
   priorErrors?: string[];
   /** What earlier rounds noted (an engine's bot check, a cooldown): shown with this round's results. */
   priorNotes?: string[];
+  /** The person's answer to "open this bot check?" on a suspended engine page: that engine finishes from the resumed render. */
+  resumeCheck?: { id: string; rendered: Promise<Rendered> };
 }
 
 export interface SearchOutcome {
@@ -67,6 +71,11 @@ export class SearchRegistry {
   private confirm: ConfirmQuery | undefined;
   /** "Don't ask me again": the engine and incognito choice the person settled on for this session. */
   private remembered: { engine: string; incognito: boolean } | null = null;
+  /** Engine searches suspended on a bot check, by the check's id: how to finish them once the render resumes. */
+  private readonly suspended = new Map<
+    string,
+    { provider: string; complete: (r: Rendered) => Promise<SearchResponse> }
+  >();
 
   constructor(
     private readonly settings: Settings,
@@ -156,6 +165,8 @@ export class SearchRegistry {
     let incognito: boolean | undefined;
     const tried = new Set<string>(opts.skip ?? []);
     let answer = opts.answer;
+    /** The form answer applied in this round (carried into a suspended check's next round). */
+    let applied: QueryChoice | undefined;
 
     const runOne = async (p: SearchProvider): Promise<SearchResult[]> => {
       const cd = this.cooldown.get(p.name);
@@ -165,7 +176,12 @@ export class SearchRegistry {
       }
       tried.add(p.name);
       try {
-        const r = await p.search({ ...q, query }, { submittedByPerson, incognito });
+        const resume = opts.resumeCheck && this.suspended.get(opts.resumeCheck.id);
+        let r: SearchResponse;
+        if (resume && resume.provider === p.name) {
+          this.suspended.delete(opts.resumeCheck!.id);
+          r = await resume.complete(await opts.resumeCheck!.rendered);
+        } else r = await p.search({ ...q, query }, { submittedByPerson, incognito });
         used.push(p);
         summary ??= r.summary;
         this.audit.record({
@@ -176,6 +192,15 @@ export class SearchRegistry {
         });
         return r.results;
       } catch (e) {
+        if (e instanceof SearchCheckRequired) {
+          // The question goes out as the tool's result; this engine is not "tried" until it answers.
+          this.suspended.set(e.id, { provider: p.name, complete: e.complete });
+          e.tried = [...tried].filter((n) => n !== p.name);
+          e.errors = [...errors];
+          e.notes = [...notes];
+          e.answer = applied;
+          throw e;
+        }
         const msg = (e as Error).message;
         errors.push(msg);
         this.audit.record({ url: `search:${q.query}`, provider: p.name, status: "error", note: msg });
@@ -214,6 +239,7 @@ export class SearchRegistry {
         notes.push(`${p.name}: you declined to run this query`);
         return null;
       }
+      applied = answer;
       return this.apply(
         answer,
         p,
@@ -239,6 +265,7 @@ export class SearchRegistry {
             notes.push(`${p.name}: you declined to run this query`);
             chosen = null;
           } else {
+            applied = a;
             chosen = this.apply(
               a,
               p,
