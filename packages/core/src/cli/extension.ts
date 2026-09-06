@@ -4,8 +4,8 @@ import { execFile } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { App } from "../app.js";
+import { PACKAGE_DIR } from "../config.js";
 import {
   EXTENSION_ID,
   ExtensionBridge,
@@ -17,7 +17,7 @@ import type { Flags } from "./args.js";
 
 /** Where the extension ships inside this package. */
 export function bundledExtensionDir(): string {
-  return fileURLToPath(new URL("../../extension/", import.meta.url));
+  return join(PACKAGE_DIR, "extension");
 }
 
 /**

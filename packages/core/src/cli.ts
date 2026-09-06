@@ -7,7 +7,7 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createApp } from "./app.js";
 import { flagSpelling, settingsFromArgs, UsageError, type Settings } from "./config.js";
-import { buildServer } from "./server.js";
+import { buildServer } from "./mcp-server.js";
 
 async function main(): Promise<void> {
   const { settings, rest, overrides } = settingsFromArgs(process.argv.slice(2));

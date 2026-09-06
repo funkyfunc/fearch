@@ -10,7 +10,7 @@ import { PendingCheck, type PageDoc } from "../src/fetch/pipeline.js";
 import type { HandoffContinuation, Rendered } from "../src/fetch/browser.js";
 import { RateLimited, SearchCheckRequired } from "../src/search/provider.js";
 import { createApp, type App } from "../src/app.js";
-import { buildServer } from "../src/server.js";
+import { buildServer } from "../src/mcp-server.js";
 
 /** A person on call with no bridge extension: engine pages and checks go to a window of the installed Chrome. */
 const NO_EXTENSION = {

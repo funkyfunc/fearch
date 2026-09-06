@@ -2,10 +2,17 @@
 
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string; homepage?: string };
+
+/**
+ * This package's root on disk (the directory holding package.json), found from this module rather
+ * than from any file's depth — so it is right whether the code ran from `src`, the per-file dev
+ * build, or the single bundled file, which all sit one level below package.json.
+ */
+export const PACKAGE_DIR: string = dirname(require.resolve("../package.json"));
 
 export const VERSION: string = pkg.version;
 export const PRODUCT = "fearch";

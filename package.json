@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "tsc -b packages/core",
+    "typecheck": "tsc -p packages/core --noEmit",
     "test": "vitest run",
     "test:live": "FEARCH_LIVE=1 vitest run packages/core/tests/live",
     "eval": "tsx evals/run.mts",

@@ -3,7 +3,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { settingsFromEnv } from "../../src/config.js";
 import { createApp, type App } from "../../src/app.js";
-import { buildServer } from "../../src/server.js";
+import { buildServer } from "../../src/mcp-server.js";
 
 const live = !!process.env.FEARCH_LIVE;
 const d = live ? describe : describe.skip;

@@ -44,8 +44,8 @@ writeFileSync(
       homepage: "https://github.com/funkyfunc/fearch",
       server: {
         type: "node",
-        entry_point: "dist/cli.js",
-        mcp_config: { command: "node", args: ["${__dirname}/dist/cli.js"] },
+        entry_point: "dist/index.js",
+        mcp_config: { command: "node", args: ["${__dirname}/dist/index.js"] },
       },
     },
     null,

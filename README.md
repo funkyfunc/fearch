@@ -44,7 +44,7 @@ Or globally: `npm install -g fearch-mcp`, then the `fearch` CLI is on your PATH.
 carries the `-mcp` suffix because npm reserves bare names this close to `fetch`; the command is
 still `fearch`.) From source:
 `git clone https://github.com/funkyfunc/fearch && cd fearch && npm install && npm run build`
-(the server is then `node packages/core/dist/cli.js`).
+(the server is then `node packages/core/dist/index.js`).
 
 CLI (same engine, same output):
 
