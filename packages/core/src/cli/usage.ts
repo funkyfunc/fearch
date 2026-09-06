@@ -56,7 +56,7 @@ ${tuning}
 commands (same flags apply; add --json for machine-readable output):
   (none)                                  start the MCP server (stdio)
   fetch <url> [--mode read|focus|section|pattern|raw] [--query q] [--max-chars N] [--cursor c] [--links] [--archive]
-  search <query> [--site domain] [--recency d|w|m|y] [--n N] [--fetch-top N]
+  search <query> [--site domain] [--recency d|w|m|y] [--n N] [--fetch-top N] [--raw]
   doctor                                  check configuration, providers, browser, and network
   extension install|status|path           set up the fearch bridge extension in your Chrome (one-time), check it, or print its folder
   clear-profile                           forget the tool-owned browser profile (passed checks, cookies sites set)

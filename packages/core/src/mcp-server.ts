@@ -89,6 +89,12 @@ const SEARCH_INPUT = {
     .max(3)
     .default(0)
     .describe("Also fetch the top N results and include query-focused excerpts inline."),
+  raw: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Also return the engine page's rendered HTML (bounded, account chrome redacted) — for debugging a layout, not for reading.",
+    ),
 };
 
 const FETCH_INPUT = {
@@ -310,7 +316,7 @@ function queryFormSchema(
         : "On: a private window. Off: fearch's own Chrome profile.";
     // Google in the person's own Chrome defaults to incognito: the query then binds no account of
     // theirs (docs/RESEARCH-RECONCILIATION.md, Report E); `--incognito` sets it everywhere.
-    const incognitoDefault = s.incognito || (ask.engine === "google" && ask.profileKind === "own-chrome");
+    const incognitoDefault = s.incognito || (/^google/.test(ask.engine) && ask.profileKind === "own-chrome");
     properties.incognito = { type: "boolean", title: "Incognito", description, default: incognitoDefault };
   }
   properties.ask_again = {
@@ -537,6 +543,7 @@ export function buildServer(app: App): McpServer {
               recency: args.recency,
               site: args.site?.trim() || undefined,
               allowedDomains: args.allowed_domains,
+              raw: args.raw,
             },
             round,
           );

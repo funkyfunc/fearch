@@ -107,6 +107,7 @@ async function searchCommand(app: ReturnType<typeof createApp>, query: string, f
       maxResults: num(flags.n, 8),
       site: str(flags.site),
       recency: oneOf<Recency>("recency", str(flags.recency), RECENCIES),
+      raw: flags.raw === true,
     });
     await attachExcerpts(app, outcome.results, query, num(flags["fetch-top"], 0));
     const { providers, ...rest } = outcome;

@@ -14,6 +14,8 @@ export interface SearchQuery {
   site?: string;
   /** Only these domains; up to three are sent to the engine as `site:` operators, all are enforced on the results. */
   allowedDomains?: string[];
+  /** Also return the engine page's rendered HTML (account chrome redacted): the raw rung, on request. */
+  raw?: boolean;
 }
 
 export interface SearchResult {
@@ -40,6 +42,8 @@ export interface SearchResponse {
   page?: string;
   /** One line for the person and the model about how this page was read, when it was not the usual way. */
   note?: string;
+  /** The rendered page, when `raw` was asked for. */
+  html?: string;
 }
 
 /**

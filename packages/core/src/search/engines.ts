@@ -79,6 +79,11 @@ export interface EngineSpec {
   overviewPending?(html: string): boolean;
   /** How long the render may wait for that answer; AI Mode streams longer than an overview. */
   overviewWaitMs?: number;
+  /**
+   * An answer engine (AI Mode): the page *is* the generated reply. First class is the reply with
+   * the pages it cites; when the reply cannot be read, the page itself follows as markdown.
+   */
+  answer?: boolean;
 }
 
 const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
@@ -145,9 +150,17 @@ export function ddgChallenge(html: string, status: number): boolean {
  * handoff would wait forever after the person has passed it).
  */
 const googleChallenge = (html: string, status: number, url = ""): boolean => {
-  if (/\/sorry\//.test(url)) return true;
-  if (/<h3/.test(html)) return false;
-  return status === 429 || /unusual traffic from your computer network|not a robot|recaptcha/i.test(html);
+  if (/\/sorry\//.test(url) || status === 429) return true;
+  if (/<h3/.test(html) || /AI Mode reply for/.test(html)) return false;
+  // Judged on what a person would see: every Google page carries reCAPTCHA scripts, and an AI Mode
+  // reply that is still streaming has no <h3> yet — neither is a check.
+  const visible = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>|<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  return (
+    visible.length < 3000 &&
+    /unusual traffic from your computer network|not a robot|verify you are human/i.test(visible)
+  );
 };
 
 // ---------------------------------------------------------------- Google
@@ -359,6 +372,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     overview: parseGoogleOverview,
     overviewPending: aiModePending,
     overviewWaitMs: 25_000,
+    answer: true,
   },
 };
 
@@ -554,7 +568,9 @@ export class EngineProvider implements SearchProvider {
       rendered = { ...rendered, handedOff: true, handoffWhere: rendered.handoffWhere ?? "your MCP client" };
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
       // The engine's "no". The registry decides whether that means a cooldown (nobody can be asked)
-      // or just this answer (a person is on call and will be asked again next time).
+      // or just this answer (a person is on call and will be asked again next time). The page is
+      // kept, redacted, so a false alarm can be told from a real check afterwards.
+      this.dumpUnparsed(rendered.html);
       const at = new Date().toISOString().slice(11, 16) + " UTC";
       const hint = !this.settings.handoff
         ? "handoff is disabled (--no-handoff); with it on you would be handed the page to pass yourself"
@@ -569,7 +585,8 @@ export class EngineProvider implements SearchProvider {
         `${this.name}: ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); ${hint}`,
       );
     }
-    return this.read(rendered.html, q);
+    const read = this.read(rendered.html, q);
+    return q.raw ? { ...read, html: redactAccount(rendered.html) } : read;
   }
 
   /**
@@ -584,6 +601,24 @@ export class EngineProvider implements SearchProvider {
     const summary = overview ? { ...overview, provider: this.name } : undefined;
     let results = dedupe(this.spec.parse(html, this.name));
     let parsed: Parsed = "first-class";
+    if (this.spec.answer) {
+      // The reply is the product: with its sources when they loaded, without when they did not; a
+      // page the reply cannot be read from is handed over whole.
+      if (summary)
+        return {
+          results: filterDomains(results, q).slice(0, q.maxResults),
+          summary,
+          parsed: "first-class",
+          note: results.length ? undefined : `${this.name}: the reply's sources had not loaded when the page was read`,
+        };
+      const dump = this.dumpUnparsed(html);
+      return {
+        results: [],
+        parsed: "page",
+        page: resultsPageMarkdown(html),
+        note: `${this.name}: the reply could not be read from this page (layout not recognised${dump ? `; page saved to ${dump}` : ""}); the page follows as markdown`,
+      };
+    }
     if (results.length < MIN_FIRST_CLASS) {
       const shaped = parseByShape(html, this.spec.host, this.name);
       if (shaped.length > results.length) {

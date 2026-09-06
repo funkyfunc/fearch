@@ -14,6 +14,17 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Rendering audit as a live check (2026-09-06).** `npm run audit:render` measures, per page,
+  the paragraphs, headings, code blocks, data tables and image alt text the markdown keeps against
+  the page's main container (links stripped, markup-insensitive, formulas and link rails set
+  aside), and prints what was lost. The same measure gates `tests/live/render.test.ts` on eight
+  stable pages (paragraphs ≥ 90 %, code 100 %). Fixed from its first run: utility classes read as
+  roles, formulas printed twice, image alt text dropped, definition lists flattened. AI Mode reads
+  on the same ladder as every engine page — reply and sources, else the page as markdown — and
+  `raw=true` returns the rendered page, redacted. A Google page that is still streaming its reply
+  is no longer mistaken for a bot check (reCAPTCHA scripts are on every Google page); a real check
+  is kept on disk, redacted, like a zero-parse page.
+
 - **Google AI Mode as an engine (2026-09-06).** `--engines google-ai`: the `udm=50` reply is the
   answer, its citations are the results, under the Google result-page posture (approval per query,
   the person's browsing, incognito default). Measured through the bridge: the reply carries no

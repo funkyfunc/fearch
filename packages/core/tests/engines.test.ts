@@ -787,6 +787,94 @@ describe("google AI Mode as an engine", () => {
   });
 });
 
+describe("AI Mode's ladder and the raw rung", () => {
+  const fixture = (name: string) =>
+    readFileSync(new URL(`../../../tests/fixtures/google/${name}.html`, import.meta.url), "utf8");
+  const approved = { submittedByPerson: true };
+  const make = (html: string) => {
+    const s = settings({ FEARCH_ENGINES: "google-ai", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    return new EngineProvider(
+      ENGINE_SPECS["google-ai"],
+      s,
+      fakeBrowser(async () => ({ html, status: 200 })),
+      robots,
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+    );
+  };
+
+  it("hands the page over as markdown when the reply cannot be read, instead of guessing at links", async () => {
+    const unreadable = `<html><body><div id="search"><h3>Something else entirely</h3><p>Google changed the reply's shape; there is prose here and a <a href="https://x.test/a">link with a long enough title</a> but no reply block.</p></div></body></html>`;
+    const r = await make(unreadable).search({ query: "q", maxResults: 5 }, approved);
+    expect(r.parsed).toBe("page");
+    expect(r.summary).toBeUndefined();
+    expect(r.results).toEqual([]);
+    expect(r.page).toContain("Google changed the reply");
+    expect(r.note).toMatch(/reply could not be read/);
+  });
+
+  it("a reply whose sources have not loaded is first class with no links, not a page; a streaming reply is not a bot check", async () => {
+    const replyOnly = fixture("ai-mode-capital").replace(/<a [^>]*href="https?:[^"]*"[^>]*>/g, "<span>");
+    const r = await make(replyOnly).search(
+      { query: "what is the capital of australia and why", maxResults: 5 },
+      approved,
+    );
+    expect(r.parsed).toBe("first-class");
+    expect(r.summary?.label).toBe("AI Mode");
+    expect(r.results).toEqual([]);
+    expect(r.note).toMatch(/sources had not loaded/);
+    // Every Google page carries reCAPTCHA scripts; a page with a reply, or with results, is not a check.
+    const streaming = `<html><head><script src="https://www.google.com/recaptcha/api.js"></script></head><body><div>Thinking…</div><div>${"words ".repeat(700)}</div></body></html>`;
+    expect(ENGINE_SPECS.google.isChallenge(streaming, 200, "https://www.google.com/search?q=x&udm=50")).toBe(false);
+    expect(
+      ENGINE_SPECS.google.isChallenge(
+        `<html><body><p>Our systems have detected unusual traffic from your computer network.</p><p>not a robot</p></body></html>`,
+        200,
+        "https://www.google.com/search?q=x",
+      ),
+    ).toBe(true);
+    expect(ENGINE_SPECS.google.isChallenge("<html></html>", 200, "https://www.google.com/sorry/index")).toBe(true);
+  });
+
+  it("returns the rendered page, redacted, only when asked, and never caches it", async () => {
+    const page = fixture("ai-mode-capital").replace(
+      "<body>",
+      "<body><header>Google Account: Pat (pat@example.com)</header>",
+    );
+    const plain = await make(page).search(
+      { query: "what is the capital of australia and why", maxResults: 3 },
+      approved,
+    );
+    expect(plain.html).toBeUndefined();
+    const raw = await make(page).search(
+      { query: "what is the capital of australia and why", maxResults: 3, raw: true },
+      approved,
+    );
+    expect(raw.html).toBeDefined();
+    expect(raw.html).not.toContain("pat@example.com");
+    expect(raw.html).toContain("<!-- header removed -->");
+    expect(raw.summary?.label).toBe("AI Mode"); // the first-class read still comes with it
+
+    const s = settings({ FEARCH_ENGINES: "google-ai", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    const engines = engineProviders(
+      s,
+      fakeBrowser(async () => ({ html: page, status: 200 })),
+      robots,
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+    );
+    const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
+    const out = await reg.search({ query: "what is the capital of australia and why", maxResults: 3, raw: true });
+    expect(out.raw?.provider).toBe("google-ai");
+    const text = renderResults("what is the capital of australia and why", out);
+    expect(text).toContain("Raw rendered page from google-ai");
+    expect(text).toContain("<!-- header removed -->");
+    const again = await reg.search({ query: "what is the capital of australia and why", maxResults: 3, raw: true });
+    expect(again.fromCache).toBe(false);
+  });
+});
+
 describe("locale", () => {
   it("derives the machine locale from the environment; FEARCH_LOCALE wins; C/POSIX means en-US", () => {
     expect(settings().locale).toBe("en-US");

@@ -19,7 +19,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "prepare": "husky",
-    "mcpb": "node scripts/build-mcpb.mjs"
+    "mcpb": "node scripts/build-mcpb.mjs",
+    "audit:render": "tsx evals/render-audit.mts"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",

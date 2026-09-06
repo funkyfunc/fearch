@@ -2,6 +2,9 @@
 
 import type { SearchOutcome } from "./registry.js";
 
+/** The raw rung is for people and scripts, not for a model's context: bounded hard. */
+const RAW_MAX_CHARS = 200_000;
+
 export function renderResults(query: string, o: SearchOutcome): string {
   const via = o.fromCache ? "cache" : o.providers.map((p) => p.name).join(" + ") || "none";
   const disclosures = o.fromCache ? [] : [...new Set(o.providers.map((p) => p.disclosure))];
@@ -46,5 +49,15 @@ export function renderResults(query: string, o: SearchOutcome): string {
     lines.push("");
   });
   lines.push("Use `fetch(url=...)` to read a result; `mode=focus, query=...` returns only the relevant sections.");
+  if (o.raw) {
+    lines.push(
+      "",
+      `Raw rendered page from ${o.raw.provider} (${o.raw.html.length} chars; account chrome and e-mail addresses redacted), as requested:`,
+      "",
+      o.raw.html.length > RAW_MAX_CHARS
+        ? `${o.raw.html.slice(0, RAW_MAX_CHARS)}\n[raw page cut at ${RAW_MAX_CHARS} chars]`
+        : o.raw.html,
+    );
+  }
   return lines.join("\n").replace(/\s+$/, "") + "\n";
 }

@@ -23,13 +23,13 @@ Two tools:
   the pages it cites as sources; it is read from the same rendered page in every browser tier.
   `--engines google-ai,duckduckgo` adds Google's AI Mode as an engine of its own: one question per
   search, its reply as the answer and the pages it cites as the results, under exactly the approval
-  Google result pages get — fearch asks, it never converses. A
+  Google result pages get — fearch asks, it never converses; incognito is the default there, and an incognito window remembers no passed check, so Google's check is yours to pass each time. A
   results page is read on a ladder, because engines change their markup: the engine's own parser
   first (exact); by page shape when that recognises nothing — a title that is a link, a display URL,
   a snippet — marked approximate; and when nothing on the page reads as a result, the results
   column itself as markdown for the agent to read (Google is asked once for its plain Web view
   first). The header names the rung, the lower rungs are never cached, and the page is kept on disk
-  (redacted) so the parser can be fixed. When no engine answers, the failure says exactly why and
+  (redacted) so the parser can be fixed; `raw=true` returns the engine page's rendered HTML on request (bounded, account chrome redacted) for whoever is fixing it. When no engine answers, the failure says exactly why and
   what to do next — nothing is ever silently substituted; a Google query you did not approve is
   skipped with a note, and DuckDuckGo still runs. MCP clients that read `structuredContent` get the
   same outcome as an object (the CLI's `--json` shape).
@@ -249,7 +249,7 @@ If you operate a website and see this agent in your logs:
 ## Tool reference
 
 ```
-search(query, max_results=8, recency?: d|w|m|y, site?, allowed_domains?, fetch_top=0..3)
+search(query, max_results=8, recency?: d|w|m|y, site?, allowed_domains?, fetch_top=0..3, raw=false)
 
 fetch(url | urls[≤5], mode=read|focus|section|pattern|raw, query?, max_chars=12000,
       cursor?, include_links=false, context_chars=200, archive=false)
@@ -280,6 +280,7 @@ A refusal comes back as a Diagnosis: the kind (`captcha_or_challenge`, `paywall`
 npm test            # unit + fixture + golden tests (no network)
 npm run test:live   # live smoke tests
 npm run eval        # search → fetch(focus) → grade, over evals/questions.json
+npm run audit:render  # per page: paragraphs, headings, code, tables, images kept vs the page (live)
 npm run lint && npm run format && npm run typecheck
 ```
 
