@@ -94,6 +94,18 @@ and none are EU/UK law; the UK has no commercial TDM exception.
 
 The local-browser row is the norm fearch's extension tier sits in; where fearch differs it is stricter.
 
+## Indexes, not models
+
+fearch reads indexes and pages. A generated answer is surfaced only when it comes attached to a
+results page the person opened — Google's AI Overview, Web Guide summary, or AI Mode reply — and it
+is labelled as the engine's unverified text with the pages it cites. fearch never converses with a
+model as a source: one question per call, no thread, no follow-up. Chat products are models, not
+indexes: Duck.ai's terms forbid "automated querying and developing or offering AI services"
+(read 2026-09-06); Anthropic's consumer terms forbid access "through automated or non-human
+means" outside the API (read 2026-09-06); OpenAI's and Google's consumer terms point agents to
+their APIs. A person may chat with any of them and paste the reply into a model; the automation is
+what those clauses name, so fearch does not build it.
+
 ## Search providers by posture
 
 | Provider | Index provenance | Free tier | Key | Posture |
@@ -110,6 +122,7 @@ The local-browser row is the norm fearch's extension tier sits in; where fearch 
 | DuckDuckGo lite in a real browser window (the person's Chrome, or a background window of the installed Chrome) | Bing-syndicated | yes | none | 🟡 rung 7b: robots.txt permits `/lite/`; ToS has no automation clause; DDG's bot-check (it keys on the User-Agent — `HeadlessChrome` and token-bearing UAs get it, a real Chrome window does not; measured 2026-09-03) is put to the person to pass, never to the tool |
 | Google result pages in the person's browser, challenges handed to the person | own index | yes | none | 🟡 rung 7b: `Disallow: /search` and ToS clauses are the person's contract under the user-agent posture; Google's check is IP-level and only a person can pass it; opt-in via `--engines`, never a default. (Bing sat here too until 2026-09-02; removed — decoy results to automated browsers.) |
 | Google with `--human-search` | own index | yes | none | 🟢/🟡 each query shown to the person, editable, run only on their accept (or submitted by them in the browser); the tool only reads the page they landed on |
+| Google AI Mode (`google-ai`) in the person's browser | own index through Google's model | yes | none | 🟡 rung 7b, same as Google result pages: opt-in, approved per query, incognito default; the reply is labelled as Google's unverified text, its citations are the results; one question per call, never a conversation |
 | `ddgs`, SearXNG, DDG/Bing HTML scraping with impersonation | scraped | yes | none | 🟠 browser impersonation required to work |
 | Google / Bing / Brave / Mojeek / Startpage result pages by a server-side client or a stealth browser | scraped | yes | none | 🟠→🔴 `Disallow: /search` for all agents; ToS forbid automated queries; hiding `navigator.webdriver` / TLS impersonation is the identity lie |
 

@@ -20,7 +20,10 @@ Two tools:
   search-then-fetch. Every result names its provider. A Google page's own generated answer — the
   AI Overview, or the opening summary of the newer Web Guide layout — comes back beside the results
   as structured markdown (headings, lists, tables, code), labelled as Google's unverified text, with
-  the pages it cites as sources; it is read from the same rendered page in every browser tier. A
+  the pages it cites as sources; it is read from the same rendered page in every browser tier.
+  `--engines google-ai,duckduckgo` adds Google's AI Mode as an engine of its own: one question per
+  search, its reply as the answer and the pages it cites as the results, under exactly the approval
+  Google result pages get — fearch asks, it never converses. A
   results page is read on a ladder, because engines change their markup: the engine's own parser
   first (exact); by page shape when that recognises nothing — a title that is a link, a display URL,
   a snippet — marked approximate; and when nothing on the page reads as a result, the results

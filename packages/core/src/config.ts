@@ -139,7 +139,7 @@ const pick = <T extends string>(raw: string | undefined, allowed: readonly T[], 
   return v && allowed.includes(v) ? v : def;
 };
 
-export const KNOWN_ENGINES = ["duckduckgo", "google"] as const;
+export const KNOWN_ENGINES = ["duckduckgo", "google", "google-ai"] as const;
 export const ROBOTS_POLICIES = ["default", "strict"] as const;
 export const BROWSER_MODES = ["auto", "headless", "extension", "off"] as const;
 export const SEARCH_MODES = ["all", "off"] as const;
@@ -275,7 +275,7 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "list",
     values: KNOWN_ENGINES,
     default: "duckduckgo",
-    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it and runs without asking; every google query is shown to you first (query, engine, profile) and runs as your own browsing.",
+    help: "Engine result pages in preference order. DuckDuckGo lite is the one engine whose robots.txt permits it and runs without asking; every google query is shown to you first (query, engine, profile) and runs as your own browsing. google-ai is Google's AI Mode: its generated reply and the pages it cites, one question per search, the same approval every time.",
   },
   {
     flag: "human-search",

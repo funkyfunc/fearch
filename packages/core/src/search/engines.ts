@@ -58,8 +58,8 @@ export interface EngineSpec {
   parse(html: string, provider: string): SearchResult[];
   /** Same shape as the generic `isChallengePage`, so the browser tier can take it as-is. */
   isChallenge(html: string, status: number, url?: string): boolean;
-  /** The engine's own "nothing matched" page — an answer, not a parser failure. */
-  noResults: RegExp;
+  /** The engine's own "nothing matched" page — an answer, not a parser failure; absent for an engine that always answers. */
+  noResults?: RegExp;
   /**
    * "You press search": the engine's home page with the query prefilled but not submitted, and how to
    * recognise the results page the person lands on. Only for engines whose result pages are not
@@ -77,6 +77,8 @@ export interface EngineSpec {
   plainUrl?(query: string, recency?: Recency, locale?: string): string;
   /** True while that answer is still streaming in, so the render waits a little longer for it. */
   overviewPending?(html: string): boolean;
+  /** How long the render may wait for that answer; AI Mode streams longer than an overview. */
+  overviewWaitMs?: number;
 }
 
 const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
@@ -243,6 +245,36 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
 }
 
 /**
+ * AI Mode's citations: the external links of the reply, in order, each with the text it is attached
+ * to as the snippet. They are results in the sense that matters — the pages the answer rests on.
+ */
+export function parseAiModeCitations(html: string, provider: string): SearchResult[] {
+  const $ = cheerio.load(html);
+  const out: SearchResult[] = [];
+  const seen = new Set<string>();
+  $("a[href]").each((_, a) => {
+    const url = unwrapGoogle($(a).attr("href") ?? "");
+    if (!/^https?:/.test(url) || skipHost(url, ...GOOGLE_OWN) || seen.has(url)) return;
+    const card = $(a).closest("li, [role=listitem], div");
+    const title =
+      $(a).find("h3, [role=heading]").first().text().replace(/\s+/g, " ").trim() ||
+      $(a).text().replace(/\s+/g, " ").trim() ||
+      new URL(url).hostname;
+    if (title.length < 4) return;
+    seen.add(url);
+    const snippet = card.text().replace(/\s+/g, " ").replace(title, "").trim().slice(0, 300);
+    out.push({ title: title.slice(0, 200), url, snippet, provider });
+  });
+  return out;
+}
+
+/** AI Mode streams its reply first and its citations later: the page is done when both are there. */
+function aiModePending(html: string): boolean {
+  if (overviewPending(html)) return true;
+  return !/AI Mode reply for/.test(html) || parseAiModeCitations(html, "google-ai").length === 0;
+}
+
+/**
  * Web Guide draws each result as a card: source name, display URL, date, and a one-line description
  * of its own. The description is the text of the card that is not the title or the display URL.
  */
@@ -303,6 +335,30 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
       homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
       resultsUrl: /\/search\?/,
     },
+  },
+  /**
+   * Google's AI Mode (`udm=50`, measured 2026-09-06): the same `/search` page family under the same
+   * posture as Google result pages — listed by the operator, every query approved in the client, run
+   * as the person's browsing. The page is a generated reply with the pages it cites; the reply is the
+   * summary, the citations are the results. One question per search call, never a follow-up: fearch
+   * asks, it does not converse. The citations load after the reply, so the render waits for them.
+   */
+  "google-ai": {
+    name: "google-ai",
+    label: "Google AI Mode",
+    host: "www.google.com",
+    robotsPermitted: false,
+    privacy: "queries are logged by Google, tied to whichever Google session the browser profile holds",
+    url: (q, _r, loc = "en-US") => {
+      const { lang, region } = localeParts(loc);
+      return `https://www.google.com/search?q=${encodeURIComponent(q)}&udm=50&hl=${lang}${region ? `&gl=${region.toLowerCase()}` : ""}`;
+    },
+    parse: parseAiModeCitations,
+    isChallenge: googleChallenge,
+    resultsSelector: "h3",
+    overview: parseGoogleOverview,
+    overviewPending: aiModePending,
+    overviewWaitMs: 25_000,
   },
 };
 
@@ -398,6 +454,12 @@ export class EngineProvider implements SearchProvider {
     // home page is handed over in the browser with the query in the box and the person presses Enter.
     const submittedByPerson = !!opts.submittedByPerson;
     const human = this.needsApproval && !submittedByPerson && this.spec.human ? this.spec.human : null;
+    // An engine whose result pages are not robots-permitted runs only as the person's act; where
+    // nobody can be asked and there is no search box to hand over, it does not run.
+    if (this.needsPerson && !submittedByPerson && !human)
+      throw new SearchError(
+        `${this.name}: every ${this.spec.label} query needs your approval in your MCP client, and this client cannot show the form`,
+      );
     this.lastIncognito = opts.incognito;
     // (Recency has no place in a query the person submits by hand; the engine's UI applies it if at all.)
     const url = human
@@ -406,7 +468,7 @@ export class EngineProvider implements SearchProvider {
     const ready = (html: string, at: string) =>
       human!.resultsUrl.test(at) &&
       !this.spec.isChallenge(html, 200, at) &&
-      (cheerio.load(html)(this.spec.resultsSelector).length > 0 || this.spec.noResults.test(html));
+      (cheerio.load(html)(this.spec.resultsSelector).length > 0 || !!this.spec.noResults?.test(html));
     // Robots-permitted engines are verified live (the permission could have been withdrawn). Engines
     // eligible through the person-present rule are the person's own browsing — the crawler rules
     // don't apply, so robots.txt is not consulted for their result pages.
@@ -439,7 +501,7 @@ export class EngineProvider implements SearchProvider {
             // A generated answer streams in after the results: wait briefly for one that is coming,
             // never for one that isn't (no label on the page). Same wait on every tier.
             settleUntil: this.spec.overviewPending ? (html) => !this.spec.overviewPending!(html) : undefined,
-            settleUntilMs: OVERVIEW_WAIT_MS,
+            settleUntilMs: this.spec.overviewWaitMs ?? OVERVIEW_WAIT_MS,
           }),
         Math.max(this.gapMs, crawlDelayMs),
       );
@@ -533,7 +595,7 @@ export class EngineProvider implements SearchProvider {
       const dump = this.dumpUnparsed(html);
       const saved = dump ? ` (page saved to ${dump})` : "";
       // An interstitial that merely mentions "did not match" must not pass as an honest empty answer.
-      if (this.spec.noResults.test(html) && !/<h3|role="heading"/i.test(html))
+      if (this.spec.noResults?.test(html) && !/<h3|role="heading"/i.test(html))
         throw new SearchError(`${this.name}: no results for this query${saved}`);
       return {
         results: [],

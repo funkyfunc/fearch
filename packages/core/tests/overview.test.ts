@@ -58,6 +58,17 @@ describe("google generated answer", () => {
     expect(ov.sources.map((s) => s.url)).toContain("https://github.com/vitest-dev/vitest/issues/6011");
   });
 
+  it("reads an AI Mode reply: no disclaimer, so the feedback form ends it; chips name the sources", () => {
+    const ov = parseGoogleOverview(fixture("ai-mode-capital"), "what is the capital of australia and why")!;
+    expect(ov.label).toBe("AI Mode");
+    expect(ov.text).toMatch(/^The capital of Australia is \*\*Canberra\*\*/);
+    expect(ov.text).toContain("### The Rivalry Between Sydney and Melbourne");
+    expect(ov.text).toContain("[Parliament of Australia](https://www.parliament.act.gov.au/");
+    expect(ov.text).not.toMatch(/AI Mode reply for|Good response|Export to Docs|Thanks for letting us know|EBSCO \+2/);
+    expect(ov.sources.map((s) => s.url)).toContain("https://en.wikipedia.org/wiki/Canberra");
+    expect(overviewPending(fixture("ai-mode-capital"))).toBe(false);
+  });
+
   it("returns null for stubs, the bare AI Mode tab, and pages without an answer", () => {
     const stub = `<div id="search"><div id="m-x-content"><span style="display:none"><span>An AI Overview is not available for this search</span></span><div role="heading">AI Overview</div><div>AI can make mistakes</div></div></div>`;
     expect(parseGoogleOverview(stub)).toBeNull();

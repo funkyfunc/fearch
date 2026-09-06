@@ -724,6 +724,69 @@ describe("the ladder", () => {
   });
 });
 
+describe("google AI Mode as an engine", () => {
+  const fixture = (name: string) =>
+    readFileSync(new URL(`../../../tests/fixtures/google/${name}.html`, import.meta.url), "utf8");
+  const approved = { submittedByPerson: true };
+  const make = (html: string, env: Record<string, string> = {}) => {
+    const s = settings({ FEARCH_ENGINES: "google-ai,duckduckgo", DISPLAY: ":0", ...env });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    const politeness = new Politeness(1, { count: 100, windowMs: 60_000 });
+    const browser = fakeBrowser(async () => ({ html, status: 200 }));
+    return {
+      s,
+      provider: new EngineProvider(ENGINE_SPECS["google-ai"], s, browser, robots, politeness),
+      browser,
+      robots,
+      politeness,
+    };
+  };
+
+  it("is listed, needs a person, and asks udm=50 for the query", () => {
+    expect(ENGINE_SPECS["google-ai"].url("capital of australia", undefined, "en-US")).toContain("udm=50");
+    const { provider } = make("<html></html>");
+    expect(provider.needsPerson).toBe(true);
+    expect(provider.available()).toBe(true);
+  });
+
+  it("returns the reply as the answer and its citations as the results", async () => {
+    const { provider } = make(fixture("ai-mode-capital"));
+    const r = await provider.search({ query: "what is the capital of australia and why", maxResults: 5 }, approved);
+    expect(r.summary?.label).toBe("AI Mode");
+    expect(r.summary?.text).toMatch(/^The capital of Australia/);
+    expect(r.parsed).toBe("first-class");
+    expect(r.results.length).toBeGreaterThanOrEqual(5);
+    expect(r.results.map((x) => x.url)).toContain("https://en.wikipedia.org/wiki/Canberra");
+  });
+
+  it("never runs unapproved: a client that cannot show the form gets an honest refusal, not a search", async () => {
+    const { provider } = make(fixture("ai-mode-capital"));
+    await expect(provider.search({ query: "q", maxResults: 5 })).rejects.toThrow(
+      /needs your approval in your MCP client/,
+    );
+  });
+
+  it("an answer whose citations have not loaded is still an answer; the chain goes on for result links", async () => {
+    const { s, robots, politeness } = make("");
+    const replyOnly = fixture("ai-mode-capital").replace(/<a [^>]*href="https?:[^"]*"[^>]*>/g, "<span>");
+    const engines = engineProviders(
+      s,
+      fakeBrowser(async (url) => ({ html: /udm=50/.test(url) ? replyOnly : LITE, status: 200 })),
+      robots,
+      politeness,
+    );
+    const reg = new SearchRegistry(s, new Cache(null), new Audit(s), engines);
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
+    const out = await reg.search({ query: "what is the capital of australia and why", maxResults: 3 });
+    expect(out.summary?.label).toBe("AI Mode");
+    expect(out.providers.map((p) => p.name)).toEqual(["google-ai", "duckduckgo"]);
+    expect(out.results.length).toBeGreaterThan(0); // DuckDuckGo lite's links
+    const text = renderResults("what is the capital of australia and why", out);
+    expect(text).toContain("> **Google's AI Mode**");
+    expect(text).toContain("via google-ai + duckduckgo");
+  });
+});
+
 describe("locale", () => {
   it("derives the machine locale from the environment; FEARCH_LOCALE wins; C/POSIX means en-US", () => {
     expect(settings().locale).toBe("en-US");

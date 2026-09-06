@@ -241,6 +241,10 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   engine search. With no person on call for checks, the only engine result pages this server requests
   are DuckDuckGo's `/lite/`, because DuckDuckGo's robots.txt explicitly allows them (verified live
   before every request) and its Terms of Service contain no automated-access clause (checked 2026-08-28).
+  Google's AI Mode (`google-ai`, the `udm=50` view of the same `/search` family) is an engine of its
+  own under the same rule: listed by the operator, every query approved in the client, run as the
+  person's browsing; its reply is the answer and its citations are the results; one question per
+  call and never a follow-up, so it is a search, not a conversation.
   Google disallows `/search` for crawlers and is used only when listed in `FEARCH_ENGINES` and
   eligible under the person-present rule (a person on call — any check the engine raises opens in a
   window, or their own Chrome, for them to decide); with `FEARCH_HUMAN_SEARCH=1` each query is shown

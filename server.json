@@ -31,7 +31,7 @@
         {
           "type": "named",
           "name": "--engines",
-          "description": "Engine result pages in preference order: duckduckgo (default), google. Google needs a person on call to pass its checks.",
+          "description": "Engine result pages in preference order: duckduckgo (default), google, google-ai (Google's AI Mode: its reply and the pages it cites). Google needs a person on call to approve each query and pass its checks.",
           "isRequired": false
         },
         {

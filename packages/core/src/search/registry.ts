@@ -323,6 +323,10 @@ export class SearchRegistry {
       // Rung 3: nothing parsed anywhere, but an engine did answer — the agent reads its page.
       return { query, results: [], providers: used, fromCache: false, notes, summary, parsed: "page", page };
     }
+    if (!results.length && summary) {
+      // An answer without result links (AI Mode before its citations load) is still an answer.
+      return { query, results: [], providers: used, fromCache: false, notes, summary, parsed };
+    }
     if (!results.length) {
       const why = [...new Set([...errors, ...notes])];
       const next = ["Fetch a URL you already know"];

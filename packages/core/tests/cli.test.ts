@@ -9,7 +9,7 @@ describe("server flags", () => {
   it("validates every kind of value, not only enums", () => {
     expect(() => parse(["--robots", "off"])).toThrow(UsageError);
     expect(() => parse(["--robots", "off"])).toThrow(/must be one of default\|strict/);
-    expect(() => parse(["--engines", "bing"])).toThrow(/unknown bing \(known: duckduckgo, google\)/);
+    expect(() => parse(["--engines", "bing"])).toThrow(/unknown bing \(known: duckduckgo, google, google-ai\)/);
     expect(() => parse(["--engines", "google,bing,yahoo"])).toThrow(/unknown bing, yahoo/);
     expect(() => parse(["--max-chars", "abc"])).toThrow(/whole number/);
     expect(() => parse(["--human-search=maybe"])).toThrow(/true or false/);

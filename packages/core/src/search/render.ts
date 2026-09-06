@@ -11,7 +11,7 @@ export function renderResults(query: string, o: SearchOutcome): string {
     o.parsed === "shape" ? "; read by page shape, approximate" : o.parsed === "page" ? "; the page follows" : "";
   const lines = [`Results for "${ran}" (${o.results.length}, via ${via}${how})${edited}:`];
   if (o.summary) {
-    const who = o.summary.provider === "google" ? "Google" : o.summary.provider;
+    const who = /^google(-ai)?$/.test(o.summary.provider) ? "Google" : o.summary.provider;
     lines.push(
       "",
       `> **${who}'s ${o.summary.label}** (the engine's model wrote this — unverified; check the sources):`,

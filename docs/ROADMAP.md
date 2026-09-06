@@ -14,6 +14,14 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Google AI Mode as an engine (2026-09-06).** `--engines google-ai`: the `udm=50` reply is the
+  answer, its citations are the results, under the Google result-page posture (approval per query,
+  the person's browsing, incognito default). Measured through the bridge: the reply carries no
+  disclaimer, so its feedback form is the end marker; citations load seconds after the reply, so
+  the render waits up to 25 s for both. An answer without citations is still returned; the chain
+  goes on to DuckDuckGo for result links. One question per call, never a follow-up (SPECTRUM,
+  "Indexes, not models").
+
 - **The results ladder (2026-09-06).** A results page is read in three rungs, each named in the
   output: the engine's own parser (exact, joined to the page's embedded rows); the page's shape —
   title links, display URLs, snippets — for any engine and any layout, marked approximate; and the
