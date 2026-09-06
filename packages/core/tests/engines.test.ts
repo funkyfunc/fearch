@@ -262,20 +262,21 @@ describe("engine eligibility — the dials play together", () => {
     await expect(empty.search({ query: "xqzv", maxResults: 5 }, approved)).rejects.toThrow(
       /no results for this query \(page saved to/,
     );
+    // A page with prose but nothing that reads as a result is the page rung, and it was kept on disk.
     const odd = provider("google", async () => ({
       html: `<html><body><div id="search">${"<p>x</p>".repeat(40)}</div></body></html>`,
       status: 200,
     }));
-    await expect(odd.search({ query: "x", maxResults: 5 }, approved)).rejects.toThrow(
-      /markup may have changed\) \(page saved to/,
-    );
-    // A page that says "did not match" but still carries result headings is a parse problem, not an
-    // empty answer (an interstitial or consent page must never pass as "no results").
+    const page = await odd.search({ query: "x", maxResults: 5 }, approved);
+    expect(page.parsed).toBe("page");
+    expect(page.note).toMatch(/page saved to/);
+    // A page that says "did not match" but still carries result headings is not an empty answer
+    // (an interstitial or consent page must never pass as "no results"): it is read as a page.
     const mixed = provider("google", async () => ({
       html: `<html><body><div id="search"><p>did not match any documents</p><h3>Still a result</h3></div></body></html>`,
       status: 200,
     }));
-    await expect(mixed.search({ query: "x", maxResults: 5 }, approved)).rejects.toThrow(/markup may have changed/);
+    expect((await mixed.search({ query: "x", maxResults: 5 }, approved)).parsed).toBe("page");
     const dumps = readdirSync(join(CACHE_DIR, "debug")).filter((f) => f.startsWith("google-"));
     expect(dumps.length).toBeGreaterThan(0);
     expect(dumps.length).toBeLessThanOrEqual(2); // only the last two are kept
@@ -640,6 +641,86 @@ describe("google layouts", () => {
     const again = await reg.search({ query: "vitest useFakeTimers setInterval not advancing", maxResults: 3 });
     expect(again.fromCache).toBe(true);
     expect(again.summary?.text).toMatch(/^When/);
+  });
+});
+
+describe("the ladder", () => {
+  const UNKNOWN = `<html><body><div id="search"><div class="zz"><a href="https://a.test/one"><span>A result title long enough</span></a><span>a.test › one</span><p>A snippet long enough to count as a snippet for the reader.</p></div><div class="zz"><a href="https://b.test/two"><span>Another result title here</span></a><span>b.test › two</span><p>Another snippet long enough to count as a snippet for the reader.</p></div><div class="zz"><a href="https://c.test/three"><span>A third result title here</span></a><span>c.test › three</span><p>A third snippet long enough to count as a snippet for the reader.</p></div></div></body></html>`;
+  const NOTHING = `<html><body><div id="search"><h2>Everything moved</h2><p>Some prose about the query with no links in it at all, only words, so that no rung below the page can read a result out of it.</p></div></body></html>`;
+  const approved = { submittedByPerson: true };
+  function google(pages: Record<string, string>, seen: string[] = []) {
+    const s = settings({ FEARCH_ENGINES: "google", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    const browser = fakeBrowser(async (url) => {
+      seen.push(url);
+      return { html: pages[/udm=14/.test(url) ? "plain" : "default"] ?? "<html></html>", status: 200 };
+    });
+    return {
+      provider: new EngineProvider(
+        ENGINE_SPECS.google,
+        s,
+        browser,
+        robots,
+        new Politeness(1, { count: 100, windowMs: 60_000 }),
+      ),
+      seen,
+    };
+  }
+
+  it("reads an unrecognised layout by shape and says so", async () => {
+    const { provider } = google({ default: UNKNOWN });
+    const r = await provider.search({ query: "q", maxResults: 5 }, approved);
+    expect(r.parsed).toBe("shape");
+    expect(r.results.map((x) => x.url)).toEqual(["https://a.test/one", "https://b.test/two", "https://c.test/three"]);
+    expect(r.note).toMatch(/read by page shape/);
+  });
+
+  it("looks once at Google's plain Web view when nothing parsed, then hands the page over as markdown", async () => {
+    const seen: string[] = [];
+    const { provider } = google({ default: NOTHING, plain: GOOGLE_2026 }, seen);
+    const r = await provider.search({ query: "q", maxResults: 5 }, approved);
+    expect(seen.length).toBe(2);
+    expect(seen[1]).toContain("udm=14");
+    expect(r.parsed).toBe("first-class");
+    expect(r.results[0].url).toBe("https://playwright.dev/docs/auth");
+    expect(r.note).toMatch(/plain Web view/);
+
+    const seen2: string[] = [];
+    const { provider: p2 } = google({ default: NOTHING, plain: NOTHING }, seen2);
+    const r2 = await p2.search({ query: "q", maxResults: 5 }, approved);
+    expect(seen2.length).toBe(2);
+    expect(r2.parsed).toBe("page");
+    expect(r2.results).toEqual([]);
+    expect(r2.page).toContain("Everything moved");
+    expect(r2.note).toMatch(/plain Web view follows as a page/);
+  });
+
+  it("carries the rung through the registry: a shape read is reported, a page read is returned, neither is cached", async () => {
+    const s = settings({ FEARCH_ENGINES: "google", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    let html = UNKNOWN;
+    const engines = engineProviders(
+      s,
+      fakeBrowser(async () => ({ html, status: 200 })),
+      robots,
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+    );
+    const cache = new Cache(null);
+    const reg = new SearchRegistry(s, cache, new Audit(s), engines);
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
+    const shaped = await reg.search({ query: "shape q", maxResults: 5 });
+    expect(shaped.parsed).toBe("shape");
+    expect(shaped.results.length).toBe(3);
+    expect(renderResults("shape q", shaped)).toContain("read by page shape, approximate");
+    html = NOTHING;
+    const again = await reg.search({ query: "shape q", maxResults: 5 }); // not cached: rung 1 gets another chance
+    expect(again.fromCache).toBe(false);
+    expect(again.parsed).toBe("page");
+    expect(again.page?.markdown).toContain("Everything moved");
+    const text = renderResults("shape q", again);
+    expect(text).toContain("the page follows");
+    expect(text).toContain("No result could be parsed from google's page");
+    expect(text).toContain("Everything moved");
   });
 });
 

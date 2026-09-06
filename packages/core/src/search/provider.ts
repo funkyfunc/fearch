@@ -24,10 +24,22 @@ export interface SearchResult {
   excerpt?: string;
 }
 
+/**
+ * How a results page was read: the engine's own parser (`first-class`), the page's shape when that
+ * parser recognised nothing (`shape`: titles and snippets approximate), or the page itself as
+ * markdown (`page`: no result could be parsed; the agent reads the column).
+ */
+export type Parsed = "first-class" | "shape" | "page";
+
 export interface SearchResponse {
   results: SearchResult[];
   /** The engine's own generated answer, when the page carried one. Labelled, never merged into results. */
   summary?: EngineSummary;
+  parsed?: Parsed;
+  /** Rung 3: the results column as markdown, when nothing could be parsed. */
+  page?: string;
+  /** One line for the person and the model about how this page was read, when it was not the usual way. */
+  note?: string;
 }
 
 /**

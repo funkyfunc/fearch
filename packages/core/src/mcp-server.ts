@@ -28,6 +28,7 @@ import { attachExcerpts } from "./search/excerpt.js";
 import { QueryFormRequired, SearchCheckRequired, type QueryAsk, type QueryChoice } from "./search/provider.js";
 import type { SearchRound } from "./search/registry.js";
 import { renderResults } from "./search/render.js";
+import type { SearchOutcome } from "./search/registry.js";
 
 /**
  * Tool descriptions are built from the effective settings so the model is never told something the
@@ -41,7 +42,7 @@ export function searchDescription(s: Settings): string {
       : `No search engine is available on this server: engine result pages open only in a browser a person could see, and none can be shown here (headless, or no display). Search calls fail with that reason; work from URLs you already have.`;
   return `Search the web. Returns a ranked markdown list of results (title, URL, snippet) and names the provider the query went to.
 
-Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline.
+Use this for discovery — docs pages, GitHub repos/issues, blog posts, error messages, package names. Then call \`fetch\` on the best URL. To save a round trip, pass \`fetch_top=N\` (1–3): the top N results are fetched and the passages most relevant to your query are included inline. A Google page's own generated answer (AI Overview) comes back labelled beside the results, with its sources. When an engine changes its layout the results are read by page shape and marked approximate, or the results column is returned as markdown for you to read; the header says which.
 
 \`site="docs.python.org"\` restricts to a domain (sent as the engine's \`site:\` operator and enforced on the results; \`allowed_domains\` does the same for up to three); \`recency="w"\` limits to the past week (d/w/m/y, as the engine's own date filter). Quoted phrases and \`-term\` exclusions work as typed. Quote exact error strings. If results are poor, rephrase rather than paging.
 
@@ -116,7 +117,45 @@ const FETCH_INPUT = {
     ),
 };
 
-type ToolResult = { content: [{ type: "text"; text: string }]; isError?: true };
+/** The search outcome as a plain object, for clients that use `structuredContent` (the CLI's `--json` is the same shape). */
+const SEARCH_OUTPUT = z.object({
+  query: z.string(),
+  providers: z.array(z.string()),
+  parsed: z.enum(["first-class", "shape", "page"]).optional(),
+  results: z.array(
+    z.object({ title: z.string(), url: z.string(), snippet: z.string(), excerpt: z.string().optional() }),
+  ),
+  summary: z
+    .object({
+      provider: z.string(),
+      label: z.string(),
+      text: z.string(),
+      sources: z.array(z.object({ title: z.string(), url: z.string() })),
+    })
+    .optional(),
+  page: z.object({ provider: z.string(), markdown: z.string() }).optional(),
+  notes: z.array(z.string()),
+  fromCache: z.boolean(),
+});
+
+function structured(query: string, o: SearchOutcome): z.infer<typeof SEARCH_OUTPUT> {
+  return {
+    query: o.query ?? query,
+    providers: o.providers.map((p) => p.name),
+    parsed: o.fromCache ? undefined : (o.parsed ?? "first-class"),
+    results: o.results.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet, excerpt: r.excerpt })),
+    summary: o.summary,
+    page: o.page,
+    notes: o.notes,
+    fromCache: o.fromCache,
+  };
+}
+
+type ToolResult = {
+  content: [{ type: "text"; text: string }];
+  isError?: true;
+  structuredContent?: Record<string, unknown>;
+};
 const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
 const failure = (t: string): ToolResult => ({ content: [{ type: "text", text: t }], isError: true });
 
@@ -470,6 +509,7 @@ export function buildServer(app: App): McpServer {
       title: "Web search",
       description: searchDescription(app.settings),
       inputSchema: z.object(SEARCH_INPUT),
+      outputSchema: SEARCH_OUTPUT,
       annotations: READ_ONLY,
     },
     async (args, ctx): Promise<CallToolResult | InputRequiredResult> => {
@@ -504,7 +544,7 @@ export function buildServer(app: App): McpServer {
           await attachExcerpts(app, outcome.results, query, args.fetch_top, (done, r) =>
             progress(1 + done, `excerpt ${done}/${args.fetch_top}: ${r.url}`),
           );
-          return text(renderResults(query, outcome));
+          return { ...text(renderResults(query, outcome)), structuredContent: structured(query, outcome) };
         } catch (e) {
           if (e instanceof QueryFormRequired || e instanceof SearchCheckRequired) return e;
           return failure(describeError(`search:${query}`, e));

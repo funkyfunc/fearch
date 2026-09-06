@@ -20,9 +20,16 @@ Two tools:
   search-then-fetch. Every result names its provider. A Google page's own generated answer — the
   AI Overview, or the opening summary of the newer Web Guide layout — comes back beside the results
   as structured markdown (headings, lists, tables, code), labelled as Google's unverified text, with
-  the pages it cites as sources; it is read from the same rendered page in every browser tier. When
-  no engine answers, the failure says exactly why and what to do next — nothing is ever silently
-  substituted; a Google query you did not approve is skipped with a note, and DuckDuckGo still runs.
+  the pages it cites as sources; it is read from the same rendered page in every browser tier. A
+  results page is read on a ladder, because engines change their markup: the engine's own parser
+  first (exact); by page shape when that recognises nothing — a title that is a link, a display URL,
+  a snippet — marked approximate; and when nothing on the page reads as a result, the results
+  column itself as markdown for the agent to read (Google is asked once for its plain Web view
+  first). The header names the rung, the lower rungs are never cached, and the page is kept on disk
+  (redacted) so the parser can be fixed. When no engine answers, the failure says exactly why and
+  what to do next — nothing is ever silently substituted; a Google query you did not approve is
+  skipped with a note, and DuckDuckGo still runs. MCP clients that read `structuredContent` get the
+  same outcome as an object (the CLI's `--json` shape).
 - **`fetch`** — main content as markdown, **keeping code blocks and tables** (pure HTML→markdown on
   the main container, guarded by counting `<pre>` in vs. fences out; Readability only as a fallback).
   Long pages: `mode=focus` (BM25 sections for a phrase), `mode=section` (one heading), `mode=pattern`

@@ -30,6 +30,7 @@ import {
   SearchCheckRequired,
   SearchError,
   type EngineSummary,
+  type Parsed,
   type Recency,
   type SearchOptions,
   type SearchProvider,
@@ -38,9 +39,12 @@ import {
   type SearchResult,
 } from "./provider.js";
 import { overviewPending, parseGoogleOverview } from "./overview.js";
+import { parseByShape, resultsPageMarkdown } from "./shape.js";
 
 /** How long a results page may keep streaming its generated answer before the page is read as is. */
 const OVERVIEW_WAIT_MS = 8000;
+/** Fewer results than this from the engine's own parser, and the page's shape is consulted too. */
+const MIN_FIRST_CLASS = 3;
 
 export interface EngineSpec {
   name: string;
@@ -66,6 +70,11 @@ export interface EngineSpec {
   resultsSelector: string;
   /** The engine's own generated answer on the page, if any (see overview.ts). */
   overview?(html: string, query: string): Omit<EngineSummary, "provider"> | null;
+  /**
+   * A plainer results page of the same query (Google's "Web" tab, `udm=14`): requested once when
+   * the default page could not be parsed at all, before the page is handed over as markdown.
+   */
+  plainUrl?(query: string, recency?: Recency, locale?: string): string;
   /** True while that answer is still streaming in, so the render waits a little longer for it. */
   overviewPending?(html: string): boolean;
 }
@@ -288,6 +297,7 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     resultsSelector: "a h3, a [role=heading]",
     overview: parseGoogleOverview,
     overviewPending,
+    plainUrl: (q, r, loc = "en-US") => `${ENGINE_SPECS.google.url(q, r, loc)}&udm=14`,
     human: {
       // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
       homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
@@ -441,7 +451,31 @@ export class EngineProvider implements SearchProvider {
         );
       throw new SearchError(`${this.name}: browser error (${(e as Error).message.split("\n")[0]})`);
     }
-    return this.finish(rendered, q, !!human, submittedByPerson);
+    const first = this.finish(rendered, q, !!human, submittedByPerson);
+    if (first.parsed !== "page" || human || !this.spec.plainUrl) return first;
+    // Nothing parsed from the default page: one look at the engine's plainer page of the same
+    // query (a documented view of its own UI, the same query, the same identity), then the page.
+    try {
+      const plain = await this.politeness.run(
+        this.spec.host,
+        () =>
+          this.browser.render(this.spec.plainUrl!(query, q.recency, this.settings.locale), {
+            session: true,
+            handoff: false,
+            incognito: opts.incognito,
+            isChallenge: this.spec.isChallenge,
+            settleSelector: this.spec.resultsSelector,
+          }),
+        this.gapMs,
+      );
+      if (this.spec.isChallenge(plain.html, plain.status, plain.finalUrl)) return first;
+      const second = this.read(plain.html, q);
+      const saved = /page saved to [^)]+/.exec(second.note ?? "")?.[0];
+      const note = `${this.name}: the default results page was not recognised; ${second.parsed === "page" ? "its plain Web view follows as a page" : `results read from its plain Web view${second.parsed === "shape" ? " by page shape (approximate)" : ""}`}${saved ? ` (${saved})` : ""}`;
+      return { ...second, summary: second.summary ?? first.summary, note };
+    } catch {
+      return first;
+    }
   }
 
   /** Everything after the render: the engine's answer, judged and parsed. A suspended check resumes here. */
@@ -473,26 +507,53 @@ export class EngineProvider implements SearchProvider {
         `${this.name}: ${this.spec.label} showed its bot-check page (HTTP ${rendered.status}); ${hint}`,
       );
     }
-    const parsed = this.spec.parse(rendered.html, this.name);
-    const results = filterDomains(dedupe(parsed), q);
-    if (!parsed.length) {
-      // An empty results page is an answer; a page with results we cannot read is a parser problem.
-      // Either way the page is kept (redacted) so the next report of "no results" can be diagnosed:
-      // an interstitial that merely mentions "did not match" must not pass as an honest empty answer.
-      const dump = this.dumpUnparsed(rendered.html);
-      const saved = dump ? ` (page saved to ${dump})` : "";
-      const empty = this.spec.noResults.test(rendered.html) && !/<h3/i.test(rendered.html);
-      throw new SearchError(
-        empty
-          ? `${this.name}: no results for this query${saved}`
-          : `${this.name}: no results parsed (markup may have changed)${saved}`,
-      );
+    return this.read(rendered.html, q);
+  }
+
+  /**
+   * The ladder. Rung 1: the engine's own parser, exact. Rung 2, when that recognises almost nothing:
+   * the page's shape — a title that is a link, a display URL, a snippet — approximate and said so.
+   * Rung 3, when nothing on the page reads as a result: the page itself as markdown, for the agent
+   * to read. An engine's own "nothing matched" page is an answer, not a rung; the page is kept
+   * (redacted) whenever rung 1 came up empty, so the parser can be fixed from disk.
+   */
+  private read(html: string, q: SearchQuery): SearchResponse {
+    const overview = this.spec.overview?.(html, q.query);
+    const summary = overview ? { ...overview, provider: this.name } : undefined;
+    let results = dedupe(this.spec.parse(html, this.name));
+    let parsed: Parsed = "first-class";
+    if (results.length < MIN_FIRST_CLASS) {
+      const shaped = parseByShape(html, this.spec.host, this.name);
+      if (shaped.length > results.length) {
+        results = shaped;
+        parsed = "shape";
+      }
     }
-    if (!results.length) throw new SearchError(`${this.name}: no results matched the domain filters`);
-    const overview = this.spec.overview?.(rendered.html, q.query);
+    if (!results.length) {
+      const dump = this.dumpUnparsed(html);
+      const saved = dump ? ` (page saved to ${dump})` : "";
+      // An interstitial that merely mentions "did not match" must not pass as an honest empty answer.
+      if (this.spec.noResults.test(html) && !/<h3|role="heading"/i.test(html))
+        throw new SearchError(`${this.name}: no results for this query${saved}`);
+      return {
+        results: [],
+        summary,
+        parsed: "page",
+        page: resultsPageMarkdown(html),
+        note: `${this.name}: no result could be parsed from this page (layout not recognised${saved}); the results column follows as markdown`,
+      };
+    }
+    if (parsed === "shape") this.dumpUnparsed(html);
+    const filtered = filterDomains(results, q);
+    if (!filtered.length) throw new SearchError(`${this.name}: no results matched the domain filters`);
     return {
-      results: results.slice(0, q.maxResults),
-      summary: overview ? { ...overview, provider: this.name } : undefined,
+      results: filtered.slice(0, q.maxResults),
+      summary,
+      parsed,
+      note:
+        parsed === "shape"
+          ? `${this.name}: results read by page shape (the layout was not recognised) — titles and snippets are approximate`
+          : undefined,
     };
   }
 

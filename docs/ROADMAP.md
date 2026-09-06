@@ -14,6 +14,13 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **The results ladder (2026-09-06).** A results page is read in three rungs, each named in the
+  output: the engine's own parser (exact, joined to the page's embedded rows); the page's shape —
+  title links, display URLs, snippets — for any engine and any layout, marked approximate; and the
+  results column as markdown when nothing reads as a result (Google's plain `udm=14` view is tried
+  once first). Lower rungs are never cached and the page is kept, redacted, for the parser fix.
+  The search tool also returns the outcome as `structuredContent` (the `--json` shape).
+
 - **Google's generated answer, rebuilt (2026-09-05, same evening).** The review removed the AI
   Overview extraction as fragile; the maintainer wanted it, so it was rebuilt from real pages
   captured through the bridge (`tests/fixtures/google/`). Nothing depends on a class name: the block

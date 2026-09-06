@@ -158,6 +158,27 @@ describe("server", () => {
     expect(none.isError).toBe(true);
   });
 
+  it("search returns the same outcome as structuredContent for clients that want the object", async () => {
+    const state = fakeState();
+    const engine = {
+      name: "stub",
+      label: "Stub",
+      disclosure: "stub disclosure",
+      available: () => true,
+      async search() {
+        return { results: [{ title: "T", url: "https://x.test/1", snippet: "s", provider: "stub" }] };
+      },
+    };
+    (state.search as unknown as { web: unknown[] }).web = [engine];
+    const c = await client(state);
+    const r = await c.callTool({ name: "search", arguments: { query: "structured" } });
+    expect(text(r)).toContain("https://x.test/1");
+    const sc = r.structuredContent as { results: Array<{ url: string }>; parsed: string; providers: string[] };
+    expect(sc.results[0].url).toBe("https://x.test/1");
+    expect(sc.parsed).toBe("first-class");
+    expect(sc.providers).toEqual(["stub"]);
+  });
+
   it("search with no providers explains itself", async () => {
     const state = fakeState();
     (state.search as unknown as { web: unknown[] }).web = [];

@@ -25,6 +25,7 @@ import {
   SearchError,
   type ConfirmQuery,
   type EngineSummary,
+  type Parsed,
   type QueryChoice,
   type SearchProvider,
   type SearchQuery,
@@ -58,6 +59,10 @@ export interface SearchOutcome {
   fromCache: boolean;
   /** The engine's own generated answer (Google's AI Overview / Web Guide), labelled; never merged into results. */
   summary?: EngineSummary;
+  /** The lowest rung any answering engine had to use (see `Parsed`); absent for a cached answer. */
+  parsed?: Parsed;
+  /** Rung 3: no result could be parsed anywhere; the results column of one engine, as markdown. */
+  page?: { provider: string; markdown: string };
   /** Human-readable notes about what happened (rate limits, cooldowns), shown to the model. */
   notes: string[];
 }
@@ -146,6 +151,8 @@ export class SearchRegistry {
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
     let summary: EngineSummary | undefined;
+    let parsed: Parsed = "first-class";
+    let page: SearchOutcome["page"];
     /** A provider ahead of the first one that answered failed or was skipped (chain searches only). */
     let preferredFailed = false;
     const now = Date.now();
@@ -184,11 +191,14 @@ export class SearchRegistry {
         } else r = await p.search({ ...q, query }, { submittedByPerson, incognito });
         used.push(p);
         summary ??= r.summary;
+        if (r.note) notes.push(r.note);
+        if (r.parsed === "page") page ??= { provider: p.name, markdown: r.page ?? "" };
+        if (r.parsed === "shape" && parsed === "first-class") parsed = "shape";
         this.audit.record({
           url: `search:${q.query}`,
           provider: p.name,
           status: "ok",
-          note: `${r.results.length} results`,
+          note: `${r.results.length} results${r.parsed && r.parsed !== "first-class" ? ` (${r.parsed})` : ""}`,
         });
         return r.results;
       } catch (e) {
@@ -309,6 +319,10 @@ export class SearchRegistry {
       results = dedupe([...results, ...got]);
     }
 
+    if (!results.length && page) {
+      // Rung 3: nothing parsed anywhere, but an engine did answer — the agent reads its page.
+      return { query, results: [], providers: used, fromCache: false, notes, summary, parsed: "page", page };
+    }
     if (!results.length) {
       const why = [...new Set([...errors, ...notes])];
       const next = ["Fetch a URL you already know"];
@@ -320,9 +334,10 @@ export class SearchRegistry {
     results = results.slice(0, q.maxResults);
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than
-    // 15 minutes of the fallback's answer.
-    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
-    return { query, results, providers: used, fromCache: false, notes, summary };
+    // 15 minutes of the fallback's answer; a page read by shape gets another chance at rung 1 too.
+    if (!preferredFailed && parsed === "first-class")
+      this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
+    return { query, results, providers: used, fromCache: false, notes, summary, parsed };
   }
 
   /** Apply the person's form answer: the query they settled on, the engine, incognito or not, and whether to remember. */
