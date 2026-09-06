@@ -17,9 +17,12 @@ Two tools:
   query is shown to you in your MCP client first — the query to edit, a Google/DuckDuckGo choice,
   incognito or not — and runs only when you accept it (`--human-search` shows you every query,
   DuckDuckGo included). `fetch_top=N` inlines excerpts of the top results so one call replaces
-  search-then-fetch. Every result names its provider. When no engine answers, the failure says
-  exactly why and what to do next — nothing is ever silently substituted; a Google query you did not
-  approve is skipped with a note, and DuckDuckGo still runs.
+  search-then-fetch. Every result names its provider. A Google page's own generated answer — the
+  AI Overview, or the opening summary of the newer Web Guide layout — comes back beside the results
+  as structured markdown (headings, lists, tables, code), labelled as Google's unverified text, with
+  the pages it cites as sources; it is read from the same rendered page in every browser tier. When
+  no engine answers, the failure says exactly why and what to do next — nothing is ever silently
+  substituted; a Google query you did not approve is skipped with a note, and DuckDuckGo still runs.
 - **`fetch`** — main content as markdown, **keeping code blocks and tables** (pure HTML→markdown on
   the main container, guarded by counting `<pre>` in vs. fences out; Readability only as a fallback).
   Long pages: `mode=focus` (BM25 sections for a phrase), `mode=section` (one heading), `mode=pattern`

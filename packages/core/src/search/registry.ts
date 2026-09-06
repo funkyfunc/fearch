@@ -24,6 +24,7 @@ import {
   SearchCheckRequired,
   SearchError,
   type ConfirmQuery,
+  type EngineSummary,
   type QueryChoice,
   type SearchProvider,
   type SearchQuery,
@@ -55,6 +56,8 @@ export interface SearchOutcome {
   results: SearchResult[];
   providers: SearchProvider[];
   fromCache: boolean;
+  /** The engine's own generated answer (Google's AI Overview / Web Guide), labelled; never merged into results. */
+  summary?: EngineSummary;
   /** Human-readable notes about what happened (rate limits, cooldowns), shown to the model. */
   notes: string[];
 }
@@ -129,17 +132,20 @@ export class SearchRegistry {
     const key = createHash("sha1")
       .update(JSON.stringify({ ...q, engines: this.web.map((p) => p.name), v: 3 }))
       .digest("hex");
-    const cached = opts.noCache ? null : this.cache.getSearch<{ results: SearchResult[]; providers: string[] }>(key);
+    const cached = opts.noCache
+      ? null
+      : this.cache.getSearch<{ results: SearchResult[]; providers: string[]; summary?: EngineSummary }>(key);
     if (cached) {
       this.audit.record({ url: `search:${q.query}`, cache: "hit" });
       const providers = this.web.filter((p) => cached.providers.includes(p.name));
-      return { results: cached.results, providers, fromCache: true, notes: [] };
+      return { results: cached.results, providers, fromCache: true, notes: [], summary: cached.summary };
     }
 
     const errors: string[] = [...(opts.priorErrors ?? [])];
     const notes: string[] = [...(opts.priorNotes ?? [])];
     const used: SearchProvider[] = [];
     let results: SearchResult[] = [];
+    let summary: EngineSummary | undefined;
     /** A provider ahead of the first one that answered failed or was skipped (chain searches only). */
     let preferredFailed = false;
     const now = Date.now();
@@ -177,6 +183,7 @@ export class SearchRegistry {
           r = await resume.complete(await opts.resumeCheck!.rendered);
         } else r = await p.search({ ...q, query }, { submittedByPerson, incognito });
         used.push(p);
+        summary ??= r.summary;
         this.audit.record({
           url: `search:${q.query}`,
           provider: p.name,
@@ -314,8 +321,8 @@ export class SearchRegistry {
     // Cache only clean outcomes. If a preferred provider failed (bot-check, parse error, cooldown) and a
     // lower one answered, the next call should get another chance at the preferred one rather than
     // 15 minutes of the fallback's answer.
-    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name) });
-    return { query, results, providers: used, fromCache: false, notes };
+    if (!preferredFailed) this.cache.setSearch(key, { results, providers: used.map((p) => p.name), summary });
+    return { query, results, providers: used, fromCache: false, notes, summary };
   }
 
   /** Apply the person's form answer: the query they settled on, the engine, incognito or not, and whether to remember. */

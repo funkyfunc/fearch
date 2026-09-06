@@ -1,5 +1,5 @@
 /** Engine result pages via the browser tier: parsers, robots-gated eligibility, the human handoff. */
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ import {
   redactAccount,
 } from "../src/search/engines.js";
 import { RateLimited, SearchError } from "../src/search/provider.js";
+import { renderResults } from "../src/search/render.js";
 import { SearchRegistry } from "../src/search/registry.js";
 import { Audit } from "../src/audit.js";
 
@@ -592,6 +593,53 @@ describe("config dials", () => {
     expect(settings({ DISPLAY: ":0" }).canSurface).toBe(true);
     expect(settings({ FEARCH_BROWSER: "nonsense" }).browser).toBe("auto");
     expect(settings({ FEARCH_ENGINES: "" }).engines).toEqual([]);
+  });
+});
+
+describe("google layouts", () => {
+  const fixture = (name: string) =>
+    readFileSync(new URL(`../../../tests/fixtures/google/${name}.html`, import.meta.url), "utf8");
+  it("reads results from the classic page and from Web Guide, which has no h3 at all", () => {
+    const classic = parseGoogle(fixture("classic-results-vitest"), "google");
+    expect(classic.length).toBeGreaterThanOrEqual(8);
+    expect(classic[0].url).toBe("https://github.com/vitest-dev/vitest/issues/6011");
+    expect(classic[0].snippet).toMatch(/^Describe the bug/); // joined to the embedded row by URL
+    const guide = parseGoogle(fixture("web-guide-vitest"), "google");
+    expect(guide.length).toBeGreaterThanOrEqual(10);
+    expect(guide.map((r) => r.url)).toContain("https://github.com/nuxt/test-utils/issues/897");
+    expect(guide.find((r) => r.url.includes("qaskills.sh"))!.snippet.length).toBeGreaterThan(20);
+    expect(guide.every((r) => !/google\./.test(new URL(r.url).hostname))).toBe(true);
+  });
+
+  it("carries the generated answer through the registry into the rendered output, labelled and cached", async () => {
+    const page = fixture("ai-overview-vitest");
+    const s = settings({ FEARCH_ENGINES: "google", DISPLAY: ":0" });
+    const robots = new RobotsChecker(new Cache(null), async () => ({ status: 404, body: "" }));
+    const engines = engineProviders(
+      s,
+      fakeBrowser(async () => ({
+        html: page + `<div class="g"><a href="https://example.com/rest"><h3>REST</h3></a></div>`,
+        status: 200,
+      })),
+      robots,
+      new Politeness(1, { count: 100, windowMs: 60_000 }),
+    );
+    const cache = new Cache(null);
+    const reg = new SearchRegistry(s, cache, new Audit(s), engines);
+    reg.onConfirmQuery(async (a) => ({ query: a.query, engine: a.engine, incognito: true, askAgain: true }));
+    const out = await reg.search({ query: "vitest useFakeTimers setInterval not advancing", maxResults: 3 });
+    expect(out.summary?.provider).toBe("google");
+    expect(out.summary?.label).toBe("AI Overview");
+    const rendered = renderResults("vitest useFakeTimers setInterval not advancing", out);
+    expect(rendered).toContain(
+      "> **Google's AI Overview** (the engine's model wrote this — unverified; check the sources):",
+    );
+    expect(rendered).toContain("> When **`vi.useFakeTimers()`** is enabled");
+    expect(rendered).toContain("> ### 1. You forgot to manually advance the clock");
+    expect(rendered).toMatch(/> Sources: \[1\] https:\/\//);
+    const again = await reg.search({ query: "vitest useFakeTimers setInterval not advancing", maxResults: 3 });
+    expect(again.fromCache).toBe(true);
+    expect(again.summary?.text).toMatch(/^When/);
   });
 });
 

@@ -14,6 +14,19 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Google's generated answer, rebuilt (2026-09-05, same evening).** The review removed the AI
+  Overview extraction as fragile; the maintainer wanted it, so it was rebuilt from real pages
+  captured through the bridge (`tests/fixtures/google/`). Nothing depends on a class name: the block
+  is the smallest element holding both the label people read ("AI Overview", "AI Mode reply", "Web
+  Guide") and the disclaimer that ends it, the smallest *finished* one when a streaming placeholder
+  sits beside the answer. It is converted with the page converter (headings, lists, tables, code
+  survive; the collapsed "Show more" half is kept), the citation cards become the sources, chips and
+  chrome lines are dropped, and the query echo is removed by the query itself. The same capture
+  showed Google's **Web Guide** layout — AI-written sections, no `<h3>` — which the results parser
+  read as "no results" (the maintainer's own incident); results are now headings inside links in
+  either layout, joined to the page's embedded rows by URL, and Web Guide's intro is the summary.
+  The render waits up to 8 s for a streaming answer on every tier.
+
 - **Third outside review (2026-09-05; report in `review-notes.md`).** Docs made true: POLICY's
   *Session* paragraph now says every Playwright render shares the tool profile (it does, and must,
   for a passed check to hold); the profile file is 0600 and `fearch clear-profile` empties it.
@@ -25,7 +38,7 @@ is not a goal to get through them.
   and path prefix the spec gives it; a robots.txt 401/403 is `robots_unavailable`, not
   `robots_disallowed`. Search: an unanswered or declined Google form no longer stops the search —
   DuckDuckGo still runs and a note says so; `allowed_domains` (≤3) reach the engine as `site:`
-  operators; the AI Overview extraction, `blocked_domains`, the unimplemented result `date`, and
+  operators; `blocked_domains`, the unimplemented result `date`, and
   three tuning flags (`--max-bytes`, `--excerpt-chars`, `--log-file`) are gone; a zero-parse engine
   page is always kept, redacted, so "no results" can be diagnosed after the fact. Hygiene: `doctor`
   no longer calls httpbin.org; the `/llms.txt` probe runs only for a home page or a thin landing

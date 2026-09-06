@@ -40,6 +40,13 @@ acted on; what changed, all under `npm test`/lint/typecheck green (183 tests):
 - **Finding 10** — one `askPerson` helper replaces the three copied ask blocks; `MAX_ROUNDS`; the
   log level is validated; `--max-bytes`, `--excerpt-chars`, `--log-file` and the dead search helpers
   are gone.
+- **Finding 6, revisited the same evening.** The maintainer wanted the generated answer back. It
+  was rebuilt from pages captured through the bridge (`packages/core/src/search/overview.ts`,
+  fixtures under `tests/fixtures/google/`): anchored on the label and the disclaimer rather than
+  class names, converted to markdown with the page converter, sources from the citation cards, the
+  query echo stripped by the query itself, a settle wait for streaming. The capture also showed
+  Google's Web Guide layout (no `<h3>`), which explains the "no results" incident; the results
+  parser now reads headings inside links in either layout and joins snippets by URL.
 - **Not done, deliberately:** moving `docs/research` and `LEARNINGS.md` (repo layout is the
   maintainer's call); removing the "you press Enter" browser path (the CLI still needs it); the
   handoff state machine shared by `browser.ts` and `extension.ts` (a larger refactor than a review

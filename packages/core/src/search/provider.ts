@@ -1,6 +1,9 @@
 /** Search provider contract shared by every backend, plus result normalization. */
 
 import type { Rendered } from "../fetch/browser.js";
+import type { EngineSummary } from "./overview.js";
+
+export type { EngineSummary };
 
 export type Recency = "d" | "w" | "m" | "y";
 
@@ -23,6 +26,8 @@ export interface SearchResult {
 
 export interface SearchResponse {
   results: SearchResult[];
+  /** The engine's own generated answer, when the page carried one. Labelled, never merged into results. */
+  summary?: EngineSummary;
 }
 
 /**

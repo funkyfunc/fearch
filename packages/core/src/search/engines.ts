@@ -16,6 +16,7 @@
  */
 
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { localeParts, personPresent, type Settings } from "../config.js";
@@ -28,6 +29,7 @@ import {
   RateLimited,
   SearchCheckRequired,
   SearchError,
+  type EngineSummary,
   type Recency,
   type SearchOptions,
   type SearchProvider,
@@ -35,6 +37,10 @@ import {
   type SearchQuery,
   type SearchResult,
 } from "./provider.js";
+import { overviewPending, parseGoogleOverview } from "./overview.js";
+
+/** How long a results page may keep streaming its generated answer before the page is read as is. */
+const OVERVIEW_WAIT_MS = 8000;
 
 export interface EngineSpec {
   name: string;
@@ -58,6 +64,10 @@ export interface EngineSpec {
   human?: { homeUrl(query: string, locale?: string): string; resultsUrl: RegExp };
   /** Selector that exists on a real results page; the browser waits for it before judging the page. */
   resultsSelector: string;
+  /** The engine's own generated answer on the page, if any (see overview.ts). */
+  overview?(html: string, query: string): Omit<EngineSummary, "provider"> | null;
+  /** True while that answer is still streaming in, so the render waits a little longer for it. */
+  overviewPending?(html: string): boolean;
 }
 
 const skipHost = (url: string, ...hosts: RegExp[]): boolean => {
@@ -166,12 +176,12 @@ function fromCite(text: string): string {
 }
 
 /**
- * Google, 2026 layout (measured 2026-08-29 on a real results page): each organic result is an
- * `<h3>` inside `<a class="zReHs" href="/goto?url=<opaque token>">` — the href no longer carries the
- * destination — with the display URL in `<cite>`. The page also embeds, per result, a JSON array
- * `["<url>","<title>","<snippet>",1,"en","US",…]` which is the most reliable source of all three, so
- * results are read from the DOM (order, titles) and joined to the JSON by title; the `<cite>` display
- * URL is the fallback when no JSON entry matches. Older `<a href="https://…"><h3>` markup still parses.
+ * Google results, in every layout seen so far (classic 2026-08-29; Web Guide 2026-09-05). A result
+ * is a heading inside a link: `<a><h3>` on the classic page, `<a><div role=heading aria-level=3>` in
+ * Web Guide (which has no h3 at all — the first version of this parser read "no results" there).
+ * Headings inside lists are carousels and generated-answer citations, not results. The page also
+ * embeds, per organic result, a JSON row `["<url>","<title>","<snippet>",1,"en","US",…]` — the most
+ * reliable snippet, joined by URL (or by title where the href is an opaque `/goto` token).
  */
 export function parseGoogle(html: string, provider: string): SearchResult[] {
   const $ = cheerio.load(html);
@@ -182,7 +192,6 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
     seen.add(url);
     out.push({ title, url, snippet: snippet.replace(/\s+/g, " ").trim().slice(0, 300), provider });
   };
-  // Embedded per-result JSON: url, title, snippet.
   const embedded: { url: string; title: string; snippet: string }[] = [];
   for (const m of html.matchAll(
     /\["(https?:\/\/[^"\\]+)","((?:[^"\\]|\\.)*)","((?:[^"\\]|\\.)*)",\d+,"[a-z]{2}","[A-Z]{2}"/g,
@@ -190,6 +199,8 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
     embedded.push({ url: m[1], title: unescapeJson(m[2]), snippet: unescapeJson(m[3]) });
   }
   const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+  const sameUrl = (a: string, b: string) =>
+    a.replace(/[#?].*$/, "").replace(/\/$/, "") === b.replace(/[#?].*$/, "").replace(/\/$/, "");
   const byTitle = (title: string) => {
     const t = norm(title).replace(/\s*(\.\.\.|…)$/, "");
     return (
@@ -198,27 +209,44 @@ export function parseGoogle(html: string, provider: string): SearchResult[] {
     );
   };
 
-  $("h3").each((_, h) => {
-    const title = $(h).text().trim();
+  $("a h3, a [role=heading]").each((_, h) => {
+    if ($(h).closest("li, [role=listitem], [role=list]").length) return;
+    const title = $(h).text().replace(/\s+/g, " ").trim();
     const a = $(h).closest("a");
     const block = $(h).closest("div[data-snf], div.yuRUbf, div.g, div[data-hveid]");
     const hrefUrl = unwrapGoogle(a.attr("href") ?? "");
-    const hit = byTitle(title);
-    const url =
-      /^https?:/.test(hrefUrl) && !/\/goto\?/.test(hrefUrl)
-        ? hrefUrl
-        : (hit?.url ??
-          fromCite(block.find("cite").first().text() || $(h).parent().parent().find("cite").first().text()));
+    const direct = /^https?:/.test(hrefUrl) && !/\/goto\?/.test(hrefUrl);
+    const hit = (direct && embedded.find((e) => sameUrl(e.url, hrefUrl))) || byTitle(title);
+    const url = direct
+      ? hrefUrl
+      : (hit?.url ?? fromCite(block.find("cite").first().text() || $(h).parent().parent().find("cite").first().text()));
     const snippetSel = "div[data-sncf], .VwiC3b, [data-content-feature]";
     const domSnippet =
       block.find(snippetSel).first().text() ||
       block.next().find(snippetSel).first().text() ||
-      block.next().filter(snippetSel).text();
+      block.next().filter(snippetSel).text() ||
+      cardSnippet($, a, title);
     add(url, title, hit?.snippet || domSnippet || "");
   });
   // Nothing in the DOM at all (unexpected layout): fall back to the embedded JSON alone, in page order.
   if (!out.length) for (const e of embedded) add(e.url, e.title, e.snippet);
   return out;
+}
+
+/**
+ * Web Guide draws each result as a card: source name, display URL, date, and a one-line description
+ * of its own. The description is the text of the card that is not the title or the display URL.
+ */
+function cardSnippet($: cheerio.CheerioAPI, a: cheerio.Cheerio<AnyNode>, title: string): string {
+  const card = a.parent().parent();
+  if (!card.length) return "";
+  const runs = card
+    .find("*")
+    .toArray()
+    .filter((e) => $(e).children().length === 0)
+    .map((e) => $(e).text().replace(/\s+/g, " ").trim())
+    .filter((t) => t.length >= 25 && t !== title && !/›|^https?:/.test(t));
+  return runs.sort((x, y) => y.length - x.length)[0] ?? "";
 }
 
 function unescapeJson(s: string): string {
@@ -257,7 +285,9 @@ export const ENGINE_SPECS: Record<string, EngineSpec> = {
     parse: parseGoogle,
     isChallenge: googleChallenge,
     noResults: /did not match any documents|No results found for/i,
-    resultsSelector: "a h3",
+    resultsSelector: "a h3, a [role=heading]",
+    overview: parseGoogleOverview,
+    overviewPending,
     human: {
       // The home page with ?q= prefills the box without searching (measured 2026-09-01); Enter submits.
       homeUrl: (q, loc = "en-US") => `https://www.google.com/?q=${encodeURIComponent(q)}&hl=${localeParts(loc).lang}`,
@@ -396,6 +426,10 @@ export class EngineProvider implements SearchProvider {
                 }
               : undefined,
             settleSelector: human ? undefined : this.spec.resultsSelector,
+            // A generated answer streams in after the results: wait briefly for one that is coming,
+            // never for one that isn't (no label on the page). Same wait on every tier.
+            settleUntil: this.spec.overviewPending ? (html) => !this.spec.overviewPending!(html) : undefined,
+            settleUntilMs: OVERVIEW_WAIT_MS,
           }),
         Math.max(this.gapMs, crawlDelayMs),
       );
@@ -418,7 +452,10 @@ export class EngineProvider implements SearchProvider {
         `${this.name}: the query was opened in ${rendered.handoffWhere ?? "your browser"} but not submitted within ${Math.round(this.settings.handoffTimeoutMs / 1000)} s, so that tab was closed — search again when you are at the screen and press Enter there`,
       );
     }
-    if (submittedByPerson) rendered = { ...rendered, handedOff: true, handoffWhere: "your MCP client" };
+    // Approved in the client: the query ran as the person's act. Where a check was then handed to
+    // them stays as the tier reported it (a window, a tab), for the hint below.
+    if (submittedByPerson)
+      rendered = { ...rendered, handedOff: true, handoffWhere: rendered.handoffWhere ?? "your MCP client" };
     if (this.spec.isChallenge(rendered.html, rendered.status, rendered.finalUrl)) {
       // The engine's "no". The registry decides whether that means a cooldown (nobody can be asked)
       // or just this answer (a person is on call and will be asked again next time).
@@ -452,7 +489,11 @@ export class EngineProvider implements SearchProvider {
       );
     }
     if (!results.length) throw new SearchError(`${this.name}: no results matched the domain filters`);
-    return { results: results.slice(0, q.maxResults) };
+    const overview = this.spec.overview?.(rendered.html, q.query);
+    return {
+      results: results.slice(0, q.maxResults),
+      summary: overview ? { ...overview, provider: this.name } : undefined,
+    };
   }
 
   /**
