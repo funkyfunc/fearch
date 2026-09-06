@@ -71,7 +71,7 @@ is not a goal to get through them.
   either layout, joined to the page's embedded rows by URL, and Web Guide's intro is the summary.
   The render waits up to 8 s for a streaming answer on every tier.
 
-- **Third outside review (2026-09-05; report in `review-notes.md`).** Docs made true: POLICY's
+- **Third outside review (2026-09-05; report in `docs/reviews/2026-09-05.md`).** Docs made true: POLICY's
   *Session* paragraph now says every Playwright render shares the tool profile (it does, and must,
   for a passed check to hold); the profile file is 0600 and `fearch clear-profile` empties it.
   Never garbage: a yield rule catches script-heavy pages that render to a footer (YouTube), RSS/Atom
