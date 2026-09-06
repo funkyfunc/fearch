@@ -117,7 +117,7 @@ possible (a server, CI, no display) means no engine search — reported honestly
 **once** — pass it the way you would in your own browsing, and everything continues; the clearance
 is remembered so it doesn't come back. Say no and that is the answer. If nobody answers, nothing is
 opened on your desk: the page waits in the background for ten minutes in case you come back, the
-agent is told the prompt timed out, and the next request asks again. If nothing
+agent is told nobody answered, and the next request asks again. If nothing
 _can_ be shown (a server, CI, no display), the check is simply final, reported honestly. And if
 you've installed the bridge extension, your own Chrome is used instead whenever it's connected — no
 window management at all, just a tab that appears when you say yes.

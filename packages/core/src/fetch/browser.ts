@@ -143,7 +143,7 @@ export interface RenderOptions {
   /** The person already said yes to seeing this check (an outer tier asked); do not ask again. */
   handoffApproved?: boolean;
   /**
-   * Headed only: open the window off-screen and bring it forward only when the person says yes to a
+   * Visible tier only: open the window off-screen and bring it forward only when the person says yes to a
    * check (or must press Enter). Engine result pages use this — a real browser, not a visible one.
    */
   background?: boolean;

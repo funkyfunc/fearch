@@ -90,7 +90,7 @@ and none are EU/UK law; the UK has no commercial TDM exception.
 | Google Gemini in Chrome / auto browse | the person's own Chrome | yes | not described | not described | yes — "automatically uses … Google Search, Google Maps, YouTube" |
 | Perplexity `Perplexity-User` | Perplexity's servers (a fetcher, not a browser) | no | yes (UA + IP ranges) | n/a | n/a; "generally ignores robots.txt" for user requests |
 | OpenAI cloud browser / Operator | OpenAI's servers | no (cloud profile) | yes (RFC 9421 signatures; verified on OpenAI's help page) | "Takeover Mode": the person | in the browser, as a person would |
-| **fearch** | plain HTTP self-identified and robots-governed; the person's own Chrome (extension) or a visible window only for a check | extension: yes unless `--incognito`; headless: never | plain HTTP and Playwright tiers: yes; extension: no (it is the person's Chrome) | handed to the person; never solved | DuckDuckGo automatically; Google/Bing only if listed, and with `--human-search` the person submits |
+| **fearch** | plain HTTP self-identified and robots-governed; the person's own Chrome (extension) or a visible window only for a check | extension: yes unless `--incognito`; headless: never | plain HTTP and Playwright tiers: yes; extension: no (it is the person's Chrome) | handed to the person; never solved | DuckDuckGo automatically; Google only if listed, and with `--human-search` the person submits |
 
 The local-browser row is the norm fearch's extension tier sits in; where fearch differs it is stricter.
 
@@ -121,7 +121,7 @@ The local-browser row is the norm fearch's extension tier sits in; where fearch 
 4. Conditional requests with ETag/Last-Modified; on-disk cache; `Accept-Encoding: gzip`.
 5. `Accept: text/markdown, text/html;q=0.9`; try `llms.txt` / `.md` variants; use official APIs (GitHub, PyPI, npm, StackExchange, arXiv) instead of HTML where they exist.
 6. Read and surface `X-Robots-Tag`, `noai`, RSL/AIPREF signals alongside the content.
-7. Never: stealth, TLS impersonation, proxy rotation, CAPTCHA solving, cookie injection, credentials held by the tool, silent third-party fetch proxies. (The person's own session in a profile only they populated is their choice — a dial, labelled, off by default.)
+7. Never: stealth, TLS impersonation, proxy rotation, CAPTCHA solving, cookie injection, credentials held by the tool, silent third-party fetch proxies. (The tool-owned profile holds only what the person did in windows the tool opened; it is sent to engine pages, never to ordinary reads, with no dial to change that.)
 8. Refuse private/loopback/link-local/metadata targets; re-validate every redirect hop.
 9. Audit log every request (URL, time, status, robots decision, bytes); domain allow/deny lists; no telemetry.
 10. Attribute: keep source URL and retrieval time; quote sparingly.

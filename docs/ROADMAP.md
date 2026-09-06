@@ -95,7 +95,7 @@ is not a goal to get through them.
   extension is preferred whenever connected (short opportunistic check, quiet note). Engine
   *eligibility* derives from `canSurface` + handoff; the default engine list is DuckDuckGo alone, and
   Google is a `--engines` choice (changed 2026-09-01). Explicit `headless|headed|extension|off`
-  remain as pins.
+  were the pins then (headed removed 2026-09-05).
 - **Pre-publication pass (2026-08-31).** Person-present rule: with a visible browser whose challenges
   are handed to the person (headed or extension, handoff now on by default there), engine result pages
   are the person's own browsing and Google joins DuckDuckGo without `--robots off`. Flag surface cut to

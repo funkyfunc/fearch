@@ -49,14 +49,13 @@ export interface Settings {
    * `auto` (default): headless until a page shows a challenge — then the same page opens once in a
    * visible window for the person to deal with; where no window can be shown, the challenge stays
    * final. Prefers the person's own Chrome via the bridge extension whenever it is connected. The
-   * other values pin one behaviour: `headless` — never show a window; `headed` — every render in the
-   * visible installed Chrome; `extension` — the person's Chrome, headless fallback; `off` — no
-   * browser tier.
+   * other values pin one behaviour: `headless` — never show a window; `extension` — the person's
+   * Chrome, headless fallback; `off` — no browser tier.
    */
   browser: (typeof BROWSER_MODES)[number];
   /**
    * Whether a visible browser window could be shown to the person here (a display exists, and the
-   * mode allows it). Derived, not an input: headed/extension assert it; auto detects it; headless/off
+   * mode allows it). Derived, not an input: extension asserts it; auto detects it; headless/off
    * never surface anything.
    */
   canSurface: boolean;
@@ -242,8 +241,8 @@ export function domainMatches(host: string, list: string[]): boolean {
 }
 
 /**
- * One settings table, every setting a flag. `--browser headed` in an MCP config's `args` and
- * `FEARCH_BROWSER=headed` in its `env` are the same setting (flags win); the help text, the parser
+ * One settings table, every setting a flag. `--engines google` in an MCP config's `args` and
+ * `FEARCH_ENGINES=google` in its `env` are the same setting (flags win); the help text, the parser
  * and the docs all come from this table, so there is no second category of "hidden" knobs. Booleans
  * take `--incognito`, `--incognito=false` or `--no-incognito`. The tuning entries are real settings
  * nobody should need; they are listed compactly at the end of `--help`.
@@ -266,7 +265,7 @@ export const FLAGS: readonly FlagSpec[] = [
     kind: "enum",
     values: BROWSER_MODES,
     default: "auto",
-    help: "auto: pages read headless; a site's challenge, and every engine result page, opens in your own Chrome via the bridge extension when it is connected, else in a background window of your installed Chrome — opened once when Chrome starts, kept off to the side, brought forward when a check needs you (no display: no engine search, challenges final). Or pin one: headless (never a window, no engine search) · headed (your installed Chrome, always visible) · extension (your Chrome only) · off.",
+    help: "auto: pages read headless; a site's challenge, and every engine result page, opens in your own Chrome via the bridge extension when it is connected, else in a background window of your installed Chrome — opened once when Chrome starts, kept off to the side, brought forward when a check needs you (no display: no engine search, challenges final). Or pin one: headless (never a window, no engine search) · extension (your Chrome only) · off.",
   },
   {
     flag: "robots",
@@ -289,7 +288,7 @@ export const FLAGS: readonly FlagSpec[] = [
     env: "FEARCH_HUMAN_SEARCH",
     kind: "bool",
     default: "false",
-    help: "Show every query to you in your MCP client before it runs — editable, with the engine and profile to pick — not only Google queries, which always are (in the CLI: the search box is handed over in your browser and you press Enter).",
+    help: "Show every query to you in your MCP client before it runs — the query to edit, a Google/DuckDuckGo checkbox and incognito or not — not only Google queries, which always are (in the CLI: the search box is handed over in your browser and you press Enter).",
   },
   {
     flag: "incognito",

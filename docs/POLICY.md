@@ -101,9 +101,8 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   (default): page renders happen in the bundled headless Chromium; when a page comes back as a challenge
   and a display exists, the person is asked and that one page is opened in a visible window (the
   installed Chrome) and handed to them — passed, its clearance persists in the tool-owned profile so the window need not
-  reappear; unanswered, no further windows are opened (and no further tabs activated in the person's
-  Chrome) for 10 minutes; where no window can be shown,
-  the challenge is final. **Engine result pages are never rendered headless**: with the extension
+  reappear; nobody answers, nothing opens and the search says so (the page waits ten minutes for a
+  late answer); where no window can be shown, the challenge is final. **Engine result pages are never rendered headless**: with the extension
   connected they open in the person's own Chrome; otherwise in a background window of the installed
   Chrome with the tool profile, which comes forward only when a check needs the person (or they must
   press Enter). On macOS, Chrome activates itself on DevTools-protocol traffic (a Chromium bug, worse
@@ -130,8 +129,10 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   server must prove it back on every job before the extension executes anything, so a local process
   that binds the port first cannot drive the person's Chrome. Pages open with the person's own profile
   (their logins, their search history) and are labelled as such; `FEARCH_INCOGNITO=1` opens them in an
-  incognito window instead. If the extension is not connected, fearch falls back to the headless tier
-  and says so in the log (including that the handoff is unavailable until it connects).
+  incognito window instead — or, where the extension is connected but Chrome forbids it incognito, a
+  private context of the installed Chrome's own window. If the extension is not connected, fearch
+  falls back to the adaptive tier (headless page reads, a background window of the installed Chrome
+  for engine pages and escalated checks) and says so in the log.
 - **Human handoff** (on by default whenever a window could reach the person — auto with a display,
   or extension; `FEARCH_HANDOFF=0` opts out). When a page or search engine shows a challenge,
   the person is asked first, through their MCP client: "A bot check appeared on host. Open it for
@@ -209,7 +210,8 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
 - A per-session budget (default 60 page fetches / 10 minutes) refuses further fetches with an
   explanatory message rather than hammering. Calls to search-provider APIs are not charged against it
   (they are bounded by the per-host gap and the providers' own quotas); a provider that rate-limits us
-  is put on a 10-minute cooldown and said so in the results.
+  is put on a 5-minute cooldown, and only where nobody can be asked to pass its check; the results
+  say so.
 
 ## Where traffic goes
 

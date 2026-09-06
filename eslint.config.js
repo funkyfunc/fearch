@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/",
+      "**/dist-dev/",
       "dist-mcpb/",
       "**/node_modules/",
       "docs/",
