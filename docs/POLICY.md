@@ -245,10 +245,11 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   own under the same rule: listed by the operator, every query approved in the client, run as the
   person's browsing; its reply is the answer and its citations are the results; one question per
   call and never a follow-up, so it is a search, not a conversation. Incognito is the form's default
-  for it; an incognito window keeps nothing, so Google's check is the person's to pass each time —
-  through the bridge extension with "Allow in Incognito" enabled it is their own Chrome's incognito
-  window (no automation signals), otherwise a private context of the installed Chrome, which Google
-  checks more often. It is read on the same ladder as any engine page: the reply with its sources,
+  for it; an incognito session keeps nothing on disk, so Google's check is the person's to pass once
+  per session — through the bridge extension with "Allow in Incognito" enabled it is their own
+  Chrome's incognito window (no automation signals), kept minimised for 20 minutes after its last
+  tab so a passed check holds across queries; otherwise a private context of the installed Chrome,
+  which Google checks more often, kept while that browser runs. It is read on the same ladder as any engine page: the reply with its sources,
   else the page as markdown, and the rendered page itself only when `raw` is asked for.
   Google disallows `/search` for crawlers and is used only when listed in `FEARCH_ENGINES` and
   eligible under the person-present rule (a person on call — any check the engine raises opens in a

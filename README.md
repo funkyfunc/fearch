@@ -23,7 +23,7 @@ Two tools:
   the pages it cites as sources; it is read from the same rendered page in every browser tier.
   `--engines google-ai,duckduckgo` adds Google's AI Mode as an engine of its own: one question per
   search, its reply as the answer and the pages it cites as the results, under exactly the approval
-  Google result pages get — fearch asks, it never converses; incognito is the default there, and an incognito window remembers no passed check, so Google's check is yours to pass each time. A
+  Google result pages get — fearch asks, it never converses; incognito is the default there; the incognito session lasts while fearch's browser or your Chrome's incognito window is open (nothing on disk), so a check you pass holds for the session, not for one query. A
   results page is read on a ladder, because engines change their markup: the engine's own parser
   first (exact); by page shape when that recognises nothing — a title that is a link, a display URL,
   a snippet — marked approximate; and when nothing on the page reads as a result, the results

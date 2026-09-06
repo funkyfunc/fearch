@@ -13,6 +13,9 @@ const loops = new Map(); // port -> true while a loop runs
 const state = { servers: {}, lastError: "" };
 const windows = { normal: null, incognito: null };
 const ownedTabs = new Set();
+/** An empty incognito window is kept this long: its session (a bot check the person passed) lives only while it is open. */
+const INCOGNITO_IDLE_MS = 20 * 60 * 1000;
+const idleClose = new Map(); // windowId -> timer
 /** The about:blank tab a window is created with; removed once a real tab exists. */
 const starterTabs = new Map(); // windowId -> tabId
 
@@ -52,6 +55,8 @@ async function ensureWindow(incognito) {
   if (id !== null) {
     try {
       await chrome.windows.get(id);
+      clearTimeout(idleClose.get(id));
+      idleClose.delete(id);
       return id;
     } catch {
       windows[key] = null;
@@ -72,11 +77,30 @@ async function dropStarterTab(windowId) {
   await chrome.tabs.remove(id).catch(() => {});
 }
 
-/** After the last fearch tab in a window closes, close the window too, rather than leave an empty one around. */
+/**
+ * After the last fearch tab in a window closes: a normal window goes (the profile remembers what it
+ * needs); the incognito window stays, minimised with a blank tab, so the session it holds — a bot
+ * check the person passed — outlives one query, and goes after a while unused.
+ */
 async function closeWindowIfEmpty(windowId) {
   try {
     const tabs = await chrome.tabs.query({ windowId });
     if (tabs.some((t) => ownedTabs.has(t.id))) return;
+    if (windows.incognito === windowId) {
+      const blank = await chrome.tabs.create({ windowId, url: "about:blank", active: false });
+      starterTabs.set(windowId, blank.id);
+      for (const t of tabs) if (t.id !== blank.id) await chrome.tabs.remove(t.id).catch(() => {});
+      clearTimeout(idleClose.get(windowId));
+      idleClose.set(
+        windowId,
+        setTimeout(() => {
+          idleClose.delete(windowId);
+          windows.incognito = null;
+          chrome.windows.remove(windowId).catch(() => {});
+        }, INCOGNITO_IDLE_MS),
+      );
+      return;
+    }
     for (const key of Object.keys(windows)) if (windows[key] === windowId) windows[key] = null;
     await chrome.windows.remove(windowId);
   } catch {}

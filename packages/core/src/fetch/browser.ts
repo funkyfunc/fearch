@@ -236,6 +236,8 @@ export class BrowserRenderer implements BrowserTier {
   private anchor: Page | null = null;
   private plain: BrowserContext | null = null;
   private profile: BrowserContext | null = null;
+  /** The incognito session: nothing of the profile in it, nothing written to disk, kept while the browser runs. */
+  private incognito: BrowserContext | null = null;
   private launching: Promise<Browser> | null = null;
   private inFlight = 0;
   private userAgent = "";
@@ -570,11 +572,12 @@ export class BrowserRenderer implements BrowserTier {
     if (opts.handToPerson && !this.headed)
       throw new BrowserUnavailable("handing a page to the person needs a visible browser (headed or the extension)");
     const target = normalizeUrl(url);
-    // The person chose incognito for this engine page: a context of its own, closed when the page is,
-    // so nothing from the tool profile rides along and nothing is kept.
+    // The person chose incognito for this engine page: a context of its own — nothing from the tool
+    // profile rides along, nothing is written to disk — that lasts as long as the browser process, so a
+    // check they passed holds for the session rather than being asked again on every query.
     const incognito = !!opts.session && opts.incognito === true;
     const useProfile = this.profileAllowed && !!opts.session && !incognito;
-    const ctx = incognito ? await this.freshContext() : await this.context(useProfile ? "profile" : "plain");
+    const ctx = incognito ? await this.incognitoContext() : await this.context(useProfile ? "profile" : "plain");
     const usedSession = useProfile && (await ctx.cookies(target)).length > 0;
     if (this.inFlight >= this.settings.browserMaxConcurrent) {
       throw new BrowserUnavailable("browser tier busy; try again in a moment");
@@ -589,7 +592,6 @@ export class BrowserRenderer implements BrowserTier {
       cleaned = true;
       this.inFlight--;
       await page?.close().catch(() => {});
-      if (incognito) await ctx.close().catch(() => {});
       if (useProfile) await this.saveProfile();
       this.scheduleIdleClose();
     };
@@ -769,12 +771,14 @@ export class BrowserRenderer implements BrowserTier {
     }
   }
 
-  /** A one-off context with nothing in it, for an engine page the person wants incognito. */
-  private async freshContext(): Promise<BrowserContext> {
+  /** The incognito context: created empty on first use, never persisted, closed with the browser. */
+  private async incognitoContext(): Promise<BrowserContext> {
     const browser = await this.launch();
+    if (this.incognito) return this.incognito;
     const ctx = await this.trackedContext(browser, this.contextOptions());
     ctx.setDefaultTimeout(this.settings.browserTimeoutMs);
     await ctx.route("**/*", (route) => this.gate(route));
+    this.incognito = ctx;
     return ctx;
   }
 
@@ -787,9 +791,11 @@ export class BrowserRenderer implements BrowserTier {
     this.browserCdp = null;
     await this.plain?.close().catch(() => {});
     await this.profile?.close().catch(() => {});
+    await this.incognito?.close().catch(() => {});
     await this.browser?.close().catch(() => {});
     this.plain = null;
     this.profile = null;
+    this.incognito = null;
     this.browser = null;
   }
 }

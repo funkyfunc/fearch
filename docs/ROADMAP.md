@@ -14,6 +14,12 @@ is not a goal to get through them.
 
 ## Done since v2.0 (2026-08-28, same day)
 
+- **Incognito is a session, not a query (2026-09-06).** The maintainer passed two bot checks for
+  two incognito queries: each opened a fresh context and Google checked it again. Both tiers now
+  keep the incognito session — the Playwright context while the browser runs, the extension's
+  incognito window minimised with a blank tab for 20 minutes after its last fearch tab — so a
+  passed check holds across queries and still nothing reaches disk. Extension 2.3.0 (reload it).
+
 - **Rendering audit as a live check (2026-09-06).** `npm run audit:render` measures, per page,
   the paragraphs, headings, code blocks, data tables and image alt text the markdown keeps against
   the page's main container (links stripped, markup-insensitive, formulas and link rails set
