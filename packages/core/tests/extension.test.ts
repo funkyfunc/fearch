@@ -197,7 +197,7 @@ describe("extension tier — the handoff", () => {
     const log: string[] = [];
     const client = fakeExtension(port, () => challenge, log);
     const r = new ExtensionRenderer(
-      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "300", FEARCH_ALLOW_PRIVATE: "1" }),
+      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "300", FEARCH_CHALLENGE_TIMEOUT_MS: "300", FEARCH_ALLOW_PRIVATE: "1" }),
       audit(),
       bridge,
     );
@@ -241,7 +241,13 @@ describe("extension tier — the handoff", () => {
     const chromePage = `<html><body><div id="search"><a href="https://example.com/x"><h3>Result</h3></a>${"<p>x</p>".repeat(50)}</div></body></html>`;
     const client = fakeExtension(port, () => chromePage, log);
     const r = new ExtensionRenderer(
-      settings({ FEARCH_BROWSER: "auto", DISPLAY: ":0", FEARCH_ALLOW_PRIVATE: "1", FEARCH_HANDOFF_TIMEOUT_MS: "500" }),
+      settings({
+        FEARCH_BROWSER: "auto",
+        DISPLAY: ":0",
+        FEARCH_ALLOW_PRIVATE: "1",
+        FEARCH_HANDOFF_TIMEOUT_MS: "500",
+        FEARCH_CHALLENGE_TIMEOUT_MS: "500",
+      }),
       audit(),
       bridge,
       headless,
@@ -274,7 +280,7 @@ describe("extension tier — the handoff", () => {
     const log: string[] = [];
     const client = fakeExtension(port, () => (reads++ < 3 ? home : results), log);
     const r = new ExtensionRenderer(
-      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "5000", FEARCH_ALLOW_PRIVATE: "1" }),
+      settings({ FEARCH_HANDOFF_TIMEOUT_MS: "5000", FEARCH_CHALLENGE_TIMEOUT_MS: "5000", FEARCH_ALLOW_PRIVATE: "1" }),
       audit(),
       bridge,
     );

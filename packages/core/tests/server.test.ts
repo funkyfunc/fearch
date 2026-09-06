@@ -339,6 +339,7 @@ describe("the challenge prompt (handoff gate)", () => {
         FEARCH_AUDIT_LOG: "off",
         FEARCH_LOG_LEVEL: "error",
         FEARCH_HANDOFF_TIMEOUT_MS: "150",
+        FEARCH_CHALLENGE_TIMEOUT_MS: "150",
       } as NodeJS.ProcessEnv),
     );
     const fetcher = checkingFetcher(state);
@@ -436,6 +437,7 @@ describe("query confirmation — nobody answers", () => {
         FEARCH_ENGINES: "google",
         ...NO_EXTENSION,
         FEARCH_HANDOFF_TIMEOUT_MS: "150",
+        FEARCH_CHALLENGE_TIMEOUT_MS: "150",
       } as NodeJS.ProcessEnv),
     );
     const engine = (state.search as unknown as { engines: Array<{ search: unknown; name: string }> }).engines.find(

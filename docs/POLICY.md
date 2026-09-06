@@ -140,7 +140,8 @@ their environment-variable spelling (`FEARCH_BROWSER`); every one is also a flag
   result — an `input_required` round — and the client's next call brings the answer; the page that
   hit the check waits in the background, suspended, in between. On yes the check is surfaced — the auto tier brings that one page forward in a window;
   the extension activates the tab in the person's Chrome — and
-  the tool waits (default 45 s from the yes, `FEARCH_HANDOFF_TIMEOUT_MS`) for the person to deal with
+  the tool waits (default 90 s from the yes, `FEARCH_CHALLENGE_TIMEOUT_MS`; the prompt itself waits 45 s,
+  `FEARCH_HANDOFF_TIMEOUT_MS` — a yes means the person is there) for the person to deal with
   it, then continues with what they were shown. On no, that is the answer. If nobody answers within
   that timeout on a 2025-era connection, fearch withdraws the prompt and says so in its own words
   (which engine or page, when it asked, and to call again when the person is there); on a 2026-07-28

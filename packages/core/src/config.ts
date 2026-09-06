@@ -70,7 +70,10 @@ export interface Settings {
    * whenever the browser is visible (headed or extension); --no-handoff turns it off.
    */
   handoff: boolean;
+  /** How long a prompt to the person waits for an answer (and a page handed over without a prompt, for them to press Enter). */
   handoffTimeoutMs: number;
+  /** How long a bot check the person agreed to open waits for them to pass it: a yes means they are there. */
+  challengeTimeoutMs: number;
   /**
    * Search-engine result pages the browser may open, in preference order. Only engines whose
    * robots.txt permits their result pages are eligible unless `robotsPolicy` is `off`.
@@ -206,6 +209,8 @@ export function settingsFromEnv(env: Env = process.env, platform: string = proce
     // Long enough for a person at the screen to pass a check, short enough that an unattended agent
     // gets its answer ("waiting for you; call again") instead of a hung tool call.
     handoffTimeoutMs: envInt(env, "FEARCH_HANDOFF_TIMEOUT_MS", 45_000),
+    // Starts at the yes: the person is there, so a slow check gets time without a hung call.
+    challengeTimeoutMs: envInt(env, "FEARCH_CHALLENGE_TIMEOUT_MS", 90_000),
     // Default: DuckDuckGo lite, the one engine whose robots.txt permits its result pages. Google is
     // opt-in (`--engines google,duckduckgo`) and needs a person on call to pass its checks.
     engines: (env.FEARCH_ENGINES === undefined ? ["duckduckgo"] : envList(env, "FEARCH_ENGINES")).filter((e) =>
@@ -418,7 +423,15 @@ export const FLAGS: readonly FlagSpec[] = [
     env: "FEARCH_HANDOFF_TIMEOUT_MS",
     kind: "int",
     default: "45000",
-    help: "How long a prompt to you, or a handed-off check, waits before the tool answers 'waiting for you; call again'.",
+    help: "How long a prompt to you waits for an answer before the tool says nobody answered (also the wait for you to press Enter when a search box is handed over without a prompt).",
+    tuning: true,
+  },
+  {
+    flag: "challenge-timeout-ms",
+    env: "FEARCH_CHALLENGE_TIMEOUT_MS",
+    kind: "int",
+    default: "90000",
+    help: "How long a bot check you said yes to waits for you to pass it, counted from the yes.",
     tuning: true,
   },
   {

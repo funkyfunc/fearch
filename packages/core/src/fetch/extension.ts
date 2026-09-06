@@ -585,7 +585,7 @@ export class ExtensionRenderer implements BrowserTier {
           }
           this.audit.log(
             "warn",
-            `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+            `challenge on ${target}: handed to you in your Chrome (waiting up to ${Math.round(this.settings.challengeTimeoutMs / 1000)} s)`,
           );
           this.events?.emit("handoff", { url: target, where });
           await this.bridge.request({ op: "activate", tabId });
@@ -595,7 +595,7 @@ export class ExtensionRenderer implements BrowserTier {
               return { html: s.ok ? (s.html ?? "") : "", status: 200, url: s.url ?? finalUrl };
             },
             (h, s, u) => !h || isChallenge(h, s, u),
-            this.settings.handoffTimeoutMs,
+            this.settings.challengeTimeoutMs,
           );
           if (r.passed) {
             html = r.html;

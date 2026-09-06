@@ -709,14 +709,14 @@ export class BrowserRenderer implements BrowserTier {
           }
           this.audit.log(
             "warn",
-            `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.handoffTimeoutMs / 1000)} s)`,
+            `challenge on ${target}: handed to you in the browser window (waiting up to ${Math.round(this.settings.challengeTimeoutMs / 1000)} s)`,
           );
           this.events?.emit("handoff", { url: target, where });
           await this.showWindow(p);
           const r = await waitForHuman(
             async () => ({ html: await p.content().catch(() => ""), status: 200, url: p.url() }),
             (h, s, u) => !h || isChallenge(h, s, u),
-            this.settings.handoffTimeoutMs,
+            this.settings.challengeTimeoutMs,
           );
           if (r.passed) {
             await Promise.race([

@@ -21,6 +21,7 @@ const env = {
   DISPLAY: ":0",
   FEARCH_CACHE_DIR: mkdtempSync(join(tmpdir(), "fearch-era-")),
   FEARCH_HANDOFF_TIMEOUT_MS: "2000",
+  FEARCH_CHALLENGE_TIMEOUT_MS: "2000",
 };
 
 describe("stdio, protocol revision 2026-07-28", () => {
